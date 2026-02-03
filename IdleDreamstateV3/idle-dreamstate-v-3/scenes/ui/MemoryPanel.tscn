@@ -1,0 +1,4 @@
+MemoryPanel (Panel)
+├── MemoryLabel
+├── MemoryUpgradeList
+└── BuyButton

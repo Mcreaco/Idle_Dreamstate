@@ -1,0 +1,44 @@
+[gd_scene load_steps=2 format=3 uid="uid://dw1f582jgppug"]
+
+[ext_resource type="Script" uid="uid://d3q5yx0qmqjnk" path="res://scripts/ui/SettingsMenu.gd" id="1_svoao"]
+
+[node name="SettingsMenu" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_svoao")
+
+[node name="CenterContainer" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="PanelContainer" type="PanelContainer" parent="CenterContainer"]
+layout_mode = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="CenterContainer/PanelContainer"]
+layout_mode = 2
+
+[node name="VBox" type="VBoxContainer" parent="CenterContainer/PanelContainer/MarginContainer"]
+layout_mode = 2
+
+[node name="TitleLabel" type="Label" parent="CenterContainer/PanelContainer/MarginContainer/VBox"]
+layout_mode = 2
+
+[node name="MuteToggle" type="CheckButton" parent="CenterContainer/PanelContainer/MarginContainer/VBox"]
+layout_mode = 2
+
+[node name="VolumeLabel" type="Label" parent="CenterContainer/PanelContainer/MarginContainer/VBox"]
+layout_mode = 2
+
+[node name="VolumeSlider" type="HSlider" parent="CenterContainer/PanelContainer/MarginContainer/VBox"]
+layout_mode = 2
+
+[node name="BackButton" type="Button" parent="CenterContainer/PanelContainer/MarginContainer/VBox"]
+layout_mode = 2

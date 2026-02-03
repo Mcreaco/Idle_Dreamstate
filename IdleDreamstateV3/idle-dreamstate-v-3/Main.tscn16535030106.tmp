@@ -1,0 +1,376 @@
+[gd_scene load_steps=22 format=3 uid="uid://fflc2602ivkd"]
+
+[ext_resource type="Script" uid="uid://ba8x26l8g7ryg" path="res://scripts/GameManager.gd" id="1_r0du0"]
+[ext_resource type="Script" uid="uid://c4antkg05w8w8" path="res://scripts/systems/RiskSystem.gd" id="2_cm0pq"]
+[ext_resource type="Script" uid="uid://du5ayvf0mls4y" path="res://scripts/systems/OverclockSystem.gd" id="3_cm0pq"]
+[ext_resource type="Script" uid="uid://cjhaormwpebtl" path="res://scripts/ui/TopBar.gd" id="3_fos0i"]
+[ext_resource type="Script" uid="uid://bnyoqv5cakdhg" path="res://scripts/UpgradeManager.gd" id="4_fos0i"]
+[ext_resource type="Script" uid="uid://cxmtu3nqjuty0" path="res://scripts/systems/CorruptionSystem.gd" id="4_lgr22"]
+[ext_resource type="Script" uid="uid://c4e51xnyeklc" path="res://scripts/AutomationSystem.gd" id="5_3dxm6"]
+[ext_resource type="Script" uid="uid://wmcm22u3xbyi" path="res://scripts/systems/NightmareSystem.gd" id="5_03owx"]
+[ext_resource type="Script" uid="uid://gh34jom35iuo" path="res://scripts/systems/PerkSystem.gd" id="8_c6i3y"]
+[ext_resource type="Script" uid="uid://2p1584ctasen" path="res://scripts/SaveSystem.gd" id="8_trn2v"]
+[ext_resource type="Script" uid="uid://b6kahc8g5pnpv" path="res://scripts/ui/PauseMenu.gd" id="9_5vvyt"]
+[ext_resource type="Script" uid="uid://dhojqjrpp1j38" path="res://scripts/SoundSystem.gd" id="10_wkp8b"]
+[ext_resource type="Script" uid="uid://csaaip34x5sik" path="res://scripts/visual/CoreVisual.gd" id="11_20pc6"]
+[ext_resource type="Script" uid="uid://dtax522odhtkk" path="res://scripts/ui/PerkPanel.gd" id="11_c2ibq"]
+[ext_resource type="Script" uid="uid://cg4540q85ebdr" path="res://DiveButton.gd" id="12_sc1dx"]
+[ext_resource type="Script" uid="uid://dlv3wtk1sfosk" path="res://InputDebugger.gd" id="16_fpfj3"]
+[ext_resource type="Script" uid="uid://cluspjh7ln06w" path="res://ButtonStyleDebugger.gd" id="16_sc1dx"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_03owx"]
+albedo_color = Color(0.19710189, 3.7541984e-05, 0.73338795, 1)
+
+[sub_resource type="SphereMesh" id="SphereMesh_wkp8b"]
+material = SubResource("StandardMaterial3D_03owx")
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_fpfj3"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_c2ibq"]
+corner_detail = 12
+
+[node name="Main" type="Node"]
+
+[node name="World3D" type="Node3D" parent="."]
+
+[node name="Camera3D" type="Camera3D" parent="World3D"]
+transform = Transform3D(1, 0, 0, 0, 0.9659258, 0.25881904, 0, -0.25881904, 0.9659258, 0, 1.5, 4)
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="World3D"]
+transform = Transform3D(1, 0, 0, 0, 0.70710677, 0.70710677, 0, -0.70710677, 0.70710677, 0, 0, 0)
+light_energy = 1.2
+
+[node name="Core" type="Node3D" parent="World3D"]
+script = ExtResource("11_20pc6")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="World3D/Core"]
+mesh = SubResource("SphereMesh_wkp8b")
+skeleton = NodePath("../..")
+
+[node name="OmniLight3D" type="OmniLight3D" parent="World3D/Core"]
+light_color = Color(0.45888627, 0.5367564, 1, 1)
+light_energy = 2.0
+
+[node name="GameManager" type="Node" parent="."]
+script = ExtResource("1_r0du0")
+
+[node name="Systems" type="Node" parent="."]
+
+[node name="RiskSystem" type="Node" parent="Systems"]
+script = ExtResource("2_cm0pq")
+
+[node name="OverclockSystem" type="Node" parent="Systems"]
+script = ExtResource("3_cm0pq")
+
+[node name="CorruptionSystem" type="Node" parent="Systems"]
+script = ExtResource("4_lgr22")
+
+[node name="NightmareSystem" type="Node" parent="Systems"]
+script = ExtResource("5_03owx")
+
+[node name="UpgradeManager" type="Node" parent="Systems"]
+script = ExtResource("4_fos0i")
+
+[node name="AutomationSystem" type="Node" parent="Systems"]
+script = ExtResource("5_3dxm6")
+
+[node name="PerkSystem" type="Node" parent="Systems"]
+script = ExtResource("8_c6i3y")
+
+[node name="UI" type="CanvasLayer" parent="."]
+
+[node name="MainPanel" type="PanelContainer" parent="UI"]
+anchors_preset = -1
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 20.0
+offset_top = -20.0
+offset_right = -20.0
+offset_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 0
+theme_override_styles/panel = SubResource("StyleBoxFlat_fpfj3")
+
+[node name="MarginContainer" type="MarginContainer" parent="UI/MainPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 12
+
+[node name="HBoxContainer" type="HBoxContainer" parent="UI/MainPanel/MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="PerkPanel" type="PanelContainer" parent="UI/MainPanel/MarginContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_c2ibq")
+script = ExtResource("11_c2ibq")
+
+[node name="OpenPerksButton" type="Button" parent="UI/MainPanel/MarginContainer/HBoxContainer/PerkPanel"]
+layout_mode = 2
+
+[node name="Panel" type="PanelContainer" parent="UI/MainPanel/MarginContainer/HBoxContainer/PerkPanel"]
+layout_mode = 2
+
+[node name="VBox" type="VBoxContainer" parent="UI/MainPanel/MarginContainer/HBoxContainer/PerkPanel/Panel"]
+layout_mode = 2
+
+[node name="TitleLabel" type="Label" parent="UI/MainPanel/MarginContainer/HBoxContainer/PerkPanel/Panel/VBox"]
+layout_mode = 2
+
+[node name="Perk1Button" type="Button" parent="UI/MainPanel/MarginContainer/HBoxContainer/PerkPanel/Panel/VBox"]
+custom_minimum_size = Vector2(220, 0)
+layout_mode = 2
+
+[node name="Perk2Button" type="Button" parent="UI/MainPanel/MarginContainer/HBoxContainer/PerkPanel/Panel/VBox"]
+layout_mode = 2
+
+[node name="Perk3Button" type="Button" parent="UI/MainPanel/MarginContainer/HBoxContainer/PerkPanel/Panel/VBox"]
+layout_mode = 2
+
+[node name="CloseButton" type="Button" parent="UI/MainPanel/MarginContainer/HBoxContainer/PerkPanel/Panel/VBox"]
+layout_mode = 2
+
+[node name="UpgradePanel1" type="PanelContainer" parent="UI/MainPanel/MarginContainer/HBoxContainer"]
+layout_mode = 2
+
+[node name="VBox" type="VBoxContainer" parent="UI/MainPanel/MarginContainer/HBoxContainer/UpgradePanel1"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Upgrades" type="Label" parent="UI/MainPanel/MarginContainer/HBoxContainer/UpgradePanel1/VBox"]
+layout_mode = 2
+text = "Upgrades
+"
+
+[node name="BuyThoughtsUpgradeButton" type="Button" parent="UI/MainPanel/MarginContainer/HBoxContainer/UpgradePanel1/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_disabled_color = Color(0, 0, 0, 1)
+
+[node name="BuyStabilityUpgradeButton" type="Button" parent="UI/MainPanel/MarginContainer/HBoxContainer/UpgradePanel1/VBox"]
+layout_mode = 2
+
+[node name="TopBar" type="Control" parent="UI"]
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 3
+anchors_preset = 10
+anchor_right = 1.0
+grow_horizontal = 2
+mouse_filter = 2
+script = ExtResource("3_fos0i")
+
+[node name="MainVBox" type="VBoxContainer" parent="UI/TopBar"]
+layout_mode = 0
+offset_right = 626.0
+offset_bottom = 89.0
+theme_override_constants/separation = 8
+
+[node name="StatsRow" type="HBoxContainer" parent="UI/TopBar/MainVBox"]
+layout_mode = 2
+theme_override_constants/separation = 12
+alignment = 1
+
+[node name="ThoughtsLabel" type="Label" parent="UI/TopBar/MainVBox/StatsRow"]
+layout_mode = 2
+size_flags_horizontal = 4
+
+[node name="ControlLabel" type="Label" parent="UI/TopBar/MainVBox/StatsRow"]
+layout_mode = 2
+size_flags_horizontal = 4
+
+[node name="MemoriesLabel" type="Label" parent="UI/TopBar/MainVBox/StatsRow"]
+layout_mode = 2
+size_flags_horizontal = 4
+
+[node name="RunTimeLabel" type="Label" parent="UI/TopBar/MainVBox/StatsRow"]
+layout_mode = 2
+size_flags_horizontal = 4
+
+[node name="BestRunLabel" type="Label" parent="UI/TopBar/MainVBox/StatsRow"]
+layout_mode = 2
+size_flags_horizontal = 4
+
+[node name="RiskRow" type="HBoxContainer" parent="UI/TopBar/MainVBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="RiskBar" type="ProgressBar" parent="UI/TopBar/MainVBox/RiskRow"]
+custom_minimum_size = Vector2(300, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 1
+
+[node name="RiskBar2" type="ProgressBar" parent="UI/TopBar/MainVBox/RiskRow"]
+custom_minimum_size = Vector2(300, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 1
+
+[node name="AlertLabel" type="Label" parent="UI/TopBar/MainVBox/RiskRow"]
+layout_mode = 2
+
+[node name="NightmareLabel" type="Label" parent="UI/TopBar/MainVBox/RiskRow"]
+layout_mode = 2
+
+[node name="HintLabel" type="Label" parent="UI/TopBar/MainVBox"]
+layout_mode = 2
+
+[node name="StateDisplay" type="Label" parent="UI"]
+offset_left = 197.0
+offset_top = 18.0
+offset_right = 237.0
+offset_bottom = 41.0
+
+[node name="DiveButton" type="Button" parent="UI"]
+offset_left = 32.0
+offset_top = 185.0
+offset_right = 74.0
+offset_bottom = 216.0
+text = "Dive"
+script = ExtResource("12_sc1dx")
+
+[node name="OverclockButton" type="Button" parent="UI"]
+offset_left = 50.0
+offset_top = 290.0
+offset_right = 68.0
+offset_bottom = 308.0
+
+[node name="WakeButton" type="Button" parent="UI"]
+offset_left = 18.0
+offset_top = 117.0
+offset_right = 69.0
+offset_bottom = 148.0
+text = "Wake"
+
+[node name="Panels" type="Control" parent="UI"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="UpgradePanel" type="Panel" parent="UI/Panels"]
+layout_mode = 0
+offset_left = 28.0
+offset_top = 441.0
+offset_right = 68.0
+offset_bottom = 481.0
+
+[node name="MemoryPanel" type="Panel" parent="UI/Panels"]
+layout_mode = 0
+offset_left = 34.0
+offset_top = 370.0
+offset_right = 74.0
+offset_bottom = 410.0
+
+[node name="AutomationPanel" type="Panel" parent="UI/Panels"]
+layout_mode = 0
+offset_left = 26.0
+offset_top = 506.0
+offset_right = 66.0
+offset_bottom = 546.0
+
+[node name="AutoDiveToggle" type="CheckButton" parent="UI"]
+offset_left = 1.0
+offset_top = 83.0
+offset_right = 45.0
+offset_bottom = 107.0
+
+[node name="AutoWakeToggle" type="CheckButton" parent="UI"]
+offset_left = 8.0
+offset_top = 155.0
+offset_right = 52.0
+offset_bottom = 179.0
+
+[node name="AutoOverclockToggle" type="CheckButton" parent="UI"]
+offset_left = 1.0
+offset_top = 61.0
+offset_right = 45.0
+offset_bottom = 85.0
+
+[node name="BackToMenuButton" type="Button" parent="UI"]
+offset_left = 1.0
+offset_top = 270.0
+offset_right = 16.0
+offset_bottom = 279.0
+
+[node name="PauseMenu" type="CanvasLayer" parent="UI"]
+script = ExtResource("9_5vvyt")
+
+[node name="CenterContainer" type="CenterContainer" parent="UI/PauseMenu"]
+visible = false
+custom_minimum_size = Vector2(320, 52)
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Panel" type="PanelContainer" parent="UI/PauseMenu/CenterContainer"]
+layout_mode = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="UI/PauseMenu/CenterContainer/Panel"]
+layout_mode = 2
+
+[node name="VBox" type="VBoxContainer" parent="UI/PauseMenu/CenterContainer/Panel/MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="TitleLabel" type="Label" parent="UI/PauseMenu/CenterContainer/Panel/MarginContainer/VBox"]
+modulate = Color(1.3528494, 1.3528494, 1.3528494, 1)
+custom_minimum_size = Vector2(220, 48)
+layout_mode = 2
+text = "PAUSED"
+
+[node name="ResumeButton" type="Button" parent="UI/PauseMenu/CenterContainer/Panel/MarginContainer/VBox"]
+modulate = Color(3682719500000, 3682719500000, 3682719500000, 1)
+custom_minimum_size = Vector2(220, 48)
+layout_mode = 2
+
+[node name="MenuButton" type="Button" parent="UI/PauseMenu/CenterContainer/Panel/MarginContainer/VBox"]
+custom_minimum_size = Vector2(220, 48)
+layout_mode = 2
+
+[node name="QuitButton" type="Button" parent="UI/PauseMenu/CenterContainer/Panel/MarginContainer/VBox"]
+custom_minimum_size = Vector2(220, 48)
+layout_mode = 2
+
+[node name="ResetSaveButton" type="Button" parent="UI/PauseMenu/CenterContainer/Panel/MarginContainer/VBox"]
+custom_minimum_size = Vector2(220, 48)
+layout_mode = 2
+
+[node name="InputDebugger" type="Node" parent="."]
+script = ExtResource("16_fpfj3")
+
+[node name="ButtonStyleDebugger" type="Node" parent="."]
+script = ExtResource("16_sc1dx")
+
+[node name="SoundSystem" type="Node" parent="."]
+script = ExtResource("10_wkp8b")
+
+[node name="SFX_Dive" type="AudioStreamPlayer" parent="SoundSystem"]
+
+[node name="SFX_Overclock" type="AudioStreamPlayer" parent="SoundSystem"]
+
+[node name="SFX_Wake" type="AudioStreamPlayer" parent="SoundSystem"]
+
+[node name="SFX_Fail" type="AudioStreamPlayer" parent="SoundSystem"]
+
+[node name="SFX_Corruption" type="AudioStreamPlayer" parent="SoundSystem"]
+
+[node name="SaveSystem" type="Node" parent="."]
+script = ExtResource("8_trn2v")
+
+[connection signal="pressed" from="UI/MainPanel/MarginContainer/HBoxContainer/UpgradePanel1/VBox/BuyThoughtsUpgradeButton" to="GameManager" method="do_buy_thoughts_upgrade"]
+[connection signal="pressed" from="UI/MainPanel/MarginContainer/HBoxContainer/UpgradePanel1/VBox/BuyStabilityUpgradeButton" to="GameManager" method="do_buy_stability_upgrade"]
+[connection signal="pressed" from="UI/DiveButton" to="GameManager" method="do_dive"]
+[connection signal="pressed" from="UI/OverclockButton" to="GameManager" method="do_overclock"]
+[connection signal="pressed" from="UI/WakeButton" to="GameManager" method="do_wake"]

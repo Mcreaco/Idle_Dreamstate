@@ -1,0 +1,29 @@
+[gd_scene load_steps=2 format=3 uid="uid://dak8u6w0b0va2"]
+
+[ext_resource type="Script" uid="uid://dj0kkius6tut0" path="res://MetaPerkRow.gd" id="1_il6wh"]
+
+[node name="MetaPerkRow" type="HBoxContainer"]
+custom_minimum_size = Vector2(0, 52)
+offset_right = 40.0
+offset_bottom = 40.0
+size_flags_horizontal = 3
+theme_override_constants/separation = 12
+script = ExtResource("1_il6wh")
+
+[node name="BuyButton" type="Button" parent="."]
+custom_minimum_size = Vector2(260, 0)
+layout_mode = 2
+
+[node name="Spacer" type="Control" parent="."]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Bar" type="ProgressBar" parent="."]
+custom_minimum_size = Vector2(180, 10)
+layout_mode = 2
+show_percentage = false
+
+[node name="CostLabel" type="Label" parent="."]
+custom_minimum_size = Vector2(80, 0)
+layout_mode = 2
+horizontal_alignment = 2

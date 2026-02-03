@@ -1,0 +1,15 @@
+[gd_scene load_steps=2 format=3 uid="uid://gmsgf6qxq5g2"]
+
+[ext_resource type="Script" uid="uid://bx6fex1fwy7ur" path="res://OfflinePopup.gd" id="1_ssfgl"]
+
+[node name="OfflinePopup" type="CanvasLayer"]
+script = ExtResource("1_ssfgl")
+
+[node name="Panel" type="Panel" parent="."]
+offset_right = 40.0
+offset_bottom = 40.0
+
+[node name="TextLabel" type="Label" parent="Panel"]
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 23.0

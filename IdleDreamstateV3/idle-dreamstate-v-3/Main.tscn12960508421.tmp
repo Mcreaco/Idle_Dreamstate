@@ -1,0 +1,918 @@
+[gd_scene load_steps=38 format=3 uid="uid://fflc2602ivkd"]
+
+[ext_resource type="Script" uid="uid://cr7grsqq7v7ws" path="res://PillarStack.gd" id="1_3ccbu"]
+[ext_resource type="Script" uid="uid://d4fpt00r56di3" path="res://WorldProbe.gd" id="1_o7g6l"]
+[ext_resource type="Script" uid="uid://ba8x26l8g7ryg" path="res://scripts/GameManager.gd" id="1_r0du0"]
+[ext_resource type="Script" uid="uid://dlvq2h4a0gjot" path="res://CameraDebug.gd" id="1_sph85"]
+[ext_resource type="Script" uid="uid://c4antkg05w8w8" path="res://scripts/systems/RiskSystem.gd" id="2_cm0pq"]
+[ext_resource type="Script" uid="uid://du5ayvf0mls4y" path="res://scripts/systems/OverclockSystem.gd" id="3_cm0pq"]
+[ext_resource type="Script" uid="uid://cjhaormwpebtl" path="res://scripts/ui/TopBar.gd" id="3_fos0i"]
+[ext_resource type="Script" uid="uid://bnyoqv5cakdhg" path="res://scripts/UpgradeManager.gd" id="4_fos0i"]
+[ext_resource type="Script" uid="uid://cxmtu3nqjuty0" path="res://scripts/systems/CorruptionSystem.gd" id="4_lgr22"]
+[ext_resource type="Script" uid="uid://c4e51xnyeklc" path="res://scripts/AutomationSystem.gd" id="5_3dxm6"]
+[ext_resource type="Script" uid="uid://wmcm22u3xbyi" path="res://scripts/systems/NightmareSystem.gd" id="5_03owx"]
+[ext_resource type="Script" uid="uid://gh34jom35iuo" path="res://scripts/systems/PerkSystem.gd" id="8_c6i3y"]
+[ext_resource type="Script" uid="uid://2p1584ctasen" path="res://scripts/SaveSystem.gd" id="8_trn2v"]
+[ext_resource type="Script" uid="uid://b6kahc8g5pnpv" path="res://scripts/ui/PauseMenu.gd" id="9_5vvyt"]
+[ext_resource type="Script" uid="uid://cg5fujuktdse5" path="res://UIHints.gd" id="10_5tuhn"]
+[ext_resource type="Script" uid="uid://djvae1t5xof2j" path="res://AbyssPerkSystem.gd" id="10_40n85"]
+[ext_resource type="Script" uid="uid://dhojqjrpp1j38" path="res://scripts/SoundSystem.gd" id="10_wkp8b"]
+[ext_resource type="Script" uid="uid://dhhrjdpbbnid8" path="res://UpgradeRow.gd" id="11_3b0ty"]
+[ext_resource type="Script" uid="uid://dtax522odhtkk" path="res://scripts/ui/PerkPanel.gd" id="11_c2ibq"]
+[ext_resource type="Script" uid="uid://fejt0grvd7rk" path="res://NormalVBoxInfo.gd" id="11_mxvw5"]
+[ext_resource type="Script" uid="uid://dpatb6mnvaom6" path="res://AbyssBarBinder.gd" id="12_hri7i"]
+[ext_resource type="Script" uid="uid://cg4540q85ebdr" path="res://DiveButton.gd" id="12_sc1dx"]
+[ext_resource type="Script" uid="uid://d6istu0anmvh" path="res://WakeButton.gd" id="14_2gh4u"]
+[ext_resource type="PackedScene" uid="uid://gmsgf6qxq5g2" path="res://OfflinePopup.tscn" id="14_kjvhd"]
+[ext_resource type="Script" uid="uid://bl5xx1su8g8cu" path="res://PerksHeaderBinder.gd" id="14_sqvbp"]
+[ext_resource type="Script" uid="uid://dlv3wtk1sfosk" path="res://InputDebugger.gd" id="16_fpfj3"]
+[ext_resource type="Script" uid="uid://cluspjh7ln06w" path="res://ButtonStyleDebugger.gd" id="16_sc1dx"]
+[ext_resource type="Script" uid="uid://bbgh8wo1i25v1" path="res://AutomationBinder.gd" id="18_3b0ty"]
+[ext_resource type="Script" uid="uid://bgoolv2njw6y" path="res://AbyssButtonBinder.gd" id="19_5mvff"]
+[ext_resource type="Script" uid="uid://u7x63hulqmsx" path="res://PrestigePanel.gd" id="19_bg4s2"]
+[ext_resource type="Script" uid="uid://8ciamm175dt2" path="res://PerksToggleBinder.gd" id="20_hhcpw"]
+[ext_resource type="Script" uid="uid://beskhkttg4fqe" path="res://AbyssUnlockFX.gd" id="23_w3rk5"]
+[ext_resource type="Script" uid="uid://x4rtaidmt5a1" path="res://AbyssPanel.gd" id="25_oye8v"]
+[ext_resource type="Script" uid="uid://c8qm5d7uav3wd" path="res://MemoriesLabelBinder.gd" id="26_xrxkg"]
+[ext_resource type="Script" uid="uid://d1iyqqewlyb3t" path="res://AbyssPerkRow.gd" id="27_gb15f"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_40n85"]
+shading_mode = 0
+albedo_color = Color(0.6901961, 0.20392157, 1, 1)
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_gb15f"]
+
+[node name="Main" type="Node"]
+script = ExtResource("1_o7g6l")
+
+[node name="World3D" type="Node3D" parent="."]
+
+[node name="Camera3D" type="Camera3D" parent="World3D"]
+transform = Transform3D(1, 0, 0, 0, 0.9396927, -0.34202015, 0, 0.34202015, 0.9396927, 0, 2, 10)
+script = ExtResource("1_sph85")
+
+[node name="Sun" type="DirectionalLight3D" parent="World3D"]
+transform = Transform3D(1, 0, 0, 0, 0.70710677, 0.70710677, 0, -0.70710677, 0.70710677, 0, 0, 0)
+light_energy = 2.0
+
+[node name="PillarRig" type="Node3D" parent="World3D"]
+script = ExtResource("1_3ccbu")
+
+[node name="Segments" type="Node3D" parent="World3D/PillarRig"]
+
+[node name="Segmen01" type="MeshInstance3D" parent="World3D/PillarRig/Segments"]
+material_override = SubResource("StandardMaterial3D_40n85")
+mesh = SubResource("CylinderMesh_gb15f")
+skeleton = NodePath("../../..")
+
+[node name="Segmen02" type="MeshInstance3D" parent="World3D/PillarRig/Segments"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 6, 0)
+material_override = SubResource("StandardMaterial3D_40n85")
+mesh = SubResource("CylinderMesh_gb15f")
+skeleton = NodePath("../../..")
+
+[node name="Segmen03" type="MeshInstance3D" parent="World3D/PillarRig/Segments"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 12, 0)
+material_override = SubResource("StandardMaterial3D_40n85")
+mesh = SubResource("CylinderMesh_gb15f")
+skeleton = NodePath("../../..")
+
+[node name="Segmen04" type="MeshInstance3D" parent="World3D/PillarRig/Segments"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 18, 0)
+material_override = SubResource("StandardMaterial3D_40n85")
+mesh = SubResource("CylinderMesh_gb15f")
+skeleton = NodePath("../../..")
+
+[node name="Segmen05" type="MeshInstance3D" parent="World3D/PillarRig/Segments"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 24, 0)
+material_override = SubResource("StandardMaterial3D_40n85")
+mesh = SubResource("CylinderMesh_gb15f")
+skeleton = NodePath("../../..")
+
+[node name="Segmen06" type="MeshInstance3D" parent="World3D/PillarRig/Segments"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 30, 0)
+material_override = SubResource("StandardMaterial3D_40n85")
+mesh = SubResource("CylinderMesh_gb15f")
+skeleton = NodePath("../../..")
+
+[node name="Segmen07" type="MeshInstance3D" parent="World3D/PillarRig/Segments"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 36, 0)
+material_override = SubResource("StandardMaterial3D_40n85")
+mesh = SubResource("CylinderMesh_gb15f")
+skeleton = NodePath("../../..")
+
+[node name="Segmen08" type="MeshInstance3D" parent="World3D/PillarRig/Segments"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 42, 0)
+material_override = SubResource("StandardMaterial3D_40n85")
+mesh = SubResource("CylinderMesh_gb15f")
+skeleton = NodePath("../../..")
+
+[node name="Segmen09" type="MeshInstance3D" parent="World3D/PillarRig/Segments"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 48, 0)
+material_override = SubResource("StandardMaterial3D_40n85")
+mesh = SubResource("CylinderMesh_gb15f")
+skeleton = NodePath("../../..")
+
+[node name="Segmen10" type="MeshInstance3D" parent="World3D/PillarRig/Segments"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 54, 0)
+material_override = SubResource("StandardMaterial3D_40n85")
+mesh = SubResource("CylinderMesh_gb15f")
+skeleton = NodePath("../../..")
+
+[node name="Segmen11" type="MeshInstance3D" parent="World3D/PillarRig/Segments"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 60, 0)
+material_override = SubResource("StandardMaterial3D_40n85")
+mesh = SubResource("CylinderMesh_gb15f")
+skeleton = NodePath("../../..")
+
+[node name="Segmen12" type="MeshInstance3D" parent="World3D/PillarRig/Segments"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 66, 0)
+material_override = SubResource("StandardMaterial3D_40n85")
+mesh = SubResource("CylinderMesh_gb15f")
+skeleton = NodePath("../../..")
+
+[node name="Segmen13" type="MeshInstance3D" parent="World3D/PillarRig/Segments"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 72, 0)
+material_override = SubResource("StandardMaterial3D_40n85")
+mesh = SubResource("CylinderMesh_gb15f")
+skeleton = NodePath("../../..")
+
+[node name="Segmen14" type="MeshInstance3D" parent="World3D/PillarRig/Segments"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 78, 0)
+material_override = SubResource("StandardMaterial3D_40n85")
+mesh = SubResource("CylinderMesh_gb15f")
+skeleton = NodePath("../../..")
+
+[node name="Segmen15" type="MeshInstance3D" parent="World3D/PillarRig/Segments"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 84, 0)
+material_override = SubResource("StandardMaterial3D_40n85")
+mesh = SubResource("CylinderMesh_gb15f")
+skeleton = NodePath("../../..")
+
+[node name="GameManager" type="Node" parent="."]
+script = ExtResource("1_r0du0")
+
+[node name="Systems" type="Node" parent="."]
+
+[node name="RiskSystem" type="Node" parent="Systems"]
+script = ExtResource("2_cm0pq")
+
+[node name="OverclockSystem" type="Node" parent="Systems"]
+script = ExtResource("3_cm0pq")
+
+[node name="CorruptionSystem" type="Node" parent="Systems"]
+script = ExtResource("4_lgr22")
+
+[node name="NightmareSystem" type="Node" parent="Systems"]
+script = ExtResource("5_03owx")
+
+[node name="UpgradeManager" type="Node" parent="Systems"]
+script = ExtResource("4_fos0i")
+
+[node name="AutomationSystem" type="Node" parent="Systems"]
+script = ExtResource("5_3dxm6")
+
+[node name="PerkSystem" type="Node" parent="Systems"]
+script = ExtResource("8_c6i3y")
+
+[node name="AbyssPerkSystem" type="Node" parent="Systems"]
+script = ExtResource("10_40n85")
+
+[node name="UI" type="CanvasLayer" parent="."]
+script = ExtResource("10_5tuhn")
+
+[node name="BottomBar" type="Panel" parent="UI"]
+custom_minimum_size = Vector2(0, 220)
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -303.0
+grow_horizontal = 2
+grow_vertical = 0
+size_flags_horizontal = 3
+script = ExtResource("10_5tuhn")
+
+[node name="RootMargin" type="MarginContainer" parent="UI/BottomBar"]
+layout_mode = 1
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -275.0
+grow_horizontal = 2
+grow_vertical = 0
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 12
+
+[node name="Split" type="HBoxContainer" parent="UI/BottomBar/RootMargin"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="NormalSide" type="PanelContainer" parent="UI/BottomBar/RootMargin/Split"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="NormalVBox" type="VBoxContainer" parent="UI/BottomBar/RootMargin/Split/NormalSide"]
+layout_mode = 2
+script = ExtResource("11_mxvw5")
+
+[node name="InfoHBox" type="HBoxContainer" parent="UI/BottomBar/RootMargin/Split/NormalSide/NormalVBox"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Title" type="Label" parent="UI/BottomBar/RootMargin/Split/NormalSide/NormalVBox/InfoHBox"]
+layout_mode = 2
+
+[node name="TierRow" type="Label" parent="UI/BottomBar/RootMargin/Split/NormalSide/NormalVBox/InfoHBox"]
+layout_mode = 2
+
+[node name="DepthRow" type="Label" parent="UI/BottomBar/RootMargin/Split/NormalSide/NormalVBox/InfoHBox"]
+layout_mode = 2
+
+[node name="AbyssLabel" type="Label" parent="UI/BottomBar/RootMargin/Split/NormalSide/NormalVBox/InfoHBox"]
+layout_mode = 2
+
+[node name="AbyssBar" type="ProgressBar" parent="UI/BottomBar/RootMargin/Split/NormalSide/NormalVBox/InfoHBox"]
+custom_minimum_size = Vector2(0, 24)
+layout_mode = 2
+size_flags_horizontal = 3
+show_percentage = false
+script = ExtResource("12_hri7i")
+reveal_label_path = NodePath("../AbyssLabel")
+
+[node name="BodySplit" type="HBoxContainer" parent="UI/BottomBar/RootMargin/Split/NormalSide/NormalVBox"]
+layout_mode = 2
+
+[node name="Buttons" type="VBoxContainer" parent="UI/BottomBar/RootMargin/Split/NormalSide/NormalVBox/BodySplit"]
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("10_5tuhn")
+
+[node name="ThoughtsRow" type="HBoxContainer" parent="UI/BottomBar/RootMargin/Split/NormalSide/NormalVBox/BodySplit/Buttons"]
+layout_mode = 2
+script = ExtResource("11_3b0ty")
+
+[node name="BuyThoughtsUpgradeButton" type="Button" parent="UI/BottomBar/RootMargin/Split/NormalSide/NormalVBox/BodySplit/Buttons/ThoughtsRow"]
+custom_minimum_size = Vector2(220, 0)
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_disabled_color = Color(0, 0, 0, 1)
+
+[node name="Meta" type="VBoxContainer" parent="UI/BottomBar/RootMargin/Split/NormalSide/NormalVBox/BodySplit/Buttons/ThoughtsRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Mini" type="Label" parent="UI/BottomBar/RootMargin/Split/NormalSide/NormalVBox/BodySplit/Buttons/ThoughtsRow/Meta"]
+custom_minimum_size = Vector2(0, 22)
+layout_mode = 2
+clip_text = true
+text_overrun_behavior = 5
+
+[node name="Bar" type="ProgressBar" parent="UI/BottomBar/RootMargin/Split/NormalSide/NormalVBox/BodySplit/Buttons/ThoughtsRow/Meta"]
+custom_minimum_size = Vector2(0, 16)
+layout_mode = 2
+size_flags_vertical = 1
+show_percentage = false
+
+[node name="DeepDivesRow" type="HBoxContainer" parent="UI/BottomBar/RootMargin/Split/NormalSide/NormalVBox/BodySplit/Buttons"]
+layout_mode = 2
+script = ExtResource("11_3b0ty")
+mode = "deepdives"
+
+[node name="DeepDivesButton" type="Button" parent="UI/BottomBar/RootMargin/Split/NormalSide/NormalVBox/BodySplit/Buttons/DeepDivesRow"]
+custom_minimum_size = Vector2(220, 0)
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_disabled_color = Color(0, 0, 0, 1)
+
+[node name="Meta" type="VBoxContainer" parent="UI/BottomBar/RootMargin/Split/NormalSide/NormalVBox/BodySplit/Buttons/DeepDivesRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Mini" type="Label" parent="UI/BottomBar/RootMargin/Split/NormalSide/NormalVBox/BodySplit/Buttons/DeepDivesRow/Meta"]
+custom_minimum_size = Vector2(0, 22)
+layout_mode = 2
+clip_text = true
+text_overrun_behavior = 5
+
+[node name="Bar" type="ProgressBar" parent="UI/BottomBar/RootMargin/Split/NormalSide/NormalVBox/BodySplit/Buttons/DeepDivesRow/Meta"]
+custom_minimum_size = Vector2(0, 16)
+layout_mode = 2
+size_flags_vertical = 1
+show_percentage = false
+
+[node name="StabilityRow" type="HBoxContainer" parent="UI/BottomBar/RootMargin/Split/NormalSide/NormalVBox/BodySplit/Buttons"]
+layout_mode = 2
+script = ExtResource("11_3b0ty")
+mode = "stability"
+
+[node name="BuyStabilityUpgradeButton" type="Button" parent="UI/BottomBar/RootMargin/Split/NormalSide/NormalVBox/BodySplit/Buttons/StabilityRow"]
+custom_minimum_size = Vector2(220, 0)
+layout_mode = 2
+
+[node name="Meta" type="VBoxContainer" parent="UI/BottomBar/RootMargin/Split/NormalSide/NormalVBox/BodySplit/Buttons/StabilityRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Mini" type="Label" parent="UI/BottomBar/RootMargin/Split/NormalSide/NormalVBox/BodySplit/Buttons/StabilityRow/Meta"]
+custom_minimum_size = Vector2(0, 22)
+layout_mode = 2
+clip_text = true
+text_overrun_behavior = 5
+
+[node name="Bar" type="ProgressBar" parent="UI/BottomBar/RootMargin/Split/NormalSide/NormalVBox/BodySplit/Buttons/StabilityRow/Meta"]
+custom_minimum_size = Vector2(0, 14)
+layout_mode = 2
+size_flags_vertical = 1
+show_percentage = false
+
+[node name="MentalBufferRow" type="HBoxContainer" parent="UI/BottomBar/RootMargin/Split/NormalSide/NormalVBox/BodySplit/Buttons"]
+layout_mode = 2
+script = ExtResource("11_3b0ty")
+mode = "mentalbuffer"
+
+[node name="MentalBufferButton" type="Button" parent="UI/BottomBar/RootMargin/Split/NormalSide/NormalVBox/BodySplit/Buttons/MentalBufferRow"]
+custom_minimum_size = Vector2(220, 0)
+layout_mode = 2
+
+[node name="Meta" type="VBoxContainer" parent="UI/BottomBar/RootMargin/Split/NormalSide/NormalVBox/BodySplit/Buttons/MentalBufferRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Mini" type="Label" parent="UI/BottomBar/RootMargin/Split/NormalSide/NormalVBox/BodySplit/Buttons/MentalBufferRow/Meta"]
+custom_minimum_size = Vector2(0, 22)
+layout_mode = 2
+clip_text = true
+text_overrun_behavior = 5
+
+[node name="Bar" type="ProgressBar" parent="UI/BottomBar/RootMargin/Split/NormalSide/NormalVBox/BodySplit/Buttons/MentalBufferRow/Meta"]
+custom_minimum_size = Vector2(0, 14)
+layout_mode = 2
+size_flags_vertical = 1
+show_percentage = false
+
+[node name="OverclockMasterRow" type="HBoxContainer" parent="UI/BottomBar/RootMargin/Split/NormalSide/NormalVBox/BodySplit/Buttons"]
+layout_mode = 2
+script = ExtResource("11_3b0ty")
+mode = "overclockmastery"
+
+[node name="OverclockMasteryButton" type="Button" parent="UI/BottomBar/RootMargin/Split/NormalSide/NormalVBox/BodySplit/Buttons/OverclockMasterRow"]
+custom_minimum_size = Vector2(220, 0)
+layout_mode = 2
+
+[node name="Meta" type="VBoxContainer" parent="UI/BottomBar/RootMargin/Split/NormalSide/NormalVBox/BodySplit/Buttons/OverclockMasterRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Mini" type="Label" parent="UI/BottomBar/RootMargin/Split/NormalSide/NormalVBox/BodySplit/Buttons/OverclockMasterRow/Meta"]
+custom_minimum_size = Vector2(0, 22)
+layout_mode = 2
+clip_text = true
+text_overrun_behavior = 5
+
+[node name="Bar" type="ProgressBar" parent="UI/BottomBar/RootMargin/Split/NormalSide/NormalVBox/BodySplit/Buttons/OverclockMasterRow/Meta"]
+custom_minimum_size = Vector2(0, 14)
+layout_mode = 2
+size_flags_vertical = 1
+show_percentage = false
+
+[node name="OverclockSafetyRow2" type="HBoxContainer" parent="UI/BottomBar/RootMargin/Split/NormalSide/NormalVBox/BodySplit/Buttons"]
+layout_mode = 2
+script = ExtResource("11_3b0ty")
+mode = "overclocksafety"
+
+[node name="OverclockSafetyButton" type="Button" parent="UI/BottomBar/RootMargin/Split/NormalSide/NormalVBox/BodySplit/Buttons/OverclockSafetyRow2"]
+custom_minimum_size = Vector2(220, 0)
+layout_mode = 2
+
+[node name="Meta" type="VBoxContainer" parent="UI/BottomBar/RootMargin/Split/NormalSide/NormalVBox/BodySplit/Buttons/OverclockSafetyRow2"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Mini" type="Label" parent="UI/BottomBar/RootMargin/Split/NormalSide/NormalVBox/BodySplit/Buttons/OverclockSafetyRow2/Meta"]
+custom_minimum_size = Vector2(0, 22)
+layout_mode = 2
+clip_text = true
+text_overrun_behavior = 5
+
+[node name="Bar" type="ProgressBar" parent="UI/BottomBar/RootMargin/Split/NormalSide/NormalVBox/BodySplit/Buttons/OverclockSafetyRow2/Meta"]
+custom_minimum_size = Vector2(0, 14)
+layout_mode = 2
+size_flags_vertical = 1
+show_percentage = false
+
+[node name="UpgradeHoverInfo" type="RichTextLabel" parent="UI/BottomBar/RootMargin/Split/NormalSide/NormalVBox/BodySplit"]
+layout_mode = 2
+
+[node name="PermSide" type="PanelContainer" parent="UI/BottomBar/RootMargin/Split"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="PermVBox" type="VBoxContainer" parent="UI/BottomBar/RootMargin/Split/PermSide"]
+layout_mode = 2
+
+[node name="PerksPanel" type="PanelContainer" parent="UI/BottomBar/RootMargin/Split/PermSide/PermVBox"]
+custom_minimum_size = Vector2(420, 260)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("11_c2ibq")
+
+[node name="Margin" type="MarginContainer" parent="UI/BottomBar/RootMargin/Split/PermSide/PermVBox/PerksPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 16
+
+[node name="VBox" type="VBoxContainer" parent="UI/BottomBar/RootMargin/Split/PermSide/PermVBox/PerksPanel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="HeaderRow" type="HBoxContainer" parent="UI/BottomBar/RootMargin/Split/PermSide/PermVBox/PerksPanel/Margin/VBox"]
+layout_mode = 2
+script = ExtResource("14_sqvbp")
+
+[node name="Title" type="Label" parent="UI/BottomBar/RootMargin/Split/PermSide/PermVBox/PerksPanel/Margin/VBox/HeaderRow"]
+layout_mode = 2
+
+[node name="CloseButton" type="Button" parent="UI/BottomBar/RootMargin/Split/PermSide/PermVBox/PerksPanel/Margin/VBox/HeaderRow"]
+layout_mode = 2
+text = "Close"
+
+[node name="Info" type="RichTextLabel" parent="UI/BottomBar/RootMargin/Split/PermSide/PermVBox/PerksPanel/Margin/VBox/HeaderRow"]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/normal_font_size = 14
+theme_override_font_sizes/bold_font_size = 14
+theme_override_font_sizes/bold_italics_font_size = 14
+theme_override_font_sizes/italics_font_size = 14
+theme_override_font_sizes/mono_font_size = 14
+
+[node name="Scroll" type="ScrollContainer" parent="UI/BottomBar/RootMargin/Split/PermSide/PermVBox/PerksPanel/Margin/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="RowsVBox" type="VBoxContainer" parent="UI/BottomBar/RootMargin/Split/PermSide/PermVBox/PerksPanel/Margin/VBox/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 12
+
+[node name="Row1" type="HBoxContainer" parent="UI/BottomBar/RootMargin/Split/PermSide/PermVBox/PerksPanel/Margin/VBox/Scroll/RowsVBox"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Perk1Label" type="Label" parent="UI/BottomBar/RootMargin/Split/PermSide/PermVBox/PerksPanel/Margin/VBox/Scroll/RowsVBox/Row1"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Perk1BuyButton" type="Button" parent="UI/BottomBar/RootMargin/Split/PermSide/PermVBox/PerksPanel/Margin/VBox/Scroll/RowsVBox/Row1"]
+custom_minimum_size = Vector2(180, 48)
+layout_mode = 2
+
+[node name="Row2" type="HBoxContainer" parent="UI/BottomBar/RootMargin/Split/PermSide/PermVBox/PerksPanel/Margin/VBox/Scroll/RowsVBox"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Perk2Label" type="Label" parent="UI/BottomBar/RootMargin/Split/PermSide/PermVBox/PerksPanel/Margin/VBox/Scroll/RowsVBox/Row2"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Perk2BuyButton" type="Button" parent="UI/BottomBar/RootMargin/Split/PermSide/PermVBox/PerksPanel/Margin/VBox/Scroll/RowsVBox/Row2"]
+custom_minimum_size = Vector2(180, 48)
+layout_mode = 2
+
+[node name="Row3" type="HBoxContainer" parent="UI/BottomBar/RootMargin/Split/PermSide/PermVBox/PerksPanel/Margin/VBox/Scroll/RowsVBox"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Perk3Label" type="Label" parent="UI/BottomBar/RootMargin/Split/PermSide/PermVBox/PerksPanel/Margin/VBox/Scroll/RowsVBox/Row3"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Perk3BuyButton" type="Button" parent="UI/BottomBar/RootMargin/Split/PermSide/PermVBox/PerksPanel/Margin/VBox/Scroll/RowsVBox/Row3"]
+custom_minimum_size = Vector2(180, 48)
+layout_mode = 2
+
+[node name="TopBar" type="Control" parent="UI"]
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 3
+anchors_preset = 10
+anchor_right = 1.0
+grow_horizontal = 2
+mouse_filter = 2
+script = ExtResource("3_fos0i")
+
+[node name="MainVBox" type="VBoxContainer" parent="UI/TopBar"]
+layout_mode = 0
+offset_right = 626.0
+offset_bottom = 89.0
+theme_override_constants/separation = 8
+
+[node name="StatsRow" type="HBoxContainer" parent="UI/TopBar/MainVBox"]
+layout_mode = 2
+theme_override_constants/separation = 12
+alignment = 1
+
+[node name="ThoughtsLabel" type="Label" parent="UI/TopBar/MainVBox/StatsRow"]
+layout_mode = 2
+size_flags_horizontal = 4
+
+[node name="ControlLabel" type="Label" parent="UI/TopBar/MainVBox/StatsRow"]
+layout_mode = 2
+size_flags_horizontal = 4
+
+[node name="MemoriesLabel" type="Label" parent="UI/TopBar/MainVBox/StatsRow"]
+layout_mode = 2
+size_flags_horizontal = 4
+
+[node name="RunTimeLabel" type="Label" parent="UI/TopBar/MainVBox/StatsRow"]
+layout_mode = 2
+size_flags_horizontal = 4
+
+[node name="BestRunLabel" type="Label" parent="UI/TopBar/MainVBox/StatsRow"]
+layout_mode = 2
+size_flags_horizontal = 4
+
+[node name="RiskRow" type="HBoxContainer" parent="UI/TopBar/MainVBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="RiskBar" type="ProgressBar" parent="UI/TopBar/MainVBox/RiskRow"]
+custom_minimum_size = Vector2(300, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 1
+
+[node name="RiskBar2" type="ProgressBar" parent="UI/TopBar/MainVBox/RiskRow"]
+custom_minimum_size = Vector2(300, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 1
+
+[node name="AlertLabel" type="Label" parent="UI/TopBar/MainVBox/RiskRow"]
+layout_mode = 2
+
+[node name="NightmareLabel" type="Label" parent="UI/TopBar/MainVBox/RiskRow"]
+layout_mode = 2
+
+[node name="HintLabel" type="Label" parent="UI/TopBar/MainVBox"]
+layout_mode = 2
+
+[node name="Panels" type="Control" parent="UI"]
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="UpgradePanel" type="Panel" parent="UI/Panels"]
+layout_mode = 0
+offset_left = 1339.0
+offset_top = 72.0
+offset_right = 1379.0
+offset_bottom = 112.0
+
+[node name="MemoryPanel" type="Panel" parent="UI/Panels"]
+layout_mode = 0
+offset_left = 976.0
+offset_top = 78.0
+offset_right = 1016.0
+offset_bottom = 118.0
+
+[node name="AutomationPanel" type="Panel" parent="UI/Panels"]
+layout_mode = 0
+offset_left = 1631.0
+offset_top = 63.0
+offset_right = 1671.0
+offset_bottom = 103.0
+
+[node name="StateDisplay" type="Label" parent="UI"]
+offset_left = 197.0
+offset_top = 18.0
+offset_right = 237.0
+offset_bottom = 41.0
+
+[node name="DiveButton" type="Button" parent="UI"]
+offset_left = 32.0
+offset_top = 185.0
+offset_right = 74.0
+offset_bottom = 216.0
+text = "Dive"
+script = ExtResource("12_sc1dx")
+
+[node name="OverclockButton" type="Button" parent="UI"]
+offset_left = 50.0
+offset_top = 290.0
+offset_right = 68.0
+offset_bottom = 308.0
+
+[node name="WakeButton" type="Button" parent="UI"]
+offset_left = 18.0
+offset_top = 117.0
+offset_right = 69.0
+offset_bottom = 148.0
+text = "Wake"
+script = ExtResource("14_2gh4u")
+
+[node name="AbyssButton" type="Button" parent="UI"]
+visible = false
+offset_left = 1808.0
+offset_top = 10.0
+offset_right = 1915.0
+offset_bottom = 95.0
+text = "???"
+script = ExtResource("19_5mvff")
+
+[node name="PerkButton" type="Button" parent="UI"]
+offset_left = 25.0
+offset_top = 410.0
+offset_right = 76.0
+offset_bottom = 452.0
+text = "Perks"
+
+[node name="AutoDiveToggle" type="CheckButton" parent="UI"]
+offset_left = 31.0
+offset_top = 168.0
+offset_right = 75.0
+offset_bottom = 192.0
+
+[node name="AutoOverclockToggle" type="CheckButton" parent="UI"]
+offset_left = 39.0
+offset_top = 271.0
+offset_right = 83.0
+offset_bottom = 295.0
+
+[node name="BackToMenuButton" type="Button" parent="UI"]
+visible = false
+offset_left = 1908.0
+offset_right = 1919.0
+offset_bottom = 11.0
+
+[node name="PauseMenu" type="CanvasLayer" parent="UI"]
+script = ExtResource("9_5vvyt")
+
+[node name="CenterContainer" type="CenterContainer" parent="UI/PauseMenu"]
+visible = false
+custom_minimum_size = Vector2(320, 52)
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Panel" type="PanelContainer" parent="UI/PauseMenu/CenterContainer"]
+layout_mode = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="UI/PauseMenu/CenterContainer/Panel"]
+layout_mode = 2
+
+[node name="VBox" type="VBoxContainer" parent="UI/PauseMenu/CenterContainer/Panel/MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="TitleLabel" type="Label" parent="UI/PauseMenu/CenterContainer/Panel/MarginContainer/VBox"]
+modulate = Color(1.3528494, 1.3528494, 1.3528494, 1)
+custom_minimum_size = Vector2(220, 48)
+layout_mode = 2
+text = "PAUSED"
+
+[node name="ResumeButton" type="Button" parent="UI/PauseMenu/CenterContainer/Panel/MarginContainer/VBox"]
+modulate = Color(3682719500000, 3682719500000, 3682719500000, 1)
+custom_minimum_size = Vector2(220, 48)
+layout_mode = 2
+
+[node name="MenuButton" type="Button" parent="UI/PauseMenu/CenterContainer/Panel/MarginContainer/VBox"]
+custom_minimum_size = Vector2(220, 48)
+layout_mode = 2
+
+[node name="QuitButton" type="Button" parent="UI/PauseMenu/CenterContainer/Panel/MarginContainer/VBox"]
+custom_minimum_size = Vector2(220, 48)
+layout_mode = 2
+
+[node name="ResetSaveButton" type="Button" parent="UI/PauseMenu/CenterContainer/Panel/MarginContainer/VBox"]
+custom_minimum_size = Vector2(220, 48)
+layout_mode = 2
+
+[node name="OfflinePopup" parent="UI" instance=ExtResource("14_kjvhd")]
+
+[node name="AutomationBinder" type="Node" parent="UI"]
+script = ExtResource("18_3b0ty")
+
+[node name="PrestigePanel" type="PanelContainer" parent="UI"]
+custom_minimum_size = Vector2(600, 320)
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -20.0
+offset_top = -58.0
+offset_right = 20.0
+offset_bottom = 58.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("19_bg4s2")
+
+[node name="Vbox" type="VBoxContainer" parent="UI/PrestigePanel"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="Title" type="Label" parent="UI/PrestigePanel/Vbox"]
+layout_mode = 2
+
+[node name="Summary" type="Label" parent="UI/PrestigePanel/Vbox"]
+layout_mode = 2
+
+[node name="Details" type="VBoxContainer" parent="UI/PrestigePanel/Vbox"]
+layout_mode = 2
+
+[node name="You Keep" type="Label" parent="UI/PrestigePanel/Vbox/Details"]
+layout_mode = 2
+
+[node name="You Reset" type="Label" parent="UI/PrestigePanel/Vbox/Details"]
+layout_mode = 2
+
+[node name="Buttons" type="HBoxContainer" parent="UI/PrestigePanel/Vbox"]
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 12
+alignment = 1
+
+[node name="CancelButton" type="Button" parent="UI/PrestigePanel/Vbox/Buttons"]
+custom_minimum_size = Vector2(160, 48)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Cancel"
+
+[node name="ConfirmWakeButton" type="Button" parent="UI/PrestigePanel/Vbox/Buttons"]
+custom_minimum_size = Vector2(160, 48)
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="AbyssBarBinder" type="Node" parent="UI"]
+script = ExtResource("12_hri7i")
+abyss_bar_path = NodePath("../BottomBar/RootMargin/Split/NormalSide/NormalVBox/InfoHBox/AbyssBar")
+
+[node name="AbyssUnlockFX" type="CanvasLayer" parent="UI"]
+script = ExtResource("23_w3rk5")
+flash_path = NodePath("Flash")
+
+[node name="Flash" type="ColorRect" parent="UI/AbyssUnlockFX"]
+modulate = Color(0, 0, 0, 0)
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0, 0, 0, 1)
+
+[node name="AbyssPanel" type="PanelContainer" parent="UI"]
+visible = false
+offset_left = 1643.0
+offset_right = 1920.0
+offset_bottom = 250.0
+script = ExtResource("25_oye8v")
+close_button_path = NodePath("Margin/VBox/CloseButon")
+
+[node name="Margin" type="MarginContainer" parent="UI/AbyssPanel"]
+layout_mode = 2
+
+[node name="VBox" type="VBoxContainer" parent="UI/AbyssPanel/Margin"]
+layout_mode = 2
+
+[node name="PerkInfoLabel" type="Label" parent="UI/AbyssPanel/Margin/VBox"]
+layout_mode = 2
+
+[node name="Scroll" type="ScrollContainer" parent="UI/AbyssPanel/Margin/VBox"]
+layout_mode = 2
+
+[node name="Rows" type="VBoxContainer" parent="UI/AbyssPanel/Margin/VBox/Scroll"]
+layout_mode = 2
+
+[node name="EchoedDescentRow" type="HBoxContainer" parent="UI/AbyssPanel/Margin/VBox/Scroll/Rows"]
+layout_mode = 2
+script = ExtResource("27_gb15f")
+
+[node name="Button" type="Button" parent="UI/AbyssPanel/Margin/VBox/Scroll/Rows/EchoedDescentRow"]
+layout_mode = 2
+
+[node name="Meta" type="VBoxContainer" parent="UI/AbyssPanel/Margin/VBox/Scroll/Rows/EchoedDescentRow"]
+layout_mode = 2
+
+[node name="Mini" type="Label" parent="UI/AbyssPanel/Margin/VBox/Scroll/Rows/EchoedDescentRow/Meta"]
+layout_mode = 2
+
+[node name="Bar" type="ProgressBar" parent="UI/AbyssPanel/Margin/VBox/Scroll/Rows/EchoedDescentRow/Meta"]
+layout_mode = 2
+
+[node name="AbyssalFocusRow" type="HBoxContainer" parent="UI/AbyssPanel/Margin/VBox/Scroll/Rows"]
+layout_mode = 2
+script = ExtResource("27_gb15f")
+mode = "abyssal_focus"
+
+[node name="Button" type="Button" parent="UI/AbyssPanel/Margin/VBox/Scroll/Rows/AbyssalFocusRow"]
+layout_mode = 2
+
+[node name="Meta" type="VBoxContainer" parent="UI/AbyssPanel/Margin/VBox/Scroll/Rows/AbyssalFocusRow"]
+layout_mode = 2
+
+[node name="Mini" type="Label" parent="UI/AbyssPanel/Margin/VBox/Scroll/Rows/AbyssalFocusRow/Meta"]
+layout_mode = 2
+
+[node name="Bar" type="ProgressBar" parent="UI/AbyssPanel/Margin/VBox/Scroll/Rows/AbyssalFocusRow/Meta"]
+layout_mode = 2
+
+[node name="DarkInsightRow" type="HBoxContainer" parent="UI/AbyssPanel/Margin/VBox/Scroll/Rows"]
+layout_mode = 2
+script = ExtResource("27_gb15f")
+mode = "dark_insight"
+
+[node name="Button" type="Button" parent="UI/AbyssPanel/Margin/VBox/Scroll/Rows/DarkInsightRow"]
+layout_mode = 2
+
+[node name="Meta" type="VBoxContainer" parent="UI/AbyssPanel/Margin/VBox/Scroll/Rows/DarkInsightRow"]
+layout_mode = 2
+
+[node name="Mini" type="Label" parent="UI/AbyssPanel/Margin/VBox/Scroll/Rows/DarkInsightRow/Meta"]
+layout_mode = 2
+
+[node name="Bar" type="ProgressBar" parent="UI/AbyssPanel/Margin/VBox/Scroll/Rows/DarkInsightRow/Meta"]
+layout_mode = 2
+
+[node name="AbyssVeilRow" type="HBoxContainer" parent="UI/AbyssPanel/Margin/VBox/Scroll/Rows"]
+layout_mode = 2
+script = ExtResource("27_gb15f")
+mode = "abyss_veil"
+
+[node name="Button" type="Button" parent="UI/AbyssPanel/Margin/VBox/Scroll/Rows/AbyssVeilRow"]
+layout_mode = 2
+
+[node name="Meta" type="VBoxContainer" parent="UI/AbyssPanel/Margin/VBox/Scroll/Rows/AbyssVeilRow"]
+layout_mode = 2
+
+[node name="Mini" type="Label" parent="UI/AbyssPanel/Margin/VBox/Scroll/Rows/AbyssVeilRow/Meta"]
+layout_mode = 2
+
+[node name="Bar" type="ProgressBar" parent="UI/AbyssPanel/Margin/VBox/Scroll/Rows/AbyssVeilRow/Meta"]
+layout_mode = 2
+
+[node name="CloseButon" type="Button" parent="UI/AbyssPanel/Margin/VBox"]
+layout_mode = 2
+
+[node name="AbyssButtonBinder" type="Node" parent="."]
+script = ExtResource("19_5mvff")
+abyss_button_path = NodePath("../UI/AbyssButton")
+abyss_panel_path = NodePath("../UI/AbyssPanel")
+
+[node name="InputDebugger" type="Node" parent="."]
+script = ExtResource("16_fpfj3")
+
+[node name="ButtonStyleDebugger" type="Node" parent="."]
+script = ExtResource("16_sc1dx")
+
+[node name="SoundSystem" type="Node" parent="."]
+script = ExtResource("10_wkp8b")
+
+[node name="SFX_Dive" type="AudioStreamPlayer" parent="SoundSystem"]
+
+[node name="SFX_Overclock" type="AudioStreamPlayer" parent="SoundSystem"]
+
+[node name="SFX_Wake" type="AudioStreamPlayer" parent="SoundSystem"]
+
+[node name="SFX_Fail" type="AudioStreamPlayer" parent="SoundSystem"]
+
+[node name="SFX_Corruption" type="AudioStreamPlayer" parent="SoundSystem"]
+
+[node name="UIBinder" type="Node" parent="."]
+script = ExtResource("20_hhcpw")
+perks_button_name = "PerkButton"
+
+[node name="SaveSystem" type="Node" parent="."]
+script = ExtResource("8_trn2v")
+
+[node name="MemoriesBinder" type="Node" parent="."]
+script = ExtResource("26_xrxkg")
+
+[node name="PerksHeaderBinder" type="Node" parent="."]
+script = ExtResource("14_sqvbp")
+title_path = NodePath("../UI/BottomBar/RootMargin/Split/PermSide/PermVBox/PerksPanel/Margin/VBox/HeaderRow/Title")
+
+[connection signal="pressed" from="UI/BottomBar/RootMargin/Split/NormalSide/NormalVBox/BodySplit/Buttons/ThoughtsRow/BuyThoughtsUpgradeButton" to="GameManager" method="do_buy_thoughts_upgrade"]
+[connection signal="pressed" from="UI/BottomBar/RootMargin/Split/NormalSide/NormalVBox/BodySplit/Buttons/DeepDivesRow/DeepDivesButton" to="GameManager" method="do_buy_thoughts_upgrade"]
+[connection signal="pressed" from="UI/BottomBar/RootMargin/Split/NormalSide/NormalVBox/BodySplit/Buttons/StabilityRow/BuyStabilityUpgradeButton" to="GameManager" method="do_buy_stability_upgrade"]
+[connection signal="pressed" from="UI/BottomBar/RootMargin/Split/NormalSide/NormalVBox/BodySplit/Buttons/MentalBufferRow/MentalBufferButton" to="GameManager" method="do_buy_stability_upgrade"]
+[connection signal="pressed" from="UI/BottomBar/RootMargin/Split/NormalSide/NormalVBox/BodySplit/Buttons/OverclockMasterRow/OverclockMasteryButton" to="GameManager" method="do_buy_stability_upgrade"]
+[connection signal="pressed" from="UI/BottomBar/RootMargin/Split/NormalSide/NormalVBox/BodySplit/Buttons/OverclockSafetyRow2/OverclockSafetyButton" to="GameManager" method="do_buy_stability_upgrade"]
+[connection signal="pressed" from="UI/DiveButton" to="GameManager" method="do_dive"]
+[connection signal="pressed" from="UI/OverclockButton" to="GameManager" method="do_overclock"]

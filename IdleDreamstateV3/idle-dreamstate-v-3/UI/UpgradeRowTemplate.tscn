@@ -1,0 +1,51 @@
+[gd_scene load_steps=4 format=3 uid="uid://c6mdogwl6v5bj"]
+
+[ext_resource type="Script" uid="uid://dhhrjdpbbnid8" path="res://UpgradeRow.gd" id="1_2xlu2"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_2xlu2"]
+content_margin_left = 2.0
+content_margin_top = 2.0
+content_margin_right = 2.0
+content_margin_bottom = 2.0
+bg_color = Color(0.043137256, 0.050980393, 0.10980392, 1)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+corner_detail = 6
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_rxrf3"]
+content_margin_left = 2.0
+content_margin_top = 2.0
+content_margin_right = 2.0
+content_margin_bottom = 2.0
+bg_color = Color(0.29803923, 0.7882353, 0.9411765, 1)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+corner_detail = 6
+
+[node name="UpgradeRow" type="HBoxContainer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+script = ExtResource("1_2xlu2")
+
+[node name="Button" type="Button" parent="."]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+
+[node name="Bar" type="ProgressBar" parent="."]
+custom_minimum_size = Vector2(0, 10)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/background = SubResource("StyleBoxFlat_2xlu2")
+theme_override_styles/fill = SubResource("StyleBoxFlat_rxrf3")
+
+[node name="Mini" type="Label" parent="."]
+layout_mode = 2

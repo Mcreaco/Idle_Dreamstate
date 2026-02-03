@@ -1,0 +1,33 @@
+[gd_scene load_steps=4 format=3 uid="uid://bj1b31f581uaa"]
+
+[ext_resource type="Script" uid="uid://be8l6kpeofbv6" path="res://PillarSegment.gd" id="1_i7h4t"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_i7h4t"]
+albedo_color = Color(1, 0, 1, 1)
+emission_enabled = true
+emission = Color(0.39582333, 0.0017744845, 0.86720186, 1)
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_i7h4t"]
+material = SubResource("StandardMaterial3D_i7h4t")
+top_radius = 0.36
+bottom_radius = 0.36
+height = 0.3
+radial_segments = 24
+
+[node name="PillarSegment" type="Node3D"]
+script = ExtResource("1_i7h4t")
+
+[node name="Ring1" type="MeshInstance3D" parent="."]
+mesh = SubResource("CylinderMesh_i7h4t")
+
+[node name="Ring2" type="MeshInstance3D" parent="."]
+transform = Transform3D(0.9848077, 0, 0.17364818, 0, 1, 0, -0.17364818, 0, 0.9848077, 0, 0.34, 0)
+mesh = SubResource("CylinderMesh_i7h4t")
+
+[node name="Ring3" type="MeshInstance3D" parent="."]
+transform = Transform3D(0.9848077, 0, -0.17364818, 0, 1, 0, 0.17364818, 0, 0.9848077, 0, 0.68, 0)
+mesh = SubResource("CylinderMesh_i7h4t")
+
+[node name="Ring4" type="MeshInstance3D" parent="."]
+transform = Transform3D(0.90630776, 0, 0.42261827, 0, 1, 0, -0.42261827, 0, 0.90630776, 0, 1.02, 0)
+mesh = SubResource("CylinderMesh_i7h4t")

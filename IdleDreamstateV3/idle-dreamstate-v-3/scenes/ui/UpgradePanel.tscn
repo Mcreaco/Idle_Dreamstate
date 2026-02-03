@@ -1,0 +1,4 @@
+UpgradePanel (Panel)
+├── CategoryTabs
+├── UpgradeList
+└── BuyButton

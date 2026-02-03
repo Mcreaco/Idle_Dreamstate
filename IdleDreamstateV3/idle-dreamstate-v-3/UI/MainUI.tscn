@@ -1,0 +1,250 @@
+[gd_scene load_steps=7 format=3 uid="uid://cpq1itmwil4uo"]
+
+[ext_resource type="PackedScene" uid="uid://c6mdogwl6v5bj" path="res://UI/UpgradeRowTemplate.tscn" id="1_xv1u1"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_xv1u1"]
+content_margin_left = 0.0
+content_margin_top = 0.0
+content_margin_right = 0.0
+content_margin_bottom = 0.0
+bg_color = Color(0.05490196, 0.0627451, 0.1254902, 0.8509804)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.22745098, 0.24705882, 0.41568628, 1)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
+corner_detail = 5
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_wa2eh"]
+content_margin_left = 2.0
+content_margin_top = 2.0
+content_margin_right = 2.0
+content_margin_bottom = 2.0
+bg_color = Color(0.043137256, 0.050980393, 0.10980392, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+corner_detail = 6
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_fdbdo"]
+content_margin_left = 2.0
+content_margin_top = 2.0
+content_margin_right = 2.0
+content_margin_bottom = 2.0
+bg_color = Color(18.892, 0, 0, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+corner_detail = 6
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_dbue8"]
+content_margin_left = 0.0
+content_margin_top = 0.0
+content_margin_right = 0.0
+content_margin_bottom = 0.0
+bg_color = Color(0.05490196, 0.0627451, 0.1254902, 0.8509804)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.22745098, 0.24705882, 0.41568628, 1)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
+corner_detail = 5
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_wwh41"]
+content_margin_left = 0.0
+content_margin_top = 0.0
+content_margin_right = 0.0
+content_margin_bottom = 0.0
+bg_color = Color(0.05490196, 0.0627451, 0.1254902, 0.8509804)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.22745098, 0.24705882, 0.41568628, 1)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
+corner_detail = 5
+
+[node name="MainUI" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 32.0
+offset_top = 24.0
+offset_right = -32.0
+offset_bottom = -24.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+
+[node name="Root" type="Control" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="TopBarPanel" type="PanelContainer" parent="Root"]
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -460.0
+offset_top = 20.0
+offset_right = 460.0
+offset_bottom = 80.0
+theme_override_styles/panel = SubResource("StyleBoxFlat_xv1u1")
+
+[node name="TopBar" type="HBoxContainer" parent="Root/TopBarPanel"]
+layout_mode = 2
+
+[node name="ThoughtsLabel" type="Label" parent="Root/TopBarPanel/TopBar"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7882353, 0.83137256, 1, 1)
+text = "Thoughts: 0"
+
+[node name="InstabilityCenter" type="CenterContainer" parent="Root/TopBarPanel/TopBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="InstabilityBar" type="ProgressBar" parent="Root/TopBarPanel/TopBar/InstabilityCenter"]
+custom_minimum_size = Vector2(360, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+tooltip_text = "Instability"
+theme_override_styles/background = SubResource("StyleBoxFlat_wa2eh")
+theme_override_styles/fill = SubResource("StyleBoxFlat_fdbdo")
+
+[node name="ControlLabel" type="Label" parent="Root/TopBarPanel/TopBar"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7882353, 0.83137256, 1, 1)
+text = "Control: 0"
+
+[node name="LeftPanel" type="PanelContainer" parent="Root"]
+layout_mode = 1
+anchors_preset = -1
+anchor_bottom = 1.0
+offset_left = -20.0
+offset_top = 180.0
+offset_right = 500.0
+offset_bottom = -480.0
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("StyleBoxFlat_dbue8")
+
+[node name="LeftVBox" type="VBoxContainer" parent="Root/LeftPanel"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="UpgradesTitle" type="Label" parent="Root/LeftPanel/LeftVBox"]
+layout_mode = 2
+text = "Upgrades"
+
+[node name="UpgradesScroll" type="ScrollContainer" parent="Root/LeftPanel/LeftVBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="UpgradeList" type="VBoxContainer" parent="Root/LeftPanel/LeftVBox/UpgradesScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 10
+
+[node name="ThoughtsRow" parent="Root/LeftPanel/LeftVBox/UpgradesScroll/UpgradeList" instance=ExtResource("1_xv1u1")]
+layout_mode = 2
+
+[node name="StabilityRow" parent="Root/LeftPanel/LeftVBox/UpgradesScroll/UpgradeList" instance=ExtResource("1_xv1u1")]
+layout_mode = 2
+mode = "stability"
+
+[node name="DeepDivesRow" parent="Root/LeftPanel/LeftVBox/UpgradesScroll/UpgradeList" instance=ExtResource("1_xv1u1")]
+layout_mode = 2
+mode = "deepdives"
+
+[node name="MentalBufferRow" parent="Root/LeftPanel/LeftVBox/UpgradesScroll/UpgradeList" instance=ExtResource("1_xv1u1")]
+layout_mode = 2
+mode = "mentalbuffer"
+
+[node name="OverclockMasteryRow" parent="Root/LeftPanel/LeftVBox/UpgradesScroll/UpgradeList" instance=ExtResource("1_xv1u1")]
+layout_mode = 2
+mode = "overclockmastery"
+
+[node name="OverclockSafetyRow" parent="Root/LeftPanel/LeftVBox/UpgradesScroll/UpgradeList" instance=ExtResource("1_xv1u1")]
+layout_mode = 2
+mode = "overclocksafety"
+
+[node name="BottomBarPanel" type="PanelContainer" parent="Root"]
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -520.0
+offset_top = -80.0
+offset_right = 520.0
+offset_bottom = -20.0
+theme_override_styles/panel = SubResource("StyleBoxFlat_wwh41")
+
+[node name="BottomBar" type="HBoxContainer" parent="Root/BottomBarPanel"]
+layout_mode = 2
+
+[node name="DiveButton" type="Button" parent="Root/BottomBarPanel/BottomBar"]
+custom_minimum_size = Vector2(220, 54)
+layout_mode = 2
+text = "Dive"
+
+[node name="OverclockButton" type="Button" parent="Root/BottomBarPanel/BottomBar"]
+custom_minimum_size = Vector2(220, 54)
+layout_mode = 2
+text = "Overclock"
+
+[node name="WakeButton" type="Button" parent="Root/BottomBarPanel/BottomBar"]
+visible = false
+custom_minimum_size = Vector2(220, 54)
+layout_mode = 2
+text = "Wake"
+
+[node name="Meta" type="Button" parent="Root/BottomBarPanel/BottomBar"]
+visible = false
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Depth  →"
+
+[node name="AutoToggles" type="HBoxContainer" parent="Root"]
+visible = false
+layout_mode = 0
+offset_top = 112.0
+offset_right = 696.0
+offset_bottom = 143.0
+
+[node name="AutoDiveToggle" type="CheckButton" parent="Root/AutoToggles"]
+layout_mode = 2
+text = "Auto Dive"
+
+[node name="AutoOverclockToggle" type="CheckButton" parent="Root/AutoToggles"]
+layout_mode = 2
+text = "Auto Overclock"
