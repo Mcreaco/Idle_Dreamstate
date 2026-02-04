@@ -18,6 +18,7 @@ signal abyss_unlocked
 @onready var perm_perk_system: PermPerkSystem = $"../Systems/PermPerkSystem"
 @onready var depth_meta_system: DepthMetaSystem = $"../Systems/DepthMetaSystem"
 @onready var sound_system = $"../SoundSystem"
+@onready var top_bar_panel: Node = $"../MainUI/Root/TopBarPanel"  # ensure this path matches your scene
 
 # -------------------------
 # DIVE COOLDOWN (perk2 reduction)
@@ -124,6 +125,15 @@ var autosave_interval: float = 10.0
 # -------------------------
 var _crack_sync_timer: float = 0.0
 
+# -------------------------
+# RATE SAMPLING FOR UI
+# -------------------------
+var _rate_sample_timer: float = 0.0
+var _last_thoughts_sample: float = 0.0
+var _last_control_sample: float = 0.0
+var _thoughts_ps: float = 0.0
+var _control_ps: float = 0.0
+
 func _sync_cracks() -> void:
 	if pillar_stack != null and pillar_stack.has_method("set_instability"):
 		pillar_stack.call("set_instability", instability, 100.0)
@@ -136,6 +146,10 @@ func _ready() -> void:
 	load_game()
 	_apply_offline_progress()
 	_bind_ui_mainui()
+
+	# init samples
+	_last_thoughts_sample = thoughts
+	_last_control_sample = control
 
 	_sync_meta_progress()
 
@@ -283,6 +297,16 @@ func _process(delta: float) -> void:
 	max_instability = maxf(max_instability, instability)
 	nightmare_system.check_unlock(max_instability)
 
+	# Sample rates for UI (simple diff over time)
+	_rate_sample_timer += delta
+	if _rate_sample_timer >= 0.5:
+		var inv_dt: float = 1.0 / _rate_sample_timer
+		_thoughts_ps = (thoughts - _last_thoughts_sample) * inv_dt
+		_control_ps = (control - _last_control_sample) * inv_dt
+		_last_thoughts_sample = thoughts
+		_last_control_sample = control
+		_rate_sample_timer = 0.0
+
 	_refresh_top_ui()
 	_update_buttons_ui()
 	_force_cooldown_texts()
@@ -294,6 +318,7 @@ func _process(delta: float) -> void:
 # UI UPDATE
 # -------------------------
 func _refresh_top_ui() -> void:
+	# Old fallback labels
 	if thoughts_label != null:
 		thoughts_label.text = "Thoughts: %s" % _fmt_num(thoughts)
 	if control_label != null:
@@ -304,6 +329,24 @@ func _refresh_top_ui() -> void:
 		instability_bar.value = clampf(instability, 0.0, 100.0)
 	if instability_label != null:
 		instability_label.text = "Instability"
+
+	# Preferred: send to TopBarPanel if present
+	if top_bar_panel != null and top_bar_panel.has_method("update_top_bar"):
+		var inst_pct: float = clampf(instability, 0.0, 100.0)
+		var overclock_time_left: float = 0.0
+		if overclock_system != null and overclock_system.active:
+			overclock_time_left = maxf(overclock_system.timer, 0.0)
+		var ttf: float = get_seconds_until_fail()
+		top_bar_panel.update_top_bar(
+			thoughts,
+			_thoughts_ps,
+			control,
+			_control_ps,
+			inst_pct,
+			overclock_system != null and overclock_system.active,
+			overclock_time_left,
+			ttf
+		)
 
 func _update_buttons_ui() -> void:
 	if overclock_button != null:

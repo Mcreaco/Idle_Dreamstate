@@ -1,5 +1,6 @@
-[gd_scene load_steps=7 format=3 uid="uid://cpq1itmwil4uo"]
+[gd_scene load_steps=8 format=3 uid="uid://cpq1itmwil4uo"]
 
+[ext_resource type="Script" uid="uid://bcfwm6l6pxi22" path="res://UI/TopBarPanel.gd" id="1_wwh41"]
 [ext_resource type="PackedScene" uid="uid://c6mdogwl6v5bj" path="res://UI/UpgradeRowTemplate.tscn" id="1_xv1u1"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_xv1u1"]
@@ -116,20 +117,56 @@ offset_top = 20.0
 offset_right = 460.0
 offset_bottom = 80.0
 theme_override_styles/panel = SubResource("StyleBoxFlat_xv1u1")
+script = ExtResource("1_wwh41")
 
 [node name="TopBar" type="HBoxContainer" parent="Root/TopBarPanel"]
 layout_mode = 2
+theme_override_constants/separation = 12
 
-[node name="ThoughtsLabel" type="Label" parent="Root/TopBarPanel/TopBar"]
+[node name="MarginContainer" type="MarginContainer" parent="Root/TopBarPanel/TopBar"]
+custom_minimum_size = Vector2(180, 0)
 layout_mode = 2
-theme_override_colors/font_color = Color(0.7882353, 0.83137256, 1, 1)
-text = "Thoughts: 0"
+size_flags_horizontal = 3
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 8
+
+[node name="ThoughtsBox" type="HBoxContainer" parent="Root/TopBarPanel/TopBar/MarginContainer"]
+custom_minimum_size = Vector2(180, 0)
+layout_mode = 2
+
+[node name="ThoughtsTitle" type="Label" parent="Root/TopBarPanel/TopBar/MarginContainer/ThoughtsBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.8745098, 0.9019608, 1, 1)
+text = "Thoughts"
+
+[node name="ThoughtsValue" type="Label" parent="Root/TopBarPanel/TopBar/MarginContainer/ThoughtsBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.8745098, 0.9019608, 1, 1)
+theme_override_font_sizes/font_size = 20
+text = "0"
+
+[node name="ThoughtsGain" type="Label" parent="Root/TopBarPanel/TopBar/MarginContainer/ThoughtsBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.8745098, 0.9019608, 1, 1)
+text = "+0/s"
 
 [node name="InstabilityCenter" type="CenterContainer" parent="Root/TopBarPanel/TopBar"]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="InstabilityBar" type="ProgressBar" parent="Root/TopBarPanel/TopBar/InstabilityCenter"]
+[node name="InstabilityVBox" type="VBoxContainer" parent="Root/TopBarPanel/TopBar/InstabilityCenter"]
+layout_mode = 2
+theme_override_constants/separation = 6
+alignment = 1
+
+[node name="InstabilityTitle" type="Label" parent="Root/TopBarPanel/TopBar/InstabilityCenter/InstabilityVBox"]
+layout_mode = 2
+text = "Instability"
+horizontal_alignment = 1
+
+[node name="InstabilityBar" type="ProgressBar" parent="Root/TopBarPanel/TopBar/InstabilityCenter/InstabilityVBox"]
 custom_minimum_size = Vector2(360, 0)
 layout_mode = 2
 size_flags_horizontal = 3
@@ -138,10 +175,35 @@ tooltip_text = "Instability"
 theme_override_styles/background = SubResource("StyleBoxFlat_wa2eh")
 theme_override_styles/fill = SubResource("StyleBoxFlat_fdbdo")
 
-[node name="ControlLabel" type="Label" parent="Root/TopBarPanel/TopBar"]
+[node name="InstabilityHint" type="Label" parent="Root/TopBarPanel/TopBar/InstabilityCenter/InstabilityVBox"]
+visible = false
 layout_mode = 2
-theme_override_colors/font_color = Color(0.7882353, 0.83137256, 1, 1)
-text = "Control: 0"
+text = "Consider Wake"
+
+[node name="ControlPad" type="MarginContainer" parent="Root/TopBarPanel/TopBar"]
+custom_minimum_size = Vector2(180, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="ControlBox" type="HBoxContainer" parent="Root/TopBarPanel/TopBar/ControlPad"]
+layout_mode = 2
+alignment = 2
+
+[node name="ControlTitle" type="Label" parent="Root/TopBarPanel/TopBar/ControlPad/ControlBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.8745098, 0.9019608, 1, 1)
+text = "Control"
+
+[node name="ControlValue" type="Label" parent="Root/TopBarPanel/TopBar/ControlPad/ControlBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.8745098, 0.9019608, 1, 1)
+theme_override_font_sizes/font_size = 20
+text = "0"
+
+[node name="ControlGain" type="Label" parent="Root/TopBarPanel/TopBar/ControlPad/ControlBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.8745098, 0.9019608, 1, 1)
+text = "+0/s"
 
 [node name="LeftPanel" type="PanelContainer" parent="Root"]
 layout_mode = 1

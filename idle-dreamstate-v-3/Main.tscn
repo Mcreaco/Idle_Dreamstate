@@ -1,4 +1,4 @@
-[gd_scene load_steps=42 format=3 uid="uid://fflc2602ivkd"]
+[gd_scene load_steps=43 format=3 uid="uid://fflc2602ivkd"]
 
 [ext_resource type="Script" uid="uid://cr7grsqq7v7ws" path="res://PillarStack.gd" id="1_3ccbu"]
 [ext_resource type="Script" uid="uid://bp0wa73eqxy2l" path="res://MeshForceProbe.gd" id="1_o7g6l"]
@@ -69,6 +69,23 @@ shader_parameter/uv_scale = 1.0
 shader_parameter/scroll_speed = 0.03
 
 [sub_resource type="CylinderMesh" id="CylinderMesh_gb15f"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_3ccbu"]
+content_margin_left = 0.0
+content_margin_top = 0.0
+content_margin_right = 0.0
+content_margin_bottom = 0.0
+bg_color = Color(0.047058824, 0.0627451, 0.1254902, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.16470589, 0.19607843, 0.28235295, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+corner_detail = 5
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_5mkgo"]
 content_margin_left = 0.0
@@ -251,6 +268,21 @@ mouse_filter = 2
 color = Color(0, 0, 0, 1)
 
 [node name="MainUI" parent="." instance=ExtResource("15_3ccbu")]
+
+[node name="TopBarPanel" parent="MainUI/Root" index="0"]
+custom_minimum_size = Vector2(0, 80)
+anchors_preset = 10
+anchor_left = 0.0
+anchor_right = 1.0
+offset_left = 0.0
+offset_top = 0.0
+offset_right = 0.0
+offset_bottom = 27.0
+grow_horizontal = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_3ccbu")
+
+[node name="TopBar" parent="MainUI/Root/TopBarPanel" index="0"]
+theme_override_constants/separation = 12
 
 [node name="CenterContainer" type="CenterContainer" parent="MainUI/Root/TopBarPanel/TopBar" index="3"]
 layout_mode = 2
