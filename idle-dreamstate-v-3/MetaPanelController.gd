@@ -8,6 +8,7 @@ var tab_perm: Button
 var tab_depth: Button
 var tab_abyss: Button
 
+
 var page_perm: Control
 var page_depth: Control
 var page_abyss: Control
@@ -23,6 +24,8 @@ var currency_summary: Node # optional, if you have one
 
 var _current_meta: String = "perm"
 var _current_depth: int = 1
+var _styled_top_tabs := false
+var _styled_depth_tabs := false
 
 func _ready() -> void:
 	visible = false
@@ -71,6 +74,9 @@ func _late_bind() -> void:
 	_apply_unlocks()
 	_show_meta(_current_meta)
 	_show_depth(_current_depth)
+	_style_top_tabs()
+	_style_perm_panel()
+	_style_close_button()
 
 func _fix_stacking() -> void:
 	# Godot 4: ColorRect doesn't have move_to_back().
@@ -101,6 +107,134 @@ func open() -> void:
 	_apply_unlocks()
 	_show_meta(_current_meta)
 	_show_depth(_current_depth)
+	
+func _make_tab_style(bg: Color, border: Color, border_w: int = 2, radius: int = 8, shadow_color: Color = Color(0, 0, 0, 0.35), shadow_size: int = 3) -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = bg
+	sb.border_color = border
+	sb.border_width_left = border_w
+	sb.border_width_top = border_w
+	sb.border_width_right = border_w
+	sb.border_width_bottom = border_w
+	sb.corner_radius_top_left = radius
+	sb.corner_radius_top_right = radius
+	sb.corner_radius_bottom_left = radius
+	sb.corner_radius_bottom_right = radius
+	sb.shadow_color = shadow_color
+	sb.shadow_size = shadow_size
+	sb.content_margin_left = 10
+	sb.content_margin_right = 10
+	sb.content_margin_top = 6
+	sb.content_margin_bottom = 6
+	return sb
+
+func _style_tab_button(btn: Button) -> void:
+	if btn == null:
+		return
+	btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	btn.size_flags_stretch_ratio = 1
+	btn.custom_minimum_size.x = 0
+	btn.add_theme_constant_override("content_margin_left", 10)
+	btn.add_theme_constant_override("content_margin_right", 10)
+	btn.add_theme_constant_override("h_separation", 6)
+	btn.clip_text = false
+	btn.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+
+	btn.add_theme_stylebox_override("normal",   _make_tab_style(Color(0.12, 0.12, 0.14, 0.95), Color(0.55, 0.65, 0.9, 0.8), 2, 9))
+	btn.add_theme_stylebox_override("hover",    _make_tab_style(Color(0.16, 0.16, 0.20, 0.98), Color(0.60, 0.70, 0.95, 0.9), 2, 9))
+	btn.add_theme_stylebox_override("pressed",  _make_tab_style(Color(0.09, 0.09, 0.11, 0.95), Color(0.50, 0.60, 0.85, 0.8), 2, 9))
+	btn.add_theme_stylebox_override("disabled", _make_tab_style(Color(0.06, 0.07, 0.09, 0.7),  Color(0.35, 0.45, 0.65, 0.6), 2, 9)) # darker blue
+	btn.add_theme_stylebox_override("focus",    _make_tab_style(Color(0.16, 0.16, 0.20, 0.98), Color(0.60, 0.70, 0.95, 0.9), 2, 9))
+
+func _style_top_tabs() -> void:
+	if _styled_top_tabs:
+		return
+	_styled_top_tabs = true
+	var root_btn := tab_perm
+	if root_btn == null:
+		root_btn = tab_depth
+	if root_btn == null:
+		root_btn = tab_abyss
+	if root_btn == null:
+		return
+
+	# Frame the tab bar
+	var panel := root_btn.get_parent()
+	while panel != null and not (panel is Panel or panel is PanelContainer):
+		panel = panel.get_parent()
+	if panel != null:
+		var sb := _make_tab_style(Color(0.05, 0.06, 0.08, 0.85), Color(0.5, 0.6, 0.9, 0.6), 2, 10, Color(0, 0, 0, 0.35), 3)
+		sb.content_margin_left = 16
+		sb.content_margin_right = 16
+		sb.content_margin_top = 8
+		sb.content_margin_bottom = 8
+		panel.add_theme_stylebox_override("panel", sb)
+
+	# Spacing between perm/depth/abyss tabs
+	var container := root_btn.get_parent()
+	if container is BoxContainer:
+		container.add_theme_constant_override("separation", 10)
+		container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+	for b in [tab_perm, tab_depth, tab_abyss]:
+		_style_tab_button(b)
+
+func _style_depth_tabs_bar() -> void:
+	if depth_tabs == null:
+		return
+	if not _styled_depth_tabs:
+		_styled_depth_tabs = true
+		# Frame around the depth tabs row
+		var panel := depth_tabs.get_parent()
+		while panel != null and not (panel is Panel or panel is PanelContainer):
+			panel = panel.get_parent()
+		if panel != null:
+			var sb := _make_tab_style(Color(0.05, 0.06, 0.08, 0.85), Color(0.5, 0.6, 0.9, 0.6), 2, 10, Color(0, 0, 0, 0.35), 3)
+			sb.content_margin_left = 12
+			sb.content_margin_right = 12
+			sb.content_margin_top = 8
+			sb.content_margin_bottom = 8
+			panel.add_theme_stylebox_override("panel", sb)
+
+		if depth_tabs is BoxContainer:
+			depth_tabs.add_theme_constant_override("separation", 6)
+			depth_tabs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	
+func _style_close_button() -> void:
+	if close_btn == null:
+		return
+	close_btn.custom_minimum_size = Vector2(40, 28)
+	close_btn.add_theme_constant_override("content_margin_left", 8)
+	close_btn.add_theme_constant_override("content_margin_right", 8)
+	close_btn.add_theme_constant_override("h_separation", 4)
+
+	close_btn.add_theme_stylebox_override("normal", _make_tab_style(Color(0.12, 0.12, 0.14, 0.95), Color(0.55, 0.65, 0.9, 0.8), 2, 6))
+	close_btn.add_theme_stylebox_override("hover",  _make_tab_style(Color(0.16, 0.16, 0.20, 0.98), Color(0.60, 0.70, 0.95, 0.9), 2, 6))
+	close_btn.add_theme_stylebox_override("pressed", _make_tab_style(Color(0.09, 0.09, 0.11, 0.95), Color(0.50, 0.60, 0.85, 0.8), 2, 6))
+	close_btn.add_theme_stylebox_override("disabled", _make_tab_style(Color(0.08, 0.08, 0.10, 0.60), Color(0.40, 0.45, 0.55, 0.5), 2, 6))
+	close_btn.add_theme_stylebox_override("focus", _make_tab_style(Color(0.16, 0.16, 0.20, 0.98), Color(0.60, 0.70, 0.95, 0.9), 2, 6))
+
+func _style_perm_panel() -> void:
+	# Find a parent panel that wraps the perm upgrades (PermPerkRow)
+	var rows := find_children("*", "PermPerkRow", true, false)
+	if rows.is_empty():
+		return
+	var panel := rows[0].get_parent()
+	while panel != null and not (panel is Panel or panel is PanelContainer):
+		panel = panel.get_parent()
+	if panel == null:
+		return
+	var sb := _make_tab_style(Color(0.05, 0.06, 0.08, 0.85), Color(0.5, 0.6, 0.9, 0.6), 2, 10, Color(0, 0, 0, 0.35), 3)
+	sb.content_margin_left = 14
+	sb.content_margin_right = 14
+	sb.content_margin_top = 10
+	sb.content_margin_bottom = 10
+	panel.add_theme_stylebox_override("panel", sb)
+
+	# Add spacing in the VBox that holds the rows (if any)
+	var container := rows[0].get_parent()
+	if container is BoxContainer:
+		container.add_theme_constant_override("separation", 10)
 
 func close() -> void:
 	visible = false
@@ -173,6 +307,8 @@ func _apply_unlocks() -> void:
 		push_warning("MetaPanelController: DepthTabs or DepthPages not found. Check node names.")
 		return
 
+	_style_depth_tabs_bar()
+
 	# Abyss tab visibility
 	var abyss_ok := abyss_unlocked or (max_depth_reached >= 15)
 	if tab_abyss != null:
@@ -184,17 +320,32 @@ func _apply_unlocks() -> void:
 		var tab := depth_tabs.get_node_or_null("DepthTab%d" % i) as Button
 		if tab == null:
 			continue
+		# ... existing visibility/disabled logic ...
+		tab.add_theme_constant_override("h_separation", 4)
+		tab.add_theme_constant_override("content_margin_left", 6)
+		tab.add_theme_constant_override("content_margin_right", 6)
+		tab.add_theme_font_size_override("font_size", 11)  # was default; shrink to fit
+		_style_tab_button(tab)
 
-		tab.visible = (max_depth_reached >= i)
-		tab.disabled = false
-		tab.mouse_filter = Control.MOUSE_FILTER_STOP
+		tab.visible = true  # keep width consistent
+		tab.disabled = (max_depth_reached < i)
+		tab.modulate = Color(1, 1, 1, 0.55) if tab.disabled else Color(1, 1, 1, 1)
+		tab.mouse_filter = Control.MOUSE_FILTER_IGNORE if tab.disabled else Control.MOUSE_FILTER_STOP
+
+		tab.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		tab.size_flags_stretch_ratio = 1
+		tab.custom_minimum_size = Vector2.ZERO
 
 		var depth_title := DepthMetaSystem.get_depth_name(i)
-		var amount := 0.0
-		if depth_meta_system != null:
-			amount = depth_meta_system.currency[i]
-
+		var amount := depth_meta_system.currency[i] if depth_meta_system != null else 0.0
 		tab.text = "%s (%.0f)" % [depth_title, amount]
+
+		# pad a bit for fit
+		tab.add_theme_constant_override("h_separation", 4)
+		tab.add_theme_constant_override("content_margin_left", 6)
+		tab.add_theme_constant_override("content_margin_right", 6)
+
+		_style_tab_button(tab)
 
 		if not tab.pressed.is_connected(Callable(self, "_on_depth_tab_pressed")):
 			tab.pressed.connect(Callable(self, "_on_depth_tab_pressed").bind(i))
@@ -202,6 +353,18 @@ func _apply_unlocks() -> void:
 	if _current_depth > max_depth_reached:
 		_current_depth = max_depth_reached
 	_show_depth(_current_depth)
+	
+func _ensure_depth_tab_spacer() -> void:
+	if depth_tabs == null:
+		return
+	var spacer := depth_tabs.get_node_or_null("DepthTabsSpacer") as Control
+	if spacer == null:
+		spacer = Control.new()
+		spacer.name = "DepthTabsSpacer"
+		spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		depth_tabs.add_child(spacer)
+	# Keep the spacer as the first child so it pushes tabs to the right
+	depth_tabs.move_child(spacer, 0)
 
 func _on_depth_tab_pressed(depth_index: int) -> void:
 	_show_depth(depth_index)

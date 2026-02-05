@@ -53,6 +53,12 @@ func _ready() -> void:
 
 	_buy_btn.pressed.connect(_on_buy)
 
+	# Match blue border buttons
+	_buy_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_buy_btn.custom_minimum_size.x = 0
+	if gm != null and gm.has_method("_style_button"):
+		gm._style_button(_buy_btn)
+
 	set_process(true)
 	_refresh()
 

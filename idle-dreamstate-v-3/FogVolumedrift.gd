@@ -1,4 +1,7 @@
 extends FogVolume
+class_name FogVolumedrift
+
+# (keep the drift/pulse code)
 
 @export var drift_speed: Vector3 = Vector3(0.05, 0.02, 0.03) # units/sec in noise-space
 @export var pulse_speed: float = 0.35                        # 0 = no pulse

@@ -26,11 +26,46 @@ func _ready() -> void:
 	_button = _find_first_button(self)
 	_mini = find_child("Mini", true, false) as Label
 	_bar = find_child("Bar", true, false) as Range
+	
+	if _button != null:
+		var cb := Callable(self, "_on_pressed")
+		if not _button.pressed.is_connected(cb):
+			_button.pressed.connect(cb)
+		_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_button.size_flags_stretch_ratio = 1
+		_button.custom_minimum_size.x = 0
+
+	if _bar != null:
+		_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_bar.size_flags_stretch_ratio = 1
+		_bar.custom_minimum_size.x = 0
+
+	add_theme_constant_override("separation", 12)
 
 	if _button != null:
 		var cb := Callable(self, "_on_pressed")
 		if not _button.pressed.is_connected(cb):
 			_button.pressed.connect(cb)
+	
+	if _button != null:
+		var cb := Callable(self, "_on_pressed")
+		if not _button.pressed.is_connected(cb):
+			_button.pressed.connect(cb)
+		_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_button.size_flags_stretch_ratio = 3  # ~60%
+		_button.custom_minimum_size.x = 0
+		_button.add_theme_constant_override("content_margin_left", 8)
+		_button.add_theme_constant_override("content_margin_right", 8)
+		_button.add_theme_constant_override("h_separation", 4)
+		_button.clip_text = false
+		_button.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS  # only trims if it truly can’t fit
+
+	if _bar != null:
+		_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_bar.size_flags_stretch_ratio = 2  # ~40%
+		_bar.custom_minimum_size.x = 0
+
+	add_theme_constant_override("separation", 12)
 
 	set_process(true)
 	_refresh()

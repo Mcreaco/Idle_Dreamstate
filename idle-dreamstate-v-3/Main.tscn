@@ -1,4 +1,4 @@
-[gd_scene load_steps=43 format=3 uid="uid://fflc2602ivkd"]
+[gd_scene load_steps=45 format=3 uid="uid://fflc2602ivkd"]
 
 [ext_resource type="Script" uid="uid://cr7grsqq7v7ws" path="res://PillarStack.gd" id="1_3ccbu"]
 [ext_resource type="Script" uid="uid://bp0wa73eqxy2l" path="res://MeshForceProbe.gd" id="1_o7g6l"]
@@ -12,6 +12,7 @@
 [ext_resource type="Script" uid="uid://c4e51xnyeklc" path="res://scripts/AutomationSystem.gd" id="5_3dxm6"]
 [ext_resource type="Script" uid="uid://wmcm22u3xbyi" path="res://scripts/systems/NightmareSystem.gd" id="5_03owx"]
 [ext_resource type="Texture2D" uid="uid://bg0ns8dd0c8p2" path="res://materials/crack_mask.tres" id="5_ny7u2"]
+[ext_resource type="Script" uid="uid://bf5461emrslc6" path="res://PillarFogSpawner.gd" id="6_3ccbu"]
 [ext_resource type="Script" uid="uid://gh34jom35iuo" path="res://scripts/systems/PerkSystem.gd" id="8_c6i3y"]
 [ext_resource type="Script" uid="uid://2p1584ctasen" path="res://scripts/SaveSystem.gd" id="8_trn2v"]
 [ext_resource type="Script" uid="uid://b6kahc8g5pnpv" path="res://scripts/ui/PauseMenu.gd" id="9_5vvyt"]
@@ -37,6 +38,7 @@
 [ext_resource type="Script" uid="uid://x4rtaidmt5a1" path="res://AbyssPanel.gd" id="25_oye8v"]
 [ext_resource type="Script" uid="uid://c8qm5d7uav3wd" path="res://MemoriesLabelBinder.gd" id="26_xrxkg"]
 [ext_resource type="Script" uid="uid://d1iyqqewlyb3t" path="res://AbyssPerkRow.gd" id="27_gb15f"]
+[ext_resource type="Script" uid="uid://40sp2ybhrvuh" path="res://PillarSmokeSpawner.gd" id="39_ny7u2"]
 
 [sub_resource type="Environment" id="Environment_o7g6l"]
 background_mode = 1
@@ -218,6 +220,13 @@ material_override = SubResource("ShaderMaterial_5mkgo")
 mesh = SubResource("CylinderMesh_gb15f")
 skeleton = NodePath("../../..")
 
+[node name="PillarSmokeSpawner" type="Node3D" parent="World3D/PillarRig"]
+script = ExtResource("39_ny7u2")
+pillar_stack_path = NodePath("../Segments")
+
+[node name="PillarFogSpawner" type="Node3D" parent="World3D"]
+script = ExtResource("6_3ccbu")
+
 [node name="GameManager" type="Node" parent="."]
 script = ExtResource("1_r0du0")
 
@@ -280,9 +289,6 @@ offset_right = 0.0
 offset_bottom = 27.0
 grow_horizontal = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_3ccbu")
-
-[node name="TopBar" parent="MainUI/Root/TopBarPanel" index="0"]
-theme_override_constants/separation = 12
 
 [node name="CenterContainer" type="CenterContainer" parent="MainUI/Root/TopBarPanel/TopBar" index="3"]
 layout_mode = 2

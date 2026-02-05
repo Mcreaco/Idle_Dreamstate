@@ -18,7 +18,12 @@ func _ready() -> void:
 	_set_label_colors()
 	if inst_hint:
 		inst_hint.visible = false
-
+	if inst_bar:
+		inst_bar.tooltip_text = "Instability rises from idle gain and events. Reaching 100 ends the run."
+	if inst_title:
+		inst_title.tooltip_text = "Time to fail (TTF) is estimated from current idle instability gain; overclock increases gain."
+	_style_inst_bar()
+	
 func _validate_nodes() -> void:
 	var nodes_ok := true
 	var paths := {
@@ -47,6 +52,40 @@ func _set_label_colors() -> void:
 		if l and not l.has_theme_color_override("font_color"):
 			l.add_theme_color_override("font_color", COLOR_TEXT)
 
+func _style_inst_bar() -> void:
+	if inst_bar == null:
+		return
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = Color(0.08, 0.08, 0.1, 0.85)
+	bg.border_color = Color(1, 1, 1, 0.12)
+	bg.border_width_left = 1
+	bg.border_width_top = 1
+	bg.border_width_right = 1
+	bg.border_width_bottom = 1
+	bg.corner_radius_top_left = 8
+	bg.corner_radius_top_right = 8
+	bg.corner_radius_bottom_left = 8
+	bg.corner_radius_bottom_right = 8
+	bg.shadow_color = Color(0, 0, 0, 0.25)
+	bg.shadow_size = 2
+
+	var fg := StyleBoxFlat.new()
+	fg.bg_color = Color(0.9, 0.2, 0.2, 1.0)
+	fg.border_color = Color(1, 1, 1, 0.18)
+	fg.border_width_left = 1
+	fg.border_width_top = 1
+	fg.border_width_right = 1
+	fg.border_width_bottom = 1
+	fg.corner_radius_top_left = 8
+	fg.corner_radius_top_right = 8
+	fg.corner_radius_bottom_left = 8
+	fg.corner_radius_bottom_right = 8
+	fg.shadow_color = Color(0, 0, 0, 0.2)
+	fg.shadow_size = 1
+
+	inst_bar.add_theme_stylebox_override("bg", bg)
+	inst_bar.add_theme_stylebox_override("fg", fg)
+	
 func _fmt_num(n: float) -> String:
 	if n >= 1_000_000.0:
 		return "%.2fM" % (n / 1_000_000.0)
@@ -71,8 +110,9 @@ func update_top_bar(
 		control_ps: float,
 		instability_pct: float,
 		overclock_active: bool,
-		_overclock_time_left: float,
-		time_to_fail_sec: float
+		overclock_time_left: float,
+		time_to_fail_sec: float,
+		instability_gain_per_sec: float
 	) -> void:
 	if thoughts_value == null:
 		return
@@ -86,16 +126,36 @@ func update_top_bar(
 	var pct: float = clampf(instability_pct, 0.0, 100.0)
 	inst_bar.value = pct
 
-	var c: Color = COLOR_BAR_BLUE
-	if pct >= 80.0:
+	# Smooth ramp from amber to red between 60..100
+	var c: Color
+	if pct < 60.0:
+		c = COLOR_BAR_BLUE
+	elif pct >= 100.0:
 		c = COLOR_BAR_RED
-	elif pct >= 60.0:
-		c = COLOR_BAR_AMBER
+	else:
+		var t: float = clampf((pct - 60.0) / 40.0, 0.0, 1.0)
+		c = COLOR_BAR_AMBER.lerp(COLOR_BAR_RED, t)
 	inst_bar.add_theme_color_override("fill_color", c)
 
-	inst_title.text = "Instability (%s)" % _fmt_time(time_to_fail_sec)
+	# Color-blind friendly cue: lighten bar when high instability
+	var high_risk: bool = pct >= 80.0
+	var base_mod: Color = Color(1, 0.9, 0.9) if (high_risk and not overclock_active) else Color(1, 1, 1)
+
+	var ttf_disp: float = min(time_to_fail_sec, 999999.0)
+	var gain_disp: float = maxf(instability_gain_per_sec, 0.0)
+	if inst_bar:
+		inst_bar.tooltip_text = "Instability gain: %.4f/s\nTTF: %s" % [gain_disp, _fmt_time(ttf_disp)]
+	if inst_title:
+		inst_title.tooltip_text = inst_bar.tooltip_text
 
 	if overclock_active:
-		inst_bar.modulate = Color(1, 0.6, 0.6)
+		var ending: bool = overclock_time_left < 1.5
+		var bar_mod: Color = Color(1, 0.45, 0.45) if ending else Color(1, 0.6, 0.6)
+		inst_bar.modulate = bar_mod
+		if ending:
+			inst_title.text = "Instability (%s • ending… %.1fs)" % [_fmt_time(ttf_disp), overclock_time_left]
+		else:
+			inst_title.text = "Instability (%s • OC %.1fs)" % [_fmt_time(ttf_disp), overclock_time_left]
 	else:
-		inst_bar.modulate = Color(1, 1, 1)
+		inst_bar.modulate = base_mod
+		inst_title.text = "Instability (%s)" % _fmt_time(ttf_disp)

@@ -16,18 +16,53 @@ func _ready() -> void:
 	gm = get_tree().current_scene.find_child("GameManager", true, false) as GameManager
 	perm = get_tree().current_scene.find_child("PermPerkSystem", true, false) as PermPerkSystem
 
-	if debug_print:
-		print("[PermPerkRow] ready id=", perk_id,
-			" gm=", gm, " gm_path=", (str(gm.get_path()) if gm else "<null>"),
-			" perm=", perm, " perm_path=", (str(perm.get_path()) if perm else "<null>"))
+	mouse_filter = Control.MOUSE_FILTER_STOP  # row accepts input
 
 	if btn != null:
 		btn.mouse_filter = Control.MOUSE_FILTER_STOP
+		btn.disabled = false
+		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		btn.size_flags_stretch_ratio = 3
+		btn.custom_minimum_size.x = 0
+		btn.add_theme_constant_override("content_margin_left", 10)
+		btn.add_theme_constant_override("content_margin_right", 10)
+		btn.add_theme_constant_override("h_separation", 6)
+		btn.clip_text = false
+		btn.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		if gm != null and gm.has_method("_style_button"):
+			gm._style_button(btn)
 		if not btn.pressed.is_connected(Callable(self, "_on_buy")):
 			btn.pressed.connect(Callable(self, "_on_buy"))
 
+	if bar != null:
+		bar.mouse_filter = Control.MOUSE_FILTER_IGNORE  # don’t block clicks
+		bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		bar.size_flags_stretch_ratio = 2   # keep your 60/40 split
+		bar.custom_minimum_size.x = 0
+
+		var bg := StyleBoxFlat.new()
+		bg.bg_color = Color(0.15, 0.17, 0.20, 0.8)  # same dark track you use in run upgrades
+		bg.corner_radius_top_left = 6
+		bg.corner_radius_top_right = 6
+		bg.corner_radius_bottom_left = 6
+		bg.corner_radius_bottom_right = 6
+
+		var fg := StyleBoxFlat.new()
+		fg.bg_color = Color(0.35, 0.8, 0.95, 0.95)  # same cyan fill as run upgrades
+		fg.corner_radius_top_left = 6
+		fg.corner_radius_top_right = 6
+		fg.corner_radius_bottom_left = 6
+		fg.corner_radius_bottom_right = 6
+
+		bar.add_theme_stylebox_override("background", bg)
+		bar.add_theme_stylebox_override("fill", fg)
+
+	if cost_label != null:
+		cost_label.custom_minimum_size.x = 100
+
+	add_theme_constant_override("separation", 12)
+
 	set_process(true)
-	refresh()
 
 func _process(delta: float) -> void:
 	_t += delta

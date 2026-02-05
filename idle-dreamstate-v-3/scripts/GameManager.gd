@@ -23,14 +23,15 @@ signal abyss_unlocked
 # -------------------------
 # DIVE COOLDOWN (perk2 reduction)
 # -------------------------
-@export var dive_cd_min: float = 3.0
-@export var perk2_cd_reduction_per_level: float = 0.5
+@export var dive_cd_min: float = 0.0
+@export var perk2_cd_reduction_per_level: float = 0.0
 
 func _get_effective_dive_cooldown() -> float:
-	var cd := dive_cooldown
-	if perk_system != null:
-		cd -= perk2_cd_reduction_per_level * float(perk_system.perk2_level)
-	return maxf(dive_cd_min, cd)
+	return 0.0
+# -------------------------
+# AUTO-OVERCLOCK GUARD
+# -------------------------
+@export var auto_overclock_instability_limit: float = 85.0
 
 # -------------------------
 # UI NODES (MainUI)
@@ -134,14 +135,64 @@ var _last_control_sample: float = 0.0
 var _thoughts_ps: float = 0.0
 var _control_ps: float = 0.0
 
+# -------------------------
+# WARNINGS
+# -------------------------
+var _warned_missing_top_bar: bool = false
+var _warned_missing_pillar: bool = false
+var _warned_missing_sound: bool = false
+
+# -------------------------
+# UI FX
+# -------------------------
+var _ui_flash_phase: float = 0.0
+
+# -------------------------
+# DEBUG OVERLAY
+# -------------------------
+static var _persist_debug_visible: bool = false
+var _debug_overlay_layer: CanvasLayer
+var _debug_label: Label
+var _debug_visible: bool = false
+
+# -------------------------
+# FORMAT HELPERS
+# -------------------------
+func _fmt_num(v: float) -> String:
+	if v >= 1000000.0:
+		return "%.2fM" % (v / 1000000.0)
+	if v >= 1000.0:
+		return "%.2fK" % (v / 1000.0)
+	return str(int(floor(v)))
+
+func _fmt_time_ui(sec: float) -> String:
+	if sec >= 999900.0:
+		return "--:--"
+	sec = maxf(sec, 0.0)
+	var m: int = int(floor(sec / 60.0))
+	var s: int = int(fmod(sec, 60.0))
+	return "%d:%02d" % [m, s]
+
+# -------------------------
+# SYNC / WARN
+# -------------------------
 func _sync_cracks() -> void:
 	if pillar_stack != null and pillar_stack.has_method("set_instability"):
 		pillar_stack.call("set_instability", instability, 100.0)
+
+func _warn_missing_nodes_once() -> void:
+	if pillar_stack == null and not _warned_missing_pillar:
+		push_warning("pillar_stack missing (Segments).")
+		_warned_missing_pillar = true
+	if sound_system == null and not _warned_missing_sound:
+		push_warning("sound_system missing at ../SoundSystem.")
+		_warned_missing_sound = true
 
 # -------------------------
 # READY
 # -------------------------
 func _ready() -> void:
+	_warn_missing_nodes_once()
 	set_process_priority(1000)
 	load_game()
 	_apply_offline_progress()
@@ -184,6 +235,13 @@ func _ready() -> void:
 	_update_buttons_ui()
 	_force_cooldown_texts()
 	save_game()
+
+	# restore debug overlay visibility for session
+	_debug_visible = _persist_debug_visible
+	if _debug_visible:
+		_toggle_debug_overlay()  # ensure layer exists
+		_debug_visible = true    # toggle flips; keep on
+		_update_debug_overlay()
 
 # -------------------------
 # PROCESS
@@ -310,15 +368,34 @@ func _process(delta: float) -> void:
 	_refresh_top_ui()
 	_update_buttons_ui()
 	_force_cooldown_texts()
+	_update_overclock_flash(delta)
+
+	if _debug_visible:
+		_update_debug_overlay()
 
 	if instability >= 100.0:
 		do_fail()
 
 # -------------------------
+# RATE SAMPLE HELPER
+# -------------------------
+func _force_rate_sample() -> void:
+	_last_thoughts_sample = thoughts
+	_last_control_sample = control
+	_rate_sample_timer = 0.0
+	_thoughts_ps = 0.0
+	_control_ps = 0.0
+
+# -------------------------
 # UI UPDATE
 # -------------------------
 func _refresh_top_ui() -> void:
-	# Old fallback labels
+	if top_bar_panel == null:
+		if not _warned_missing_top_bar:
+			push_warning("TopBarPanel missing at ../MainUI/Root/TopBarPanel")
+			_warned_missing_top_bar = true
+		return
+
 	if thoughts_label != null:
 		thoughts_label.text = "Thoughts: %s" % _fmt_num(thoughts)
 	if control_label != null:
@@ -330,49 +407,95 @@ func _refresh_top_ui() -> void:
 	if instability_label != null:
 		instability_label.text = "Instability"
 
-	# Preferred: send to TopBarPanel if present
-	if top_bar_panel != null and top_bar_panel.has_method("update_top_bar"):
+	if top_bar_panel.has_method("update_top_bar"):
 		var inst_pct: float = clampf(instability, 0.0, 100.0)
 		var overclock_time_left: float = 0.0
 		if overclock_system != null and overclock_system.active:
 			overclock_time_left = maxf(overclock_system.timer, 0.0)
 		var ttf: float = get_seconds_until_fail()
+		var inst_gain: float = get_idle_instability_gain_per_sec()
+
+		var disp_thoughts_ps := maxf(_thoughts_ps, 0.0)
+		var disp_control_ps := maxf(_control_ps, 0.0)
+
 		top_bar_panel.update_top_bar(
 			thoughts,
-			_thoughts_ps,
+			disp_thoughts_ps,
 			control,
-			_control_ps,
+			disp_control_ps,
 			inst_pct,
 			overclock_system != null and overclock_system.active,
 			overclock_time_left,
-			ttf
+			ttf,
+			inst_gain
 		)
+
+func _set_button_dim(btn: Button, enabled: bool) -> void:
+	if btn == null:
+		return
+	btn.modulate = Color(1, 1, 1, 1) if enabled else Color(0.65, 0.65, 0.65, 1)
 
 func _update_buttons_ui() -> void:
 	if overclock_button != null:
 		var cost_mul: float = upgrade_manager.get_overclock_cost_mult()
 		var effective_overclock_cost: float = overclock_system.base_control_cost * cost_mul
+		var disabled_reason := ""
+		if overclock_system.active:
+			disabled_reason = "Overclock already active."
+		elif control < effective_overclock_cost:
+			disabled_reason = "Need %d Control." % int(round(effective_overclock_cost))
 		overclock_button.disabled = overclock_system.active or (control < effective_overclock_cost)
+		if overclock_button.disabled and disabled_reason != "":
+			overclock_button.tooltip_text = disabled_reason + "\n" + overclock_button.tooltip_text
+		_set_button_dim(overclock_button, not overclock_button.disabled)
+
 	if dive_button != null:
-		dive_button.disabled = (dive_cooldown_timer > 0.0)
+		dive_button.disabled = false
+		dive_button.tooltip_text = ""
+		_set_button_dim(dive_button, true)
+
 	if wake_button != null:
-		wake_button.disabled = (wake_guard_timer > 0.0)
+		wake_button.tooltip_text = "End run and convert to memories."
+		_set_button_dim(wake_button, not wake_button.disabled)
+		
+func _build_overclock_tooltip(cost: float, duration_mul: float, thoughts_add: float, thoughts_mul: float, instab_mul: float, active: bool, sec_left: float, extra: String) -> String:
+	if active:
+		return "Overclock active. Remaining: %ds.\nThoughts: +%.2f add, x%.2f mult\nInstability: x%.2f%s" % [
+			int(ceil(sec_left)),
+			thoughts_add,
+			thoughts_mul,
+			instab_mul,
+			("" if extra == "" else "\n" + extra)
+		]
+	return "Cost: %d Control\nDuration x%.2f\nThoughts: +%.2f add, x%.2f mult\nInstability: x%.2f%s" % [
+		int(round(cost)),
+		duration_mul,
+		thoughts_add,
+		thoughts_mul,
+		instab_mul,
+		("" if extra == "" else "\n" + extra)
+	]
 
 func _force_cooldown_texts() -> void:
+	var cost_mul: float = upgrade_manager.get_overclock_cost_mult()
+	var effective_cost: float = overclock_system.base_control_cost * cost_mul
+	var duration_mul: float = upgrade_manager.get_overclock_duration_mult()
+	var thoughts_add: float = upgrade_manager.get_overclock_thoughts_mult_bonus()
+	var thoughts_mul: float = upgrade_manager.get_overclock_thoughts_mult_penalty()
+	var instab_mul: float = upgrade_manager.get_overclock_instability_mult()
+
 	if overclock_button != null:
 		if overclock_system.active:
 			var sec_left_o: int = int(ceil(maxf(overclock_system.timer, 0.0)))
 			overclock_button.text = "Overclock (%ds)" % sec_left_o
+			overclock_button.tooltip_text = _build_overclock_tooltip(effective_cost, duration_mul, thoughts_add, thoughts_mul, instab_mul, true, sec_left_o, "")
 		else:
-			var cost_mul: float = upgrade_manager.get_overclock_cost_mult()
-			var effective_cost: float = overclock_system.base_control_cost * cost_mul
 			overclock_button.text = "Overclock (-%d Control)" % int(round(effective_cost))
+			overclock_button.tooltip_text = _build_overclock_tooltip(effective_cost, duration_mul, thoughts_add, thoughts_mul, instab_mul, false, 0.0, "")
+
 	if dive_button != null:
-		if dive_cooldown_timer > 0.0:
-			var sec_left_d: int = int(ceil(dive_cooldown_timer))
-			dive_button.text = "Dive (%ds)" % sec_left_d
-		else:
-			dive_button.text = "Dive"
+		dive_button.text = "Dive"
+
 	if wake_button != null:
 		wake_button.text = "Wake"
 
@@ -387,6 +510,8 @@ func _on_meta_pressed() -> void:
 		return
 	_sync_meta_progress()
 	meta_panel.toggle_open()
+	_force_rate_sample()
+	_refresh_top_ui()
 
 func _sync_meta_progress() -> void:
 	max_depth_reached = maxi(max_depth_reached, maxi(1, depth))
@@ -442,10 +567,7 @@ func calc_depth_currency_gain(depth_i: int) -> float:
 # ACTIONS
 # -------------------------
 func do_dive() -> void:
-	if dive_cooldown_timer > 0.0:
-		return
-
-	dive_cooldown_timer = _get_effective_dive_cooldown()
+	# no cooldown gate
 	depth += 1
 	max_depth_reached = maxi(max_depth_reached, depth)
 
@@ -539,7 +661,6 @@ func reset_run() -> void:
 	total_thoughts_earned = 0.0
 	max_instability = 0.0
 
-	# PERM starting bonuses
 	if perm_perk_system != null:
 		thoughts = perm_perk_system.get_starting_thoughts()
 		instability = maxf(0.0, instability - perm_perk_system.get_starting_instability_reduction())
@@ -591,12 +712,9 @@ func calc_memories_gain() -> float:
 	return sqrt(t) * (1.0 + r) * time_mult * depth_mult
 
 # -------------------------
-# AFK TIMER (GLOBAL depth-meta)
+# AFK TIMER / INSTABILITY GAIN
 # -------------------------
-func get_seconds_until_fail() -> float:
-	if instability >= 100.0:
-		return 0.0
-
+func get_idle_instability_gain_per_sec() -> float:
 	var corruption = {"extra_instability": 0.0, "instability_mult": 1.0}
 	var instability_mult: float = upgrade_manager.get_instability_mult() * perk_system.get_instability_mult() * nightmare_system.get_instability_mult()
 	if perm_perk_system != null:
@@ -617,6 +735,12 @@ func get_seconds_until_fail() -> float:
 		depth_meta_idle_instab_mult = depth_meta_system.get_global_idle_instability_mult()
 
 	var gain_per_sec := (idle_instability_rate * instability_mult * depth_instab_mult * abyss_instab_mult * depth_meta_instab_mult * depth_meta_idle_instab_mult) + float(corruption.extra_instability)
+	return gain_per_sec
+
+func get_seconds_until_fail() -> float:
+	if instability >= 100.0:
+		return 0.0
+	var gain_per_sec := get_idle_instability_gain_per_sec()
 	if gain_per_sec <= 0.0001:
 		return 999999.0
 	return (100.0 - instability) / gain_per_sec
@@ -645,7 +769,6 @@ func _apply_offline_progress() -> void:
 	var instability_mult: float = upgrade_manager.get_instability_mult() * perk_system.get_instability_mult() * nightmare_system.get_instability_mult()
 	var control_mult: float = perk_system.get_control_mult() * nightmare_system.get_control_mult()
 
-	# GLOBAL depth-meta
 	var depth_meta_thoughts_mult: float = 1.0
 	var depth_meta_control_mult: float = 1.0
 	var depth_meta_instab_mult: float = 1.0
@@ -700,8 +823,10 @@ func _apply_offline_progress() -> void:
 	_sync_cracks()
 	_sync_meta_progress()
 
+	_force_rate_sample()
+
 # -------------------------
-# SAVE / LOAD (unchanged)
+# SAVE / LOAD
 # -------------------------
 func save_game() -> void:
 	var data = SaveSystem.load_game()
@@ -810,11 +935,28 @@ func _bind_ui_mainui() -> void:
 	control_label = _ui_find("ControlLabel") as Label
 	instability_label = _ui_find("InstabilityLabel") as Label
 	instability_bar = _ui_find("InstabilityBar") as Range
+	if instability_bar:
+		instability_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		instability_bar.custom_minimum_size.x = 600  # wider bar
+		# Apply consistent button styling
+	_style_action_buttons()
+	_style_run_upgrades()
 
 	overclock_button = _ui_find_button("OverclockButton")
 	dive_button = _ui_find_button("DiveButton")
 	wake_button = _ui_find_button("WakeButton")
 	meta_button = _ui_find_button("Meta")
+	
+	for b in [dive_button, overclock_button, wake_button, meta_button]:
+		if b == null:
+			continue
+		_style_button(b)
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		b.size_flags_stretch_ratio = 1
+		b.custom_minimum_size.x = 0
+		b.add_theme_constant_override("content_margin_left", 10)
+		b.add_theme_constant_override("content_margin_right", 10)
+		b.add_theme_constant_override("h_separation", 4)
 
 	auto_dive_toggle = _ui_find_toggle("AutoDiveToggle")
 	auto_overclock_toggle = _ui_find_toggle("AutoOverclockToggle")
@@ -823,6 +965,12 @@ func _bind_ui_mainui() -> void:
 	prestige_panel = _ui_find("PrestigePanel") as PrestigePanel
 	_connect_prestige_panel()
 
+		# Apply consistent button styling
+	_style_action_buttons()
+	_style_run_upgrades()
+	_style_run_panel()
+	_style_action_panel()
+	
 func _ui_find(node_name: String) -> Node:
 	return get_tree().current_scene.find_child(node_name, true, false)
 
@@ -831,6 +979,129 @@ func _ui_find_button(node_name: String) -> Button:
 
 func _ui_find_toggle(node_name: String) -> BaseButton:
 	return _ui_find(node_name) as BaseButton
+	
+func _make_stylebox(bg: Color, border: Color = Color(0.55, 0.65, 0.9, 0.8), border_w: int = 2, radius: int = 8, shadow_color: Color = Color(0, 0, 0, 0.25), shadow_size: int = 2) -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = bg
+	sb.border_color = border
+	sb.border_width_left = border_w
+	sb.border_width_top = border_w
+	sb.border_width_right = border_w
+	sb.border_width_bottom = border_w
+	sb.corner_radius_top_left = radius
+	sb.corner_radius_top_right = radius
+	sb.corner_radius_bottom_left = radius
+	sb.corner_radius_bottom_right = radius
+	sb.shadow_color = shadow_color
+	sb.shadow_size = shadow_size
+	sb.content_margin_left = 10
+	sb.content_margin_right = 10
+	sb.content_margin_top = 6
+	sb.content_margin_bottom = 6
+	return sb
+	
+func _style_button(btn: Button) -> void:
+	if btn == null:
+		return
+	var normal := _make_stylebox(Color(0.12, 0.12, 0.14, 0.95), Color(0.55, 0.65, 0.9, 0.8), 2, 8)
+	var hover := _make_stylebox(Color(0.16, 0.16, 0.20, 0.98), Color(0.60, 0.70, 0.95, 0.9), 2, 8)
+	var pressed := _make_stylebox(Color(0.09, 0.09, 0.11, 0.95), Color(0.50, 0.60, 0.85, 0.8), 2, 8)
+	var disabled := _make_stylebox(Color(0.08, 0.08, 0.10, 0.60), Color(0.40, 0.45, 0.55, 0.5), 2, 8)
+	btn.add_theme_stylebox_override("normal", normal)
+	btn.add_theme_stylebox_override("hover", hover)
+	btn.add_theme_stylebox_override("pressed", pressed)
+	btn.add_theme_stylebox_override("disabled", disabled)
+	btn.add_theme_stylebox_override("focus", hover)
+	
+func _style_tab_button(btn: Button) -> void:
+	if btn == null:
+		return
+	btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	btn.size_flags_stretch_ratio = 1
+	btn.custom_minimum_size.x = 0
+	btn.add_theme_constant_override("content_margin_left", 10)
+	btn.add_theme_constant_override("content_margin_right", 10)
+	btn.add_theme_constant_override("h_separation", 6)
+	btn.clip_text = false
+	btn.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+
+		# Blue border for all states, including disabled
+	btn.add_theme_stylebox_override("normal",   _make_stylebox(Color(0.12, 0.12, 0.14, 0.95), Color(0.55, 0.65, 0.9, 0.8), 2, 8))
+	btn.add_theme_stylebox_override("hover",    _make_stylebox(Color(0.16, 0.16, 0.20, 0.98), Color(0.60, 0.70, 0.95, 0.9), 2, 8))
+	btn.add_theme_stylebox_override("pressed",  _make_stylebox(Color(0.09, 0.09, 0.11, 0.95), Color(0.50, 0.60, 0.85, 0.8), 2, 8))
+	btn.add_theme_stylebox_override("disabled", _make_stylebox(Color(0.08, 0.08, 0.10, 0.60), Color(0.40, 0.45, 0.55, 0.5), 2, 8))
+	btn.add_theme_stylebox_override("focus",    _make_stylebox(Color(0.16, 0.16, 0.20, 0.98), Color(0.60, 0.70, 0.95, 0.9), 2, 8))
+func _style_upgrade_panel() -> void:
+	var panel := _ui_find("UpgradesPanel") # adjust to your actual node name
+	if panel == null:
+		return
+	for child in panel.get_children():
+		if child is Button:
+			_style_button(child)
+	
+func _style_action_buttons() -> void:
+	_style_button(dive_button)
+	_style_button(overclock_button)
+	_style_button(wake_button)
+	_style_button(meta_button)
+	
+func _style_action_panel() -> void:
+	# Find a Panel/PanelContainer wrapping the action buttons
+	var candidate := overclock_button
+	if candidate == null:
+		candidate = dive_button
+	if candidate == null:
+		candidate = wake_button
+	if candidate == null:
+		candidate = meta_button
+	if candidate == null:
+		return
+
+	var panel := candidate.get_parent()
+	while panel != null and not (panel is Panel or panel is PanelContainer):
+		panel = panel.get_parent()
+	if panel == null:
+		return
+
+	var bg := Color(0.05, 0.06, 0.08, 0.85)
+	var border := Color(0.5, 0.6, 0.9, 0.6)
+	var sb := _make_stylebox(bg, border, 2, 10, Color(0, 0, 0, 0.35), 3)
+	sb.content_margin_left = 16   # more inset
+	sb.content_margin_right = 16
+	sb.content_margin_top = 10
+	sb.content_margin_bottom = 10
+	panel.add_theme_stylebox_override("panel", sb)
+
+	# Add spacing between the buttons (if they share a BoxContainer parent)
+	var container := candidate.get_parent()
+	if container is BoxContainer:
+		container.add_theme_constant_override("separation", 10)  # bump to taste
+	
+func _style_run_upgrades() -> void:
+	var rows := get_tree().current_scene.find_children("*", "UpgradeRow", true, false)
+	for row in rows:
+		var btns := row.find_children("*", "Button", true, false)
+		for b in btns:
+			_style_button(b)
+			
+			
+func _style_run_panel() -> void:
+	var rows := get_tree().current_scene.find_children("*", "UpgradeRow", true, false)
+	if rows.is_empty():
+		return
+	var panel := rows[0].get_parent()
+	while panel != null and not (panel is Panel or panel is PanelContainer):
+		panel = panel.get_parent()
+	if panel == null:
+		return
+	var bg := Color(0.05, 0.06, 0.08, 0.85)
+	var border := Color(0.5, 0.6, 0.9, 0.6)
+	var sb := _make_stylebox(bg, border, 2, 10, Color(0, 0, 0, 0.35), 3)
+	sb.content_margin_left = 12
+	sb.content_margin_right = 12
+	sb.content_margin_top = 10
+	sb.content_margin_bottom = 10
+	panel.add_theme_stylebox_override("panel", sb)
 
 # -------------------------
 # AUTOMATION
@@ -848,7 +1119,7 @@ func _try_auto_overclock() -> void:
 	overclock_system.control_cost = overclock_system.base_control_cost * cost_mul
 	if not overclock_system.can_activate(control):
 		return
-	if instability >= 85.0:
+	if instability >= auto_overclock_instability_limit:
 		return
 	do_overclock()
 
@@ -867,19 +1138,13 @@ func _connect_pressed_once(btn: Button, cb: Callable) -> void:
 		btn.pressed.connect(cb)
 
 # -------------------------
-# NUMBER FORMAT
-# -------------------------
-func _fmt_num(v: float) -> String:
-	if v >= 1000000.0:
-		return "%.2fM" % (v / 1000000.0)
-	if v >= 1000.0:
-		return "%.2fK" % (v / 1000.0)
-	return str(int(floor(v)))
-
-# -------------------------
-# UpgradeRow compatibility wrappers (unchanged)
+# UpgradeRow compatibility wrappers
 # -------------------------
 func _apply_thoughts_return(res) -> void:
+	if res is Dictionary:
+		if res.get("bought", false):
+			thoughts = maxf(0.0, thoughts - float(res.get("cost", 0.0)))
+		return
 	if res is float or res is int:
 		thoughts = float(res)
 
@@ -917,6 +1182,8 @@ func do_buy_overclock_mastery_upgrade(_unused: float = 0.0) -> void:
 	if upgrade_manager.has_method("try_buy_overclock_mastery_upgrade"):
 		_apply_thoughts_return(upgrade_manager.call("try_buy_overclock_mastery_upgrade", thoughts))
 		save_game()
+	_force_cooldown_texts()
+	_update_buttons_ui()
 
 func do_buy_overclock_safety_upgrade(_unused: float = 0.0) -> void:
 	if upgrade_manager == null:
@@ -924,6 +1191,8 @@ func do_buy_overclock_safety_upgrade(_unused: float = 0.0) -> void:
 	if upgrade_manager.has_method("try_buy_overclock_safety_upgrade"):
 		_apply_thoughts_return(upgrade_manager.call("try_buy_overclock_safety_upgrade", thoughts))
 		save_game()
+	_force_cooldown_texts()
+	_update_buttons_ui()
 
 func _connect_prestige_panel() -> void:
 	if prestige_panel == null:
@@ -937,7 +1206,73 @@ func _on_prestige_confirm_wake() -> void:
 	do_wake()
 	if prestige_panel != null:
 		prestige_panel.close()
+	_force_rate_sample()
+	_refresh_top_ui()
 
 func _on_prestige_cancel() -> void:
 	if prestige_panel != null:
 		prestige_panel.close()
+	_force_rate_sample()
+	_refresh_top_ui()
+
+# -------------------------
+# UI FX: Overclock ending flash
+# -------------------------
+func _update_overclock_flash(delta: float) -> void:
+	if overclock_button == null:
+		return
+	if overclock_system != null and overclock_system.active and overclock_system.timer < 1.5:
+		_ui_flash_phase += delta * 12.0
+		var pulse := 0.75 + 0.25 * sin(_ui_flash_phase)
+		overclock_button.modulate = Color(1, pulse, pulse, 1)
+	else:
+		overclock_button.modulate = Color(1, 1, 1, 1)
+		_ui_flash_phase = 0.0
+
+# -------------------------
+# DEBUG OVERLAY (F8)
+# -------------------------
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_F8:
+			_toggle_debug_overlay()
+
+func _toggle_debug_overlay() -> void:
+	_debug_visible = not _debug_visible
+	_persist_debug_visible = _debug_visible
+	if _debug_visible and _debug_label == null:
+		_debug_overlay_layer = CanvasLayer.new()
+		_debug_overlay_layer.layer = 50
+		add_child(_debug_overlay_layer)
+		var panel := ColorRect.new()
+		panel.color = Color(0, 0, 0, 0.55)
+		panel.size = Vector2(340, 180)
+		panel.position = Vector2(12, 12)
+		panel.corner_radius_top_left = 6
+		panel.corner_radius_top_right = 6
+		panel.corner_radius_bottom_left = 6
+		panel.corner_radius_bottom_right = 6
+		_debug_overlay_layer.add_child(panel)
+		_debug_label = Label.new()
+		_debug_label.position = Vector2(8, 8)
+		_debug_label.autowrap_mode = TextServer.AUTOWRAP_WORD
+		_debug_label.size = Vector2(324, 164)
+		_debug_label.clip_text = true
+		panel.add_child(_debug_label)
+	if _debug_overlay_layer != null:
+		_debug_overlay_layer.visible = _debug_visible
+
+func _update_debug_overlay() -> void:
+	if _debug_label == null:
+		return
+	var ttf := get_seconds_until_fail()
+	var oc_left: float = overclock_system.timer if (overclock_system != null and overclock_system.active) else 0.0
+	var gain := get_idle_instability_gain_per_sec()
+	_debug_label.text = "Debug (F8)\n" \
+		+ "Thoughts: %s (%.3f/s)\n" % [_fmt_num(thoughts), maxf(_thoughts_ps, 0.0)] \
+		+ "Control: %s (%.3f/s)\n" % [_fmt_num(control), maxf(_control_ps, 0.0)] \
+		+ "Instability: %.2f\n" % instability \
+		+ "Instab gain/s: %.4f\n" % gain \
+		+ "TTF: %s (raw %.1fs)\n" % [_fmt_time_ui(ttf), ttf] \
+		+ "Overclock: %s (%.2fs left)\n" % [(overclock_system.active if overclock_system != null else false), oc_left] \
+		+ "Depth: %d\n" % depth
