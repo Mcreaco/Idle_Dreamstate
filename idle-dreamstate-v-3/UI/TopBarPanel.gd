@@ -1,9 +1,13 @@
 extends PanelContainer
+class_name TopBarPanel
 
 const COLOR_TEXT: Color = Color(0.87, 0.91, 1.0)
 const COLOR_BAR_BLUE: Color = Color(0.24, 0.67, 0.94)
 const COLOR_BAR_AMBER: Color = Color(0.95, 0.65, 0.15)
 const COLOR_BAR_RED: Color = Color(0.85, 0.18, 0.18)
+
+@export var depth_label_path: NodePath
+@onready var depth_label: Label = _resolve_depth_label()
 
 @onready var thoughts_value: Label = $TopBar/MarginContainer/ThoughtsBox/ThoughtsValue
 @onready var thoughts_gain: Label = $TopBar/MarginContainer/ThoughtsBox/ThoughtsGain
@@ -14,39 +18,30 @@ const COLOR_BAR_RED: Color = Color(0.85, 0.18, 0.18)
 @onready var inst_hint: Label = $TopBar/InstabilityCenter/InstabilityVBox/InstabilityHint
 
 func _ready() -> void:
-	_validate_nodes()
 	_set_label_colors()
 	if inst_hint:
-		inst_hint.visible = false
+		inst_hint.visible = false  # hide inline; tooltip only
 	if inst_bar:
 		inst_bar.tooltip_text = "Instability rises from idle gain and events. Reaching 100 ends the run."
+	_style_inst_bar()
 	if inst_title:
 		inst_title.tooltip_text = "Time to fail (TTF) is estimated from current idle instability gain; overclock increases gain."
-	_style_inst_bar()
-	
-func _validate_nodes() -> void:
-	var nodes_ok := true
-	var paths := {
-		"thoughts_value": thoughts_value,
-		"thoughts_gain": thoughts_gain,
-		"control_value": control_value,
-		"control_gain": control_gain,
-		"inst_title": inst_title,
-		"inst_bar": inst_bar,
-		"inst_hint": inst_hint
-	}
-	for k in paths.keys():
-		if paths[k] == null:
-			nodes_ok = false
-			push_error("TopBarPanel.gd: Missing node at path for %s" % k)
-	if not nodes_ok:
-		set_process(false)
+	if depth_label == null:
+		push_warning("TopBarPanel: depth_label is null; set depth_label_path or name the node DepthLabel")
+
+func _resolve_depth_label() -> Label:
+	if depth_label_path != NodePath(""):
+		var n := get_node_or_null(depth_label_path)
+		if n and n is Label:
+			return n as Label
+	return find_child("DepthLabel", true, false) as Label
 
 func _set_label_colors() -> void:
 	var labels: Array[Label] = [
 		thoughts_value, thoughts_gain,
 		control_value, control_gain,
-		inst_hint, inst_title
+		inst_hint, inst_title,
+		depth_label
 	]
 	for l in labels:
 		if l and not l.has_theme_color_override("font_color"):
@@ -85,77 +80,49 @@ func _style_inst_bar() -> void:
 
 	inst_bar.add_theme_stylebox_override("bg", bg)
 	inst_bar.add_theme_stylebox_override("fg", fg)
-	
-func _fmt_num(n: float) -> String:
-	if n >= 1_000_000.0:
-		return "%.2fM" % (n / 1_000_000.0)
-	elif n >= 1_000.0:
-		return "%.2fK" % (n / 1_000.0)
-	elif n >= 10.0:
-		return "%.0f" % n
-	return "%.1f" % n
 
-func _fmt_time(sec: float) -> String:
+func set_depth_ui(current_depth: int, _max_depth: int) -> void:
+	if depth_label:
+		depth_label.text = "Depth: %d" % current_depth
+
+func update_top_bar(
+	thoughts: float,
+	thoughts_ps: float,
+	control: float,
+	control_ps: float,
+	inst_pct: float,
+	is_overclock: bool,
+	overclock_time_left: float,
+	ttf: float,
+	inst_gain: float
+) -> void:
+	if thoughts_value:
+		thoughts_value.text = "%s" % _fmt_num(thoughts)
+	if thoughts_gain:
+		thoughts_gain.text = "+%.1f/s" % thoughts_ps
+	if control_value:
+		control_value.text = "%s" % _fmt_num(control)
+	if control_gain:
+		control_gain.text = "+%.1f/s" % control_ps
+	if inst_bar:
+		inst_bar.value = inst_pct
+	if inst_title:
+		inst_title.text = "Instability (TTF %s)" % _fmt_time_ui(ttf)
+		inst_title.tooltip_text = "Instab +%.3f/s%s" % [inst_gain, (" | OC %.1fs" % overclock_time_left) if is_overclock else ""]
+	if inst_hint:
+		inst_hint.visible = false  # keep hidden inline
+
+func _fmt_num(v: float) -> String:
+	if v >= 1000000.0:
+		return "%.2fM" % (v / 1000000.0)
+	if v >= 1000.0:
+		return "%.2fK" % (v / 1000.0)
+	return str(int(floor(v)))
+
+func _fmt_time_ui(sec: float) -> String:
 	if sec >= 999900.0:
 		return "--:--"
 	sec = maxf(sec, 0.0)
-	var m: float = floor(sec / 60.0)
-	var s: float = fmod(sec, 60.0)
-	return "%d:%02d" % [int(m), int(s)]
-
-func update_top_bar(
-		thoughts: float,
-		thoughts_ps: float,
-		control: float,
-		control_ps: float,
-		instability_pct: float,
-		overclock_active: bool,
-		overclock_time_left: float,
-		time_to_fail_sec: float,
-		instability_gain_per_sec: float
-	) -> void:
-	if thoughts_value == null:
-		return
-
-	thoughts_value.text = _fmt_num(thoughts)
-	thoughts_gain.text = "+%s/s" % _fmt_num(thoughts_ps)
-
-	control_value.text = _fmt_num(control)
-	control_gain.text = "+%s/s" % _fmt_num(control_ps)
-
-	var pct: float = clampf(instability_pct, 0.0, 100.0)
-	inst_bar.value = pct
-
-	# Smooth ramp from amber to red between 60..100
-	var c: Color
-	if pct < 60.0:
-		c = COLOR_BAR_BLUE
-	elif pct >= 100.0:
-		c = COLOR_BAR_RED
-	else:
-		var t: float = clampf((pct - 60.0) / 40.0, 0.0, 1.0)
-		c = COLOR_BAR_AMBER.lerp(COLOR_BAR_RED, t)
-	inst_bar.add_theme_color_override("fill_color", c)
-
-	# Color-blind friendly cue: lighten bar when high instability
-	var high_risk: bool = pct >= 80.0
-	var base_mod: Color = Color(1, 0.9, 0.9) if (high_risk and not overclock_active) else Color(1, 1, 1)
-
-	var ttf_disp: float = min(time_to_fail_sec, 999999.0)
-	var gain_disp: float = maxf(instability_gain_per_sec, 0.0)
-	if inst_bar:
-		inst_bar.tooltip_text = "Instability gain: %.4f/s\nTTF: %s" % [gain_disp, _fmt_time(ttf_disp)]
-	if inst_title:
-		inst_title.tooltip_text = inst_bar.tooltip_text
-
-	if overclock_active:
-		var ending: bool = overclock_time_left < 1.5
-		var bar_mod: Color = Color(1, 0.45, 0.45) if ending else Color(1, 0.6, 0.6)
-		inst_bar.modulate = bar_mod
-		if ending:
-			inst_title.text = "Instability (%s • ending… %.1fs)" % [_fmt_time(ttf_disp), overclock_time_left]
-		else:
-			inst_title.text = "Instability (%s • OC %.1fs)" % [_fmt_time(ttf_disp), overclock_time_left]
-	else:
-		inst_bar.modulate = base_mod
-		inst_title.text = "Instability (%s)" % _fmt_time(ttf_disp)
+	var m: int = int(floor(sec / 60.0))
+	var s: int = int(fmod(sec, 60.0))
+	return "%d:%02d" % [m, s]

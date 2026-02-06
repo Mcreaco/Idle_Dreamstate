@@ -3,9 +3,6 @@ class_name GameManager
 
 signal abyss_unlocked
 
-# -------------------------
-# SCENE / SYSTEM REFERENCES
-# -------------------------
 @onready var pillar_stack: Node = get_tree().current_scene.find_child("Segments", true, false)
 @onready var risk_system: RiskSystem = $"../Systems/RiskSystem"
 @onready var overclock_system: OverclockSystem = $"../Systems/OverclockSystem"
@@ -18,24 +15,14 @@ signal abyss_unlocked
 @onready var perm_perk_system: PermPerkSystem = $"../Systems/PermPerkSystem"
 @onready var depth_meta_system: DepthMetaSystem = $"../Systems/DepthMetaSystem"
 @onready var sound_system = $"../SoundSystem"
-@onready var top_bar_panel: Node = $"../MainUI/Root/TopBarPanel"  # ensure this path matches your scene
+@onready var top_bar_panel: TopBarPanel = $"../MainUI/Root/TopBarPanel"
 
-# -------------------------
-# DIVE COOLDOWN (perk2 reduction)
-# -------------------------
 @export var dive_cd_min: float = 0.0
 @export var perk2_cd_reduction_per_level: float = 0.0
-
 func _get_effective_dive_cooldown() -> float:
 	return 0.0
-# -------------------------
-# AUTO-OVERCLOCK GUARD
-# -------------------------
 @export var auto_overclock_instability_limit: float = 85.0
 
-# -------------------------
-# UI NODES (MainUI)
-# -------------------------
 var thoughts_label: Label
 var control_label: Label
 var instability_label: Label
@@ -52,9 +39,6 @@ var auto_overclock_toggle: BaseButton
 var meta_panel: MetaPanelController
 var prestige_panel: PrestigePanel
 
-# -------------------------
-# RUN
-# -------------------------
 var thoughts: float = 0.0
 var control: float = 0.0
 var instability: float = 0.0
@@ -62,27 +46,15 @@ var time_in_run: float = 0.0
 var total_thoughts_earned: float = 0.0
 var max_instability: float = 0.0
 
-# -------------------------
-# DEPTH
-# -------------------------
 var depth: int = 0
 var max_depth_reached: int = 1
 
-# -------------------------
-# ABYSS (meta unlock)
-# -------------------------
 var abyss_unlocked_flag: bool = false
 var run_start_depth: int = 0
 var abyss_target_depth: int = 15
 
-# -------------------------
-# META CURRENCY
-# -------------------------
 var memories: float = 0.0
 
-# -------------------------
-# RATES
-# -------------------------
 var idle_thoughts_rate: float = 2.5
 var idle_control_rate: float = 1.0
 var idle_instability_rate: float = 0.45
@@ -97,67 +69,37 @@ var fail_penalty_mult: float = 0.60
 var depth_thoughts_step: float = 0.05
 var depth_instab_step: float = 0.08
 
-# -------------------------
-# DIVE COOLDOWN
-# -------------------------
 var dive_cooldown: float = 10.0
 var dive_cooldown_timer: float = 0.0
 
-# -------------------------
-# WAKE GUARD
-# -------------------------
 var wake_guard_seconds: float = 0.35
 var wake_guard_timer: float = 0.0
 
-# -------------------------
-# OFFLINE PROGRESS
-# -------------------------
 const MAX_OFFLINE_SECONDS: float = 3600.0
 var offline_seconds: float = 0.0
 
-# -------------------------
-# AUTOSAVE
-# -------------------------
 var autosave_timer: float = 0.0
 var autosave_interval: float = 10.0
 
-# -------------------------
-# CRACK SYNC THROTTLE
-# -------------------------
 var _crack_sync_timer: float = 0.0
 
-# -------------------------
-# RATE SAMPLING FOR UI
-# -------------------------
 var _rate_sample_timer: float = 0.0
 var _last_thoughts_sample: float = 0.0
 var _last_control_sample: float = 0.0
 var _thoughts_ps: float = 0.0
 var _control_ps: float = 0.0
 
-# -------------------------
-# WARNINGS
-# -------------------------
 var _warned_missing_top_bar: bool = false
 var _warned_missing_pillar: bool = false
 var _warned_missing_sound: bool = false
 
-# -------------------------
-# UI FX
-# -------------------------
 var _ui_flash_phase: float = 0.0
 
-# -------------------------
-# DEBUG OVERLAY
-# -------------------------
 static var _persist_debug_visible: bool = false
 var _debug_overlay_layer: CanvasLayer
 var _debug_label: Label
 var _debug_visible: bool = false
 
-# -------------------------
-# FORMAT HELPERS
-# -------------------------
 func _fmt_num(v: float) -> String:
 	if v >= 1000000.0:
 		return "%.2fM" % (v / 1000000.0)
@@ -173,9 +115,13 @@ func _fmt_time_ui(sec: float) -> String:
 	var s: int = int(fmod(sec, 60.0))
 	return "%d:%02d" % [m, s]
 
-# -------------------------
-# SYNC / WARN
-# -------------------------
+func _safe_mult(v: float) -> float:
+	return v if v > 0.0 else 1.0
+
+func _update_depth_ui() -> void:
+	if top_bar_panel != null and top_bar_panel.has_method("set_depth_ui") and pillar_stack != null:
+		top_bar_panel.set_depth_ui(depth, pillar_stack.get_child_count())
+
 func _sync_cracks() -> void:
 	if pillar_stack != null and pillar_stack.has_method("set_instability"):
 		pillar_stack.call("set_instability", instability, 100.0)
@@ -188,9 +134,6 @@ func _warn_missing_nodes_once() -> void:
 		push_warning("sound_system missing at ../SoundSystem.")
 		_warned_missing_sound = true
 
-# -------------------------
-# READY
-# -------------------------
 func _ready() -> void:
 	_warn_missing_nodes_once()
 	set_process_priority(1000)
@@ -198,7 +141,6 @@ func _ready() -> void:
 	_apply_offline_progress()
 	_bind_ui_mainui()
 
-	# init samples
 	_last_thoughts_sample = thoughts
 	_last_control_sample = control
 
@@ -230,22 +172,20 @@ func _ready() -> void:
 	if pillar_stack != null and pillar_stack.has_method("reset_visuals"):
 		pillar_stack.call("reset_visuals")
 
+	_update_depth_ui()
+
 	_sync_cracks()
 	_refresh_top_ui()
 	_update_buttons_ui()
 	_force_cooldown_texts()
 	save_game()
 
-	# restore debug overlay visibility for session
 	_debug_visible = _persist_debug_visible
 	if _debug_visible:
-		_toggle_debug_overlay()  # ensure layer exists
-		_debug_visible = true    # toggle flips; keep on
+		_toggle_debug_overlay()
+		_debug_visible = true
 		_update_debug_overlay()
 
-# -------------------------
-# PROCESS
-# -------------------------
 func _process(delta: float) -> void:
 	autosave_timer += delta
 	if autosave_timer >= autosave_interval:
@@ -264,7 +204,6 @@ func _process(delta: float) -> void:
 
 	overclock_system.update(delta)
 
-	# Automation toggles
 	if auto_dive_toggle != null:
 		automation_system.auto_dive = auto_dive_toggle.button_pressed
 	if auto_overclock_toggle != null:
@@ -278,63 +217,48 @@ func _process(delta: float) -> void:
 
 	var _corruption = corruption_system.update(delta, instability)
 
-	# -------------------------
-	# Base multipliers
-	# -------------------------
-	var thoughts_mult: float = upgrade_manager.get_thoughts_mult() * perk_system.get_thoughts_mult() * nightmare_system.get_thoughts_mult()
-	var instability_mult: float = upgrade_manager.get_instability_mult() * perk_system.get_instability_mult() * nightmare_system.get_instability_mult()
-	var control_mult: float = perk_system.get_control_mult() * nightmare_system.get_control_mult()
+	var thoughts_mult: float = _safe_mult(upgrade_manager.get_thoughts_mult()) * _safe_mult(perk_system.get_thoughts_mult()) * _safe_mult(nightmare_system.get_thoughts_mult())
+	var instability_mult: float = _safe_mult(upgrade_manager.get_instability_mult()) * _safe_mult(perk_system.get_instability_mult()) * _safe_mult(nightmare_system.get_instability_mult())
+	var control_mult: float = _safe_mult(perk_system.get_control_mult()) * _safe_mult(nightmare_system.get_control_mult())
 
-	# Depth-meta GLOBAL (permanent across all depths)
 	var depth_meta_thoughts_mult: float = 1.0
 	var depth_meta_control_mult: float = 1.0
 	var depth_meta_instab_mult: float = 1.0
 	var depth_meta_idle_instab_mult: float = 1.0
 	if depth_meta_system != null:
-		depth_meta_thoughts_mult = depth_meta_system.get_global_thoughts_mult()
-		depth_meta_control_mult = depth_meta_system.get_global_control_mult()
-		depth_meta_instab_mult = depth_meta_system.get_global_instability_mult()
-		depth_meta_idle_instab_mult = depth_meta_system.get_global_idle_instability_mult()
+		depth_meta_thoughts_mult = _safe_mult(depth_meta_system.get_global_thoughts_mult())
+		depth_meta_control_mult = _safe_mult(depth_meta_system.get_global_control_mult())
+		depth_meta_instab_mult = _safe_mult(depth_meta_system.get_global_instability_mult())
+		depth_meta_idle_instab_mult = _safe_mult(depth_meta_system.get_global_idle_instability_mult())
 
 	thoughts_mult *= depth_meta_thoughts_mult
 	control_mult *= depth_meta_control_mult
 
-	# PERM perks
 	if perm_perk_system != null:
-		thoughts_mult *= perm_perk_system.get_thoughts_mult()
-		instability_mult *= perm_perk_system.get_instability_mult()
-		control_mult *= perm_perk_system.get_control_mult()
+		thoughts_mult *= _safe_mult(perm_perk_system.get_thoughts_mult())
+		instability_mult *= _safe_mult(perm_perk_system.get_instability_mult())
+		control_mult *= _safe_mult(perm_perk_system.get_control_mult())
 
-	# Abyss perk multipliers
 	if abyss_perk_system != null:
-		thoughts_mult *= abyss_perk_system.get_thoughts_mult()
-		control_mult *= abyss_perk_system.get_control_mult()
+		thoughts_mult *= _safe_mult(abyss_perk_system.get_thoughts_mult())
+		control_mult *= _safe_mult(abyss_perk_system.get_control_mult())
 
-	# -------------------------
-	# Depth scaling (run scaling)
-	# -------------------------
 	var deep_bonus_per_depth: float = upgrade_manager.get_deep_dives_thoughts_bonus_per_depth()
 	var deep_risk_per_depth: float = upgrade_manager.get_deep_dives_instab_bonus_per_depth()
 	var depth_thoughts_mult: float = 1.0 + (float(depth) * (depth_thoughts_step + deep_bonus_per_depth))
 	var depth_instab_mult: float = 1.0 + (float(depth) * (depth_instab_step + deep_risk_per_depth))
 
-	# Overclock
 	if overclock_system.active:
-		thoughts_mult *= overclock_system.thoughts_mult
-		instability_mult *= overclock_system.instability_mult
+		thoughts_mult *= _safe_mult(overclock_system.thoughts_mult)
+		instability_mult *= _safe_mult(overclock_system.instability_mult)
 
-	# Corruption modifiers
-	thoughts_mult *= float(_corruption.thoughts_mult)
-	instability_mult *= float(_corruption.instability_mult)
+	thoughts_mult *= _safe_mult(_corruption.thoughts_mult)
+	instability_mult *= _safe_mult(_corruption.instability_mult)
 
-	# Abyss veil reduction
 	var abyss_instab_mult: float = 1.0
 	if abyss_perk_system != null:
 		abyss_instab_mult = abyss_perk_system.get_instability_reduction_mult(depth)
 
-	# -------------------------
-	# Idle gains
-	# -------------------------
 	thoughts += idle_thoughts_rate * thoughts_mult * depth_thoughts_mult * delta
 	control += idle_control_rate * control_mult * delta
 
@@ -344,18 +268,15 @@ func _process(delta: float) -> void:
 		idle_risk_gain * abyss_instab_mult * depth_meta_instab_mult * depth_meta_idle_instab_mult
 	)
 
-	# Crack sync throttled
 	_crack_sync_timer += delta
 	if _crack_sync_timer >= 0.1:
 		_crack_sync_timer = 0.0
 		_sync_cracks()
 
-	# Tracking
 	total_thoughts_earned = maxf(total_thoughts_earned, thoughts)
 	max_instability = maxf(max_instability, instability)
 	nightmare_system.check_unlock(max_instability)
 
-	# Sample rates for UI (simple diff over time)
 	_rate_sample_timer += delta
 	if _rate_sample_timer >= 0.5:
 		var inv_dt: float = 1.0 / _rate_sample_timer
@@ -376,9 +297,6 @@ func _process(delta: float) -> void:
 	if instability >= 100.0:
 		do_fail()
 
-# -------------------------
-# RATE SAMPLE HELPER
-# -------------------------
 func _force_rate_sample() -> void:
 	_last_thoughts_sample = thoughts
 	_last_control_sample = control
@@ -386,9 +304,6 @@ func _force_rate_sample() -> void:
 	_thoughts_ps = 0.0
 	_control_ps = 0.0
 
-# -------------------------
-# UI UPDATE
-# -------------------------
 func _refresh_top_ui() -> void:
 	if top_bar_panel == null:
 		if not _warned_missing_top_bar:
@@ -429,6 +344,8 @@ func _refresh_top_ui() -> void:
 			ttf,
 			inst_gain
 		)
+
+	_update_depth_ui()
 
 func _set_button_dim(btn: Button, enabled: bool) -> void:
 	if btn == null:
@@ -499,9 +416,6 @@ func _force_cooldown_texts() -> void:
 	if wake_button != null:
 		wake_button.text = "Wake"
 
-# -------------------------
-# META PANEL
-# -------------------------
 func _on_meta_pressed() -> void:
 	if meta_panel == null:
 		meta_panel = _ui_find("MetaPanel") as MetaPanelController
@@ -524,9 +438,6 @@ func force_unlock_depth_tab(new_depth: int) -> void:
 	max_depth_reached = maxi(max_depth_reached, new_depth)
 	_sync_meta_progress()
 
-# -------------------------
-# WAKE FLOW
-# -------------------------
 func _on_wake_pressed() -> void:
 	if prestige_panel == null:
 		do_wake()
@@ -563,11 +474,7 @@ func calc_depth_currency_gain(depth_i: int) -> float:
 	var t := maxf(total_thoughts_earned, 0.0)
 	return sqrt(t) * (1.0 + float(depth_i) * 0.15) * 0.05
 
-# -------------------------
-# ACTIONS
-# -------------------------
 func do_dive() -> void:
-	# no cooldown gate
 	depth += 1
 	max_depth_reached = maxi(max_depth_reached, depth)
 
@@ -576,7 +483,7 @@ func do_dive() -> void:
 
 	var cam := get_tree().current_scene.find_child("Camera3D", true, false)
 	if cam and cam.has_method("snap_to_depth"):
-		cam.call("snap_to_depth")
+		cam.call("snap_to_depth", depth)
 
 	if upgrade_manager.mental_buffer_level > 0:
 		var bonus_control: float = float(depth) * upgrade_manager.get_mental_buffer_per_depth()
@@ -587,23 +494,22 @@ func do_dive() -> void:
 	if sound_system != null:
 		sound_system.play_dive()
 
-	var thoughts_mult: float = upgrade_manager.get_thoughts_mult() * perk_system.get_thoughts_mult() * nightmare_system.get_thoughts_mult()
-	var instability_mult: float = upgrade_manager.get_instability_mult() * perk_system.get_instability_mult() * nightmare_system.get_instability_mult()
-	var control_mult: float = perk_system.get_control_mult() * nightmare_system.get_control_mult()
+	var thoughts_mult: float = _safe_mult(upgrade_manager.get_thoughts_mult()) * _safe_mult(perk_system.get_thoughts_mult()) * _safe_mult(nightmare_system.get_thoughts_mult())
+	var instability_mult: float = _safe_mult(upgrade_manager.get_instability_mult()) * _safe_mult(perk_system.get_instability_mult()) * _safe_mult(nightmare_system.get_instability_mult())
+	var control_mult: float = _safe_mult(perk_system.get_control_mult()) * _safe_mult(nightmare_system.get_control_mult())
 
-	# GLOBAL depth-meta
 	if depth_meta_system != null:
-		thoughts_mult *= depth_meta_system.get_global_thoughts_mult()
-		control_mult *= depth_meta_system.get_global_control_mult()
+		thoughts_mult *= _safe_mult(depth_meta_system.get_global_thoughts_mult())
+		control_mult *= _safe_mult(depth_meta_system.get_global_control_mult())
 
 	if perm_perk_system != null:
-		thoughts_mult *= perm_perk_system.get_thoughts_mult()
-		instability_mult *= perm_perk_system.get_instability_mult()
-		control_mult *= perm_perk_system.get_control_mult()
+		thoughts_mult *= _safe_mult(perm_perk_system.get_thoughts_mult())
+		instability_mult *= _safe_mult(perm_perk_system.get_instability_mult())
+		control_mult *= _safe_mult(perm_perk_system.get_control_mult())
 
 	if abyss_perk_system != null:
-		thoughts_mult *= abyss_perk_system.get_thoughts_mult()
-		control_mult *= abyss_perk_system.get_control_mult()
+		thoughts_mult *= _safe_mult(abyss_perk_system.get_thoughts_mult())
+		control_mult *= _safe_mult(abyss_perk_system.get_control_mult())
 
 	var deep_bonus_per_depth: float = upgrade_manager.get_deep_dives_thoughts_bonus_per_depth()
 	var deep_risk_per_depth: float = upgrade_manager.get_deep_dives_instab_bonus_per_depth()
@@ -611,8 +517,8 @@ func do_dive() -> void:
 	var depth_instab_mult: float = 1.0 + (float(depth) * (depth_instab_step + deep_risk_per_depth))
 
 	if overclock_system.active:
-		thoughts_mult *= overclock_system.thoughts_mult
-		instability_mult *= overclock_system.instability_mult
+		thoughts_mult *= _safe_mult(overclock_system.thoughts_mult)
+		instability_mult *= _safe_mult(overclock_system.instability_mult)
 
 	thoughts += dive_thoughts_gain * thoughts_mult * depth_thoughts_mult
 	control += dive_control_gain * control_mult
@@ -623,7 +529,7 @@ func do_dive() -> void:
 
 	var depth_meta_instab_mult: float = 1.0
 	if depth_meta_system != null:
-		depth_meta_instab_mult = depth_meta_system.get_global_instability_mult()
+		depth_meta_instab_mult = _safe_mult(depth_meta_system.get_global_instability_mult())
 
 	instability = risk_system.add_risk(
 		instability,
@@ -711,15 +617,12 @@ func calc_memories_gain() -> float:
 	var depth_mult: float = 1.0 + (float(depth) * 0.10)
 	return sqrt(t) * (1.0 + r) * time_mult * depth_mult
 
-# -------------------------
-# AFK TIMER / INSTABILITY GAIN
-# -------------------------
 func get_idle_instability_gain_per_sec() -> float:
 	var corruption = {"extra_instability": 0.0, "instability_mult": 1.0}
-	var instability_mult: float = upgrade_manager.get_instability_mult() * perk_system.get_instability_mult() * nightmare_system.get_instability_mult()
+	var instability_mult: float = _safe_mult(upgrade_manager.get_instability_mult()) * _safe_mult(perk_system.get_instability_mult()) * _safe_mult(nightmare_system.get_instability_mult())
 	if perm_perk_system != null:
-		instability_mult *= perm_perk_system.get_instability_mult()
-	instability_mult *= float(corruption.instability_mult)
+		instability_mult *= _safe_mult(perm_perk_system.get_instability_mult())
+	instability_mult *= _safe_mult(corruption.instability_mult)
 
 	var deep_risk_per_depth: float = upgrade_manager.get_deep_dives_instab_bonus_per_depth()
 	var depth_instab_mult: float = 1.0 + (float(depth) * (depth_instab_step + deep_risk_per_depth))
@@ -731,8 +634,8 @@ func get_idle_instability_gain_per_sec() -> float:
 	var depth_meta_instab_mult: float = 1.0
 	var depth_meta_idle_instab_mult: float = 1.0
 	if depth_meta_system != null:
-		depth_meta_instab_mult = depth_meta_system.get_global_instability_mult()
-		depth_meta_idle_instab_mult = depth_meta_system.get_global_idle_instability_mult()
+		depth_meta_instab_mult = _safe_mult(depth_meta_system.get_global_instability_mult())
+		depth_meta_idle_instab_mult = _safe_mult(depth_meta_system.get_global_idle_instability_mult())
 
 	var gain_per_sec := (idle_instability_rate * instability_mult * depth_instab_mult * abyss_instab_mult * depth_meta_instab_mult * depth_meta_idle_instab_mult) + float(corruption.extra_instability)
 	return gain_per_sec
@@ -745,9 +648,6 @@ func get_seconds_until_fail() -> float:
 		return 999999.0
 	return (100.0 - instability) / gain_per_sec
 
-# -------------------------
-# OFFLINE (GLOBAL depth-meta)
-# -------------------------
 func _apply_offline_progress() -> void:
 	var data = SaveSystem.load_game()
 	var now: float = float(Time.get_unix_time_from_system())
@@ -765,31 +665,31 @@ func _apply_offline_progress() -> void:
 
 	var _corruption = {"extra_instability": 0.0, "thoughts_mult": 1.0, "instability_mult": 1.0}
 
-	var thoughts_mult: float = upgrade_manager.get_thoughts_mult() * perk_system.get_thoughts_mult() * nightmare_system.get_thoughts_mult()
-	var instability_mult: float = upgrade_manager.get_instability_mult() * perk_system.get_instability_mult() * nightmare_system.get_instability_mult()
-	var control_mult: float = perk_system.get_control_mult() * nightmare_system.get_control_mult()
+	var thoughts_mult: float = _safe_mult(upgrade_manager.get_thoughts_mult()) * _safe_mult(perk_system.get_thoughts_mult()) * _safe_mult(nightmare_system.get_thoughts_mult())
+	var instability_mult: float = _safe_mult(upgrade_manager.get_instability_mult()) * _safe_mult(perk_system.get_instability_mult()) * _safe_mult(nightmare_system.get_instability_mult())
+	var control_mult: float = _safe_mult(perk_system.get_control_mult()) * _safe_mult(nightmare_system.get_control_mult())
 
 	var depth_meta_thoughts_mult: float = 1.0
 	var depth_meta_control_mult: float = 1.0
 	var depth_meta_instab_mult: float = 1.0
 	var depth_meta_idle_instab_mult: float = 1.0
 	if depth_meta_system != null:
-		depth_meta_thoughts_mult = depth_meta_system.get_global_thoughts_mult()
-		depth_meta_control_mult = depth_meta_system.get_global_control_mult()
-		depth_meta_instab_mult = depth_meta_system.get_global_instability_mult()
-		depth_meta_idle_instab_mult = depth_meta_system.get_global_idle_instability_mult()
+		depth_meta_thoughts_mult = _safe_mult(depth_meta_system.get_global_thoughts_mult())
+		depth_meta_control_mult = _safe_mult(depth_meta_system.get_global_control_mult())
+		depth_meta_instab_mult = _safe_mult(depth_meta_system.get_global_instability_mult())
+		depth_meta_idle_instab_mult = _safe_mult(depth_meta_system.get_global_idle_instability_mult())
 
 	thoughts_mult *= depth_meta_thoughts_mult
 	control_mult *= depth_meta_control_mult
 
 	if perm_perk_system != null:
-		thoughts_mult *= perm_perk_system.get_thoughts_mult()
-		instability_mult *= perm_perk_system.get_instability_mult()
-		control_mult *= perm_perk_system.get_control_mult()
+		thoughts_mult *= _safe_mult(perm_perk_system.get_thoughts_mult())
+		instability_mult *= _safe_mult(perm_perk_system.get_instability_mult())
+		control_mult *= _safe_mult(perm_perk_system.get_control_mult())
 
 	if abyss_perk_system != null:
-		thoughts_mult *= abyss_perk_system.get_thoughts_mult()
-		control_mult *= abyss_perk_system.get_control_mult()
+		thoughts_mult *= _safe_mult(abyss_perk_system.get_thoughts_mult())
+		control_mult *= _safe_mult(abyss_perk_system.get_control_mult())
 
 	var deep_bonus_per_depth: float = upgrade_manager.get_deep_dives_thoughts_bonus_per_depth()
 	var deep_risk_per_depth: float = upgrade_manager.get_deep_dives_instab_bonus_per_depth()
@@ -825,9 +725,6 @@ func _apply_offline_progress() -> void:
 
 	_force_rate_sample()
 
-# -------------------------
-# SAVE / LOAD
-# -------------------------
 func save_game() -> void:
 	var data = SaveSystem.load_game()
 	data["memories"] = memories
@@ -937,8 +834,7 @@ func _bind_ui_mainui() -> void:
 	instability_bar = _ui_find("InstabilityBar") as Range
 	if instability_bar:
 		instability_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		instability_bar.custom_minimum_size.x = 600  # wider bar
-		# Apply consistent button styling
+		instability_bar.custom_minimum_size.x = 600
 	_style_action_buttons()
 	_style_run_upgrades()
 
@@ -965,7 +861,6 @@ func _bind_ui_mainui() -> void:
 	prestige_panel = _ui_find("PrestigePanel") as PrestigePanel
 	_connect_prestige_panel()
 
-		# Apply consistent button styling
 	_style_action_buttons()
 	_style_run_upgrades()
 	_style_run_panel()
@@ -1024,15 +919,14 @@ func _style_tab_button(btn: Button) -> void:
 	btn.add_theme_constant_override("h_separation", 6)
 	btn.clip_text = false
 	btn.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-
-		# Blue border for all states, including disabled
 	btn.add_theme_stylebox_override("normal",   _make_stylebox(Color(0.12, 0.12, 0.14, 0.95), Color(0.55, 0.65, 0.9, 0.8), 2, 8))
 	btn.add_theme_stylebox_override("hover",    _make_stylebox(Color(0.16, 0.16, 0.20, 0.98), Color(0.60, 0.70, 0.95, 0.9), 2, 8))
 	btn.add_theme_stylebox_override("pressed",  _make_stylebox(Color(0.09, 0.09, 0.11, 0.95), Color(0.50, 0.60, 0.85, 0.8), 2, 8))
 	btn.add_theme_stylebox_override("disabled", _make_stylebox(Color(0.08, 0.08, 0.10, 0.60), Color(0.40, 0.45, 0.55, 0.5), 2, 8))
 	btn.add_theme_stylebox_override("focus",    _make_stylebox(Color(0.16, 0.16, 0.20, 0.98), Color(0.60, 0.70, 0.95, 0.9), 2, 8))
+
 func _style_upgrade_panel() -> void:
-	var panel := _ui_find("UpgradesPanel") # adjust to your actual node name
+	var panel := _ui_find("UpgradesPanel")
 	if panel == null:
 		return
 	for child in panel.get_children():
@@ -1046,7 +940,6 @@ func _style_action_buttons() -> void:
 	_style_button(meta_button)
 	
 func _style_action_panel() -> void:
-	# Find a Panel/PanelContainer wrapping the action buttons
 	var candidate := overclock_button
 	if candidate == null:
 		candidate = dive_button
@@ -1066,16 +959,15 @@ func _style_action_panel() -> void:
 	var bg := Color(0.05, 0.06, 0.08, 0.85)
 	var border := Color(0.5, 0.6, 0.9, 0.6)
 	var sb := _make_stylebox(bg, border, 2, 10, Color(0, 0, 0, 0.35), 3)
-	sb.content_margin_left = 16   # more inset
+	sb.content_margin_left = 16
 	sb.content_margin_right = 16
 	sb.content_margin_top = 10
 	sb.content_margin_bottom = 10
 	panel.add_theme_stylebox_override("panel", sb)
 
-	# Add spacing between the buttons (if they share a BoxContainer parent)
 	var container := candidate.get_parent()
 	if container is BoxContainer:
-		container.add_theme_constant_override("separation", 10)  # bump to taste
+		container.add_theme_constant_override("separation", 10)
 	
 func _style_run_upgrades() -> void:
 	var rows := get_tree().current_scene.find_children("*", "UpgradeRow", true, false)
@@ -1083,7 +975,6 @@ func _style_run_upgrades() -> void:
 		var btns := row.find_children("*", "Button", true, false)
 		for b in btns:
 			_style_button(b)
-			
 			
 func _style_run_panel() -> void:
 	var rows := get_tree().current_scene.find_children("*", "UpgradeRow", true, false)
@@ -1103,9 +994,6 @@ func _style_run_panel() -> void:
 	sb.content_margin_bottom = 10
 	panel.add_theme_stylebox_override("panel", sb)
 
-# -------------------------
-# AUTOMATION
-# -------------------------
 func _on_auto_dive_toggled(on: bool) -> void:
 	automation_system.auto_dive = on
 
@@ -1123,9 +1011,6 @@ func _try_auto_overclock() -> void:
 		return
 	do_overclock()
 
-# -------------------------
-# BUTTON HELPERS
-# -------------------------
 func _press_button(btn: Button) -> void:
 	if btn == null or btn.disabled:
 		return
@@ -1137,9 +1022,6 @@ func _connect_pressed_once(btn: Button, cb: Callable) -> void:
 	if not btn.pressed.is_connected(cb):
 		btn.pressed.connect(cb)
 
-# -------------------------
-# UpgradeRow compatibility wrappers
-# -------------------------
 func _apply_thoughts_return(res) -> void:
 	if res is Dictionary:
 		if res.get("bought", false):
@@ -1215,9 +1097,6 @@ func _on_prestige_cancel() -> void:
 	_force_rate_sample()
 	_refresh_top_ui()
 
-# -------------------------
-# UI FX: Overclock ending flash
-# -------------------------
 func _update_overclock_flash(delta: float) -> void:
 	if overclock_button == null:
 		return
@@ -1229,9 +1108,6 @@ func _update_overclock_flash(delta: float) -> void:
 		overclock_button.modulate = Color(1, 1, 1, 1)
 		_ui_flash_phase = 0.0
 
-# -------------------------
-# DEBUG OVERLAY (F8)
-# -------------------------
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_F8:

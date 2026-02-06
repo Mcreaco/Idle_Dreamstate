@@ -118,6 +118,7 @@ offset_right = 460.0
 offset_bottom = 80.0
 theme_override_styles/panel = SubResource("StyleBoxFlat_xv1u1")
 script = ExtResource("1_wwh41")
+depth_label_path = NodePath("TopBar/InstabilityCenter/InstabilityVBox/DepthLabel")
 
 [node name="TopBar" type="HBoxContainer" parent="Root/TopBarPanel"]
 layout_mode = 2
@@ -164,6 +165,11 @@ alignment = 1
 [node name="InstabilityTitle" type="Label" parent="Root/TopBarPanel/TopBar/InstabilityCenter/InstabilityVBox"]
 layout_mode = 2
 text = "Instability"
+horizontal_alignment = 1
+
+[node name="DepthLabel" type="Label" parent="Root/TopBarPanel/TopBar/InstabilityCenter/InstabilityVBox"]
+layout_mode = 2
+text = "Depth"
 horizontal_alignment = 1
 
 [node name="InstabilityBar" type="ProgressBar" parent="Root/TopBarPanel/TopBar/InstabilityCenter/InstabilityVBox"]

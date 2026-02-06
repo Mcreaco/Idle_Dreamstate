@@ -1,14 +1,16 @@
 extends Node3D
 
 @export var pillar_stack_path: NodePath
-@export var particle_count: int = 160
-@export var radius: float = 7.0
-@export var height: float = 12.0
-@export var lifetime: float = 10.0
-@export var speed: float = 0.35
-@export var scale_min: float = 2.2
-@export var scale_max: float = 4.5
-@export var color: Color = Color(0.55, 0.65, 0.85, 0.35)
+@export var particle_count: int = 2800
+@export var radius_top: float = 16.0
+@export var radius_mid: float = 28.0
+@export var radius_bottom: float = 20.0
+@export var height: float = 36.0   # taller vertical spread
+@export var lifetime: float = 18.0
+@export var speed: float = 0.12
+@export var scale_min: float = 2.6
+@export var scale_max: float = 5.2
+@export var color: Color = Color(0.04, 0.07, 0.12, 0.80)
 
 func _ready() -> void:
 	var p := GPUParticles3D.new()
@@ -16,18 +18,16 @@ func _ready() -> void:
 	p.amount = particle_count
 	p.lifetime = lifetime
 	p.one_shot = false
-	p.preprocess = lifetime * 0.5
+	p.preprocess = lifetime * 0.9
 	p.speed_scale = speed
 	p.local_coords = true
 	p.draw_order = GPUParticles3D.DRAW_ORDER_LIFETIME
 
-	# Quad mesh
 	var m := QuadMesh.new()
 	m.size = Vector2(1, 1)
 	p.draw_passes = 1
 	p.draw_pass_1 = m
 
-	# Soft round smoke texture
 	var tex := _make_round_smoke_texture(128)
 
 	var mat := StandardMaterial3D.new()
@@ -39,17 +39,16 @@ func _ready() -> void:
 	mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
 	mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
 	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
-	# remove: mat.texture_repeat = ...
 	p.material_override = mat
 
 	var pm := ParticleProcessMaterial.new()
 	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
-	pm.emission_box_extents = Vector3(radius, height * 0.5, radius)
+	pm.emission_box_extents = Vector3(radius_mid, height * 0.5, radius_mid) # vertical spread ±height/2
 	pm.gravity = Vector3.ZERO
 	pm.initial_velocity_min = 0.05
-	pm.initial_velocity_max = 0.35
-	pm.angular_velocity_min = -0.2
-	pm.angular_velocity_max = 0.2
+	pm.initial_velocity_max = 0.18
+	pm.angular_velocity_min = -0.12
+	pm.angular_velocity_max = 0.12
 	pm.scale_min = scale_min
 	pm.scale_max = scale_max
 	pm.scale_curve = null
@@ -86,5 +85,4 @@ func _make_round_smoke_texture(size: int) -> Texture2D:
 			var a: float = clamp(1.0 - pow(d, 1.6), 0.0, 1.0)
 			a = a * a
 			img.set_pixel(x, y, Color(1, 1, 1, a))
-	var tex: ImageTexture = ImageTexture.create_from_image(img)  # typed
-	return tex
+	return ImageTexture.create_from_image(img)
