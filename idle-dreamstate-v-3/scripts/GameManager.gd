@@ -100,6 +100,9 @@ var _debug_overlay_layer: CanvasLayer
 var _debug_label: Label
 var _debug_visible: bool = false
 
+var run_time: float = 0.0
+
+
 func _fmt_num(v: float) -> String:
 	if v >= 1000000.0:
 		return "%.2fM" % (v / 1000000.0)
@@ -187,6 +190,7 @@ func _ready() -> void:
 		_update_debug_overlay()
 
 func _process(delta: float) -> void:
+	run_time += delta
 	autosave_timer += delta
 	if autosave_timer >= autosave_interval:
 		autosave_timer = 0.0

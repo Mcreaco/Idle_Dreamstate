@@ -1,4 +1,4 @@
-[gd_scene load_steps=45 format=3 uid="uid://fflc2602ivkd"]
+[gd_scene load_steps=47 format=3 uid="uid://fflc2602ivkd"]
 
 [ext_resource type="Script" uid="uid://cr7grsqq7v7ws" path="res://PillarStack.gd" id="1_3ccbu"]
 [ext_resource type="Script" uid="uid://bp0wa73eqxy2l" path="res://MeshForceProbe.gd" id="1_o7g6l"]
@@ -15,6 +15,7 @@
 [ext_resource type="Script" uid="uid://bf5461emrslc6" path="res://PillarFogSpawner.gd" id="6_3ccbu"]
 [ext_resource type="Script" uid="uid://gh34jom35iuo" path="res://scripts/systems/PerkSystem.gd" id="8_c6i3y"]
 [ext_resource type="Script" uid="uid://2p1584ctasen" path="res://scripts/SaveSystem.gd" id="8_trn2v"]
+[ext_resource type="Script" uid="uid://cfu2ehn4we1tt" path="res://DarkVoidFog.gd" id="8_x3yn0"]
 [ext_resource type="Script" uid="uid://b6kahc8g5pnpv" path="res://scripts/ui/PauseMenu.gd" id="9_5vvyt"]
 [ext_resource type="Script" uid="uid://djvae1t5xof2j" path="res://AbyssPerkSystem.gd" id="10_40n85"]
 [ext_resource type="Script" uid="uid://dhojqjrpp1j38" path="res://scripts/SoundSystem.gd" id="10_wkp8b"]
@@ -39,6 +40,7 @@
 [ext_resource type="Script" uid="uid://c8qm5d7uav3wd" path="res://MemoriesLabelBinder.gd" id="26_xrxkg"]
 [ext_resource type="Script" uid="uid://d1iyqqewlyb3t" path="res://AbyssPerkRow.gd" id="27_gb15f"]
 [ext_resource type="Script" uid="uid://40sp2ybhrvuh" path="res://PillarSmokeSpawner.gd" id="39_ny7u2"]
+[ext_resource type="Script" uid="uid://t1l570qbptfq" path="res://LifetimeStatsTracker.gd" id="41_1w2xm"]
 
 [sub_resource type="Environment" id="Environment_o7g6l"]
 background_mode = 1
@@ -226,6 +228,9 @@ pillar_stack_path = NodePath("../Segments")
 
 [node name="PillarFogSpawner" type="Node3D" parent="World3D"]
 script = ExtResource("6_3ccbu")
+
+[node name="DarkVoidFog" type="Node3D" parent="World3D"]
+script = ExtResource("8_x3yn0")
 
 [node name="GameManager" type="Node" parent="."]
 script = ExtResource("1_r0du0")
@@ -1275,7 +1280,9 @@ offset_bottom = 160.0
 grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("19_bg4s2")
-debug_print = null
+
+[node name="Backdrop" type="ColorRect" parent="MainUI/PrestigePanel"]
+layout_mode = 2
 
 [node name="Vbox" type="VBoxContainer" parent="MainUI/PrestigePanel"]
 layout_mode = 2
@@ -1495,5 +1502,8 @@ script = ExtResource("8_trn2v")
 
 [node name="MemoriesBinder" type="Node" parent="."]
 script = ExtResource("26_xrxkg")
+
+[node name="LifetimeStatsTracker" type="Node" parent="."]
+script = ExtResource("41_1w2xm")
 
 [editable path="MainUI"]

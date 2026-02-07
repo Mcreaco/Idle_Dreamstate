@@ -11,7 +11,7 @@ config_version=5
 [application]
 
 config/name="IdleDreamstateV3"
-run/main_scene="uid://bs4fgag3km3uu"
+run/main_scene="uid://fflc2602ivkd"
 config/features=PackedStringArray("4.5", "Mobile")
 config/icon="uid://dosy6to8brccv"
 

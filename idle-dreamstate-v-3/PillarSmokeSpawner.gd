@@ -1,15 +1,34 @@
 extends Node3D
+class_name PillarSmokeSpawner
 
 @export var pillar_stack_path: NodePath
-@export var particle_count: int = 2800
-@export var radius_top: float = 16.0
-@export var radius_mid: float = 28.0
-@export var radius_bottom: float = 20.0
-@export var height: float = 36.0   # taller vertical spread
-@export var lifetime: float = 18.0
-@export var speed: float = 0.12
-@export var scale_min: float = 2.6
-@export var scale_max: float = 5.2
+
+@export var particle_count: int = 3200
+
+# --- Vertical reach (keep what you said is perfect) ---
+@export var lifetime: float = 22.0
+@export var speed: float = 1.0 # GPUParticles3D speed_scale (kept)
+
+# --- Where it starts (CORE) ---
+@export var origin_radius: float = 0.55      # <<< small = originates in the middle
+@export var origin_thickness: float = 0.35   # spawn slab thickness
+@export var vent_y_offset: float = -28.0
+
+# --- Expansion while rising (BLOOM) ---
+@export var expand_accel_min: float = 0.22   # <<< outward push (min)
+@export var expand_accel_max: float = 0.46   # <<< outward push (max)
+@export var swirl_strength: float = 0.55     # keeps a nice roll
+@export var drag_min: float = 0.12
+@export var drag_max: float = 0.22
+
+# --- Upward motion (KEEP SAME RATE) ---
+@export var rise_spread: float = 28.0
+@export var upward_vel_min: float = 1.4
+@export var upward_vel_max: float = 3.2
+
+# --- Look ---
+@export var scale_min: float = 2.4
+@export var scale_max: float = 5.6
 @export var color: Color = Color(0.04, 0.07, 0.12, 0.80)
 
 func _ready() -> void:
@@ -23,10 +42,13 @@ func _ready() -> void:
 	p.local_coords = true
 	p.draw_order = GPUParticles3D.DRAW_ORDER_LIFETIME
 
-	var m := QuadMesh.new()
-	m.size = Vector2(1, 1)
+	# IMPORTANT: prevent GPU particle culling as the plume gets tall
+	p.visibility_aabb = AABB(Vector3(-250, -250, -250), Vector3(500, 500, 500))
+
+	var quad := QuadMesh.new()
+	quad.size = Vector2(1, 1)
 	p.draw_passes = 1
-	p.draw_pass_1 = m
+	p.draw_pass_1 = quad
 
 	var tex := _make_round_smoke_texture(128)
 
@@ -42,16 +64,33 @@ func _ready() -> void:
 	p.material_override = mat
 
 	var pm := ParticleProcessMaterial.new()
+
+	# Spawn from a tiny core (center)
 	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
-	pm.emission_box_extents = Vector3(radius_mid, height * 0.5, radius_mid) # vertical spread ±height/2
-	pm.gravity = Vector3.ZERO
-	pm.initial_velocity_min = 0.05
-	pm.initial_velocity_max = 0.18
-	pm.angular_velocity_min = -0.12
-	pm.angular_velocity_max = 0.12
+	pm.emission_box_extents = Vector3(origin_radius, origin_thickness * 0.5, origin_radius)
+
+	pm.gravity = Vector3(0, 0, 0)
+
+	# Keep your rise rate exactly the same
+	pm.direction = Vector3.UP
+	pm.spread = rise_spread
+	pm.initial_velocity_min = upward_vel_min
+	pm.initial_velocity_max = upward_vel_max
+
+	# Expand outward as it rises (this is the key)
+	# Positive radial accel = pushes away from the center over time.
+	pm.radial_accel_min = expand_accel_min
+	pm.radial_accel_max = expand_accel_max
+
+	# Optional swirl so it doesn't look like a perfect cone
+	pm.orbit_velocity_min = -swirl_strength
+	pm.orbit_velocity_max =  swirl_strength
+
+	pm.damping_min = drag_min
+	pm.damping_max = drag_max
+
 	pm.scale_min = scale_min
 	pm.scale_max = scale_max
-	pm.scale_curve = null
 	pm.color = color
 	pm.color_ramp = _make_soft_ramp(color)
 
@@ -61,7 +100,10 @@ func _ready() -> void:
 
 	var pillar := get_node_or_null(pillar_stack_path)
 	if pillar:
-		global_position = pillar.global_position + Vector3(0, -height * 0.25, 0)
+		global_position = pillar.global_position
+
+	# Vent position
+	p.position = Vector3(0, vent_y_offset, 0)
 
 func _make_soft_ramp(c: Color) -> GradientTexture1D:
 	var g := Gradient.new()
@@ -76,13 +118,13 @@ func _make_soft_ramp(c: Color) -> GradientTexture1D:
 
 func _make_round_smoke_texture(size: int) -> Texture2D:
 	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
-	var half := size * 0.5
-	for y in size:
-		for x in size:
-			var dx := (x + 0.5 - half) / half
-			var dy := (y + 0.5 - half) / half
-			var d := sqrt(dx * dx + dy * dy)
-			var a: float = clamp(1.0 - pow(d, 1.6), 0.0, 1.0)
+	var half: float = float(size) * 0.5
+	for y in range(size):
+		for x in range(size):
+			var dx: float = (float(x) + 0.5 - half) / half
+			var dy: float = (float(y) + 0.5 - half) / half
+			var d: float = sqrt(dx * dx + dy * dy)
+			var a: float = clampf(1.0 - pow(d, 1.6), 0.0, 1.0)
 			a = a * a
 			img.set_pixel(x, y, Color(1, 1, 1, a))
 	return ImageTexture.create_from_image(img)

@@ -1,7 +1,10 @@
-[gd_scene load_steps=8 format=3 uid="uid://cpq1itmwil4uo"]
+[gd_scene load_steps=11 format=3 uid="uid://cpq1itmwil4uo"]
 
 [ext_resource type="Script" uid="uid://bcfwm6l6pxi22" path="res://UI/TopBarPanel.gd" id="1_wwh41"]
 [ext_resource type="PackedScene" uid="uid://c6mdogwl6v5bj" path="res://UI/UpgradeRowTemplate.tscn" id="1_xv1u1"]
+[ext_resource type="Script" uid="uid://bx5tb3yptow3u" path="res://UI/RightRail.gd" id="3_wa2eh"]
+[ext_resource type="Script" uid="uid://d3q5yx0qmqjnk" path="res://scripts/ui/SettingsPanel.gd" id="4_8cqdv"]
+[ext_resource type="Script" uid="uid://v3ke4fh6l5g8" path="res://UI/ShopPanel.gd" id="5_44ib0"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_xv1u1"]
 content_margin_left = 0.0
@@ -316,3 +319,123 @@ text = "Auto Dive"
 [node name="AutoOverclockToggle" type="CheckButton" parent="Root/AutoToggles"]
 layout_mode = 2
 text = "Auto Overclock"
+
+[node name="RightRail" type="PanelContainer" parent="Root"]
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 40.0
+script = ExtResource("3_wa2eh")
+settings_panel_path = NodePath("../SettingsPanel")
+shop_panel_path = NodePath("../ShopPanel")
+
+[node name="VBoxContainer" type="VBoxContainer" parent="Root/RightRail"]
+layout_mode = 2
+
+[node name="SettingsButton" type="Button" parent="Root/RightRail/VBoxContainer"]
+layout_mode = 2
+
+[node name="ShopButton" type="Button" parent="Root/RightRail/VBoxContainer"]
+layout_mode = 2
+
+[node name="SettingsPanel" type="PanelContainer" parent="Root"]
+visible = false
+z_index = 50
+custom_minimum_size = Vector2(520, 360)
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -20.0
+offset_top = -20.0
+offset_right = 20.0
+offset_bottom = 20.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("4_8cqdv")
+
+[node name="Backdrop" type="ColorRect" parent="Root/SettingsPanel"]
+layout_mode = 2
+
+[node name="Root" type="VBoxContainer" parent="Root/SettingsPanel"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Title" type="Label" parent="Root/SettingsPanel/Root"]
+layout_mode = 2
+
+[node name="Mute" type="CheckButton" parent="Root/SettingsPanel/Root"]
+layout_mode = 2
+text = "Mute"
+
+[node name="VolumeLabel" type="Label" parent="Root/SettingsPanel/Root"]
+layout_mode = 2
+
+[node name="Volume" type="HSlider" parent="Root/SettingsPanel/Root"]
+layout_mode = 2
+
+[node name="Actions" type="HBoxContainer" parent="Root/SettingsPanel/Root"]
+layout_mode = 2
+
+[node name="SaveButton" type="Button" parent="Root/SettingsPanel/Root/Actions"]
+layout_mode = 2
+
+[node name="LoadButton" type="Button" parent="Root/SettingsPanel/Root/Actions"]
+layout_mode = 2
+
+[node name="StatsButton" type="Button" parent="Root/SettingsPanel/Root/Actions"]
+layout_mode = 2
+
+[node name="StatsBox" type="VBoxContainer" parent="Root/SettingsPanel/Root"]
+visible = false
+layout_mode = 2
+
+[node name="StatsTabs" type="HBoxContainer" parent="Root/SettingsPanel/Root/StatsBox"]
+layout_mode = 2
+
+[node name="RunTabButton" type="Button" parent="Root/SettingsPanel/Root/StatsBox/StatsTabs"]
+layout_mode = 2
+
+[node name="LifetimeTabButton" type="Button" parent="Root/SettingsPanel/Root/StatsBox/StatsTabs"]
+layout_mode = 2
+
+[node name="StatLines" type="VBoxContainer" parent="Root/SettingsPanel/Root/StatsBox"]
+layout_mode = 2
+
+[node name="Line1" type="Label" parent="Root/SettingsPanel/Root/StatsBox/StatLines"]
+layout_mode = 2
+
+[node name="Line2" type="Label" parent="Root/SettingsPanel/Root/StatsBox/StatLines"]
+layout_mode = 2
+
+[node name="Line3" type="Label" parent="Root/SettingsPanel/Root/StatsBox/StatLines"]
+layout_mode = 2
+
+[node name="Line4" type="Label" parent="Root/SettingsPanel/Root/StatsBox/StatLines"]
+layout_mode = 2
+
+[node name="Line5" type="Label" parent="Root/SettingsPanel/Root/StatsBox/StatLines"]
+layout_mode = 2
+
+[node name="Line6" type="Label" parent="Root/SettingsPanel/Root/StatsBox/StatLines"]
+layout_mode = 2
+
+[node name="CloseButton" type="Button" parent="Root/SettingsPanel/Root"]
+layout_mode = 2
+
+[node name="ShopPanel" type="PanelContainer" parent="Root"]
+visible = false
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -20.0
+offset_top = -20.0
+offset_right = 20.0
+offset_bottom = 20.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("5_44ib0")
