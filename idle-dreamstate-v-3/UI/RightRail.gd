@@ -6,11 +6,9 @@ class_name RightRail
 
 # Position
 @export var right_margin: float = 18.0
-@export var top_margin: float = 120.0
-
-# Button sizing
-@export var button_size: Vector2 = Vector2(170, 46)
-@export var gap: float = 10.0
+@export var button_size: Vector2 = Vector2(44, 44)
+@export var gap: float = 8.0
+@export var top_margin: float = 150.0 # optional: push down a bit
 
 @onready var settings_btn: Button = $"VBoxContainer/SettingsButton"
 @onready var shop_btn: Button = $"VBoxContainer/ShopButton"
@@ -44,8 +42,10 @@ func _ready() -> void:
 	if shop_panel: shop_panel.visible = false
 
 	# --- Buttons base setup ---
-	_setup_button(settings_btn, "⚙  Settings")
-	_setup_button(shop_btn, "🛒  Shop")
+	_setup_button(settings_btn, "⚙")
+	_setup_button(shop_btn, "🛒")
+
+
 
 	# Copy upgrade button style
 	var ref_btn := _find_any_upgrade_button()
@@ -62,10 +62,25 @@ func _ready() -> void:
 func _setup_button(btn: Button, text: String) -> void:
 	if btn == null:
 		return
+
 	btn.text = text
 	btn.custom_minimum_size = button_size
-	btn.size_flags_horizontal = Control.SIZE_FILL
+	btn.size_flags_horizontal = Control.SIZE_SHRINK_END
 	btn.mouse_filter = Control.MOUSE_FILTER_STOP
+
+	# remove extra width/padding pressure
+	btn.add_theme_constant_override("h_separation", 0)
+	btn.add_theme_constant_override("content_margin_left", 6)
+	btn.add_theme_constant_override("content_margin_right", 6)
+	btn.add_theme_constant_override("content_margin_top", 6)
+	btn.add_theme_constant_override("content_margin_bottom", 6)
+	
+	#settings_btn.text = ""
+	#settings_btn.icon = preload("res://UI/Icons/settings.png")
+	#shop_btn.text = ""
+	#shop_btn.icon = preload("res://UI/Icons/shop.png")
+
+
 
 func _on_settings_pressed() -> void:
 	if shop_panel:

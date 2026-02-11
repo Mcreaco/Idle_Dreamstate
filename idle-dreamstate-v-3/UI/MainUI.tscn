@@ -1,10 +1,13 @@
-[gd_scene load_steps=11 format=3 uid="uid://cpq1itmwil4uo"]
+[gd_scene load_steps=14 format=3 uid="uid://cpq1itmwil4uo"]
 
 [ext_resource type="Script" uid="uid://bcfwm6l6pxi22" path="res://UI/TopBarPanel.gd" id="1_wwh41"]
 [ext_resource type="PackedScene" uid="uid://c6mdogwl6v5bj" path="res://UI/UpgradeRowTemplate.tscn" id="1_xv1u1"]
+[ext_resource type="PackedScene" uid="uid://d0r1cd0b6civr" path="res://DepthBarsPanel.tscn" id="3_8cqdv"]
+[ext_resource type="Script" uid="uid://dvsigcuu8oc5e" path="res://UI/TopPanelsHUD.gd" id="3_uqb74"]
 [ext_resource type="Script" uid="uid://bx5tb3yptow3u" path="res://UI/RightRail.gd" id="3_wa2eh"]
 [ext_resource type="Script" uid="uid://d3q5yx0qmqjnk" path="res://scripts/ui/SettingsPanel.gd" id="4_8cqdv"]
 [ext_resource type="Script" uid="uid://v3ke4fh6l5g8" path="res://UI/ShopPanel.gd" id="5_44ib0"]
+[ext_resource type="Texture2D" uid="uid://cgc4eaq0mkd4k" path="res://UI/BG/BG1.png" id="8_uqb74"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_xv1u1"]
 content_margin_left = 0.0
@@ -121,7 +124,6 @@ offset_right = 460.0
 offset_bottom = 80.0
 theme_override_styles/panel = SubResource("StyleBoxFlat_xv1u1")
 script = ExtResource("1_wwh41")
-depth_label_path = NodePath("TopBar/InstabilityCenter/InstabilityVBox/DepthLabel")
 
 [node name="TopBar" type="HBoxContainer" parent="Root/TopBarPanel"]
 layout_mode = 2
@@ -135,6 +137,7 @@ theme_override_constants/margin_left = 8
 theme_override_constants/margin_top = 8
 theme_override_constants/margin_right = 8
 theme_override_constants/margin_bottom = 8
+script = ExtResource("3_uqb74")
 
 [node name="ThoughtsBox" type="HBoxContainer" parent="Root/TopBarPanel/TopBar/MarginContainer"]
 custom_minimum_size = Vector2(180, 0)
@@ -168,11 +171,6 @@ alignment = 1
 [node name="InstabilityTitle" type="Label" parent="Root/TopBarPanel/TopBar/InstabilityCenter/InstabilityVBox"]
 layout_mode = 2
 text = "Instability"
-horizontal_alignment = 1
-
-[node name="DepthLabel" type="Label" parent="Root/TopBarPanel/TopBar/InstabilityCenter/InstabilityVBox"]
-layout_mode = 2
-text = "Depth"
 horizontal_alignment = 1
 
 [node name="InstabilityBar" type="ProgressBar" parent="Root/TopBarPanel/TopBar/InstabilityCenter/InstabilityVBox"]
@@ -215,6 +213,7 @@ theme_override_colors/font_color = Color(0.8745098, 0.9019608, 1, 1)
 text = "+0/s"
 
 [node name="LeftPanel" type="PanelContainer" parent="Root"]
+visible = false
 layout_mode = 1
 anchors_preset = -1
 anchor_bottom = 1.0
@@ -267,6 +266,17 @@ mode = "overclockmastery"
 layout_mode = 2
 mode = "overclocksafety"
 
+[node name="DepthBarCenter" type="CenterContainer" parent="Root"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="DepthBarsPanel" parent="Root/DepthBarCenter" instance=ExtResource("3_8cqdv")]
+layout_mode = 2
+
 [node name="BottomBarPanel" type="PanelContainer" parent="Root"]
 layout_mode = 1
 anchors_preset = -1
@@ -282,11 +292,6 @@ theme_override_styles/panel = SubResource("StyleBoxFlat_wwh41")
 
 [node name="BottomBar" type="HBoxContainer" parent="Root/BottomBarPanel"]
 layout_mode = 2
-
-[node name="DiveButton" type="Button" parent="Root/BottomBarPanel/BottomBar"]
-custom_minimum_size = Vector2(220, 54)
-layout_mode = 2
-text = "Dive"
 
 [node name="OverclockButton" type="Button" parent="Root/BottomBarPanel/BottomBar"]
 custom_minimum_size = Vector2(220, 54)
@@ -332,10 +337,14 @@ shop_panel_path = NodePath("../ShopPanel")
 layout_mode = 2
 
 [node name="SettingsButton" type="Button" parent="Root/RightRail/VBoxContainer"]
+custom_minimum_size = Vector2(140, 36)
 layout_mode = 2
+theme_override_font_sizes/font_size = 14
 
 [node name="ShopButton" type="Button" parent="Root/RightRail/VBoxContainer"]
+custom_minimum_size = Vector2(140, 36)
 layout_mode = 2
+theme_override_font_sizes/font_size = 14
 
 [node name="SettingsPanel" type="PanelContainer" parent="Root"]
 visible = false
@@ -439,3 +448,16 @@ offset_bottom = 20.0
 grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("5_44ib0")
+
+[node name="BG" type="CanvasLayer" parent="."]
+layer = -100
+
+[node name="Background" type="TextureRect" parent="BG"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("8_uqb74")
+expand_mode = 1

@@ -1,3 +1,4 @@
+# DepthMetaSystem.gd
 extends Node
 class_name DepthMetaSystem
 
@@ -13,6 +14,10 @@ var unlock_next_bought: Array[int] = []
 # Per-depth upgrade levels stored by id
 # upgrades[depth] = { "id": level_int, ... }
 var upgrades: Array[Dictionary] = []
+
+var bank_memories: float = 0.0
+var bank_thoughts: float = 0.0
+
 
 func _init() -> void:
 	_init_arrays()
@@ -36,6 +41,14 @@ func _init_arrays() -> void:
 	for d in range(1, MAX_DEPTH + 1):
 		if upgrades[d] == null or typeof(upgrades[d]) != TYPE_DICTIONARY:
 			upgrades[d] = {}
+			
+func reset_run_upgrades() -> void:
+	ensure_ready()
+
+	for d in range(1, MAX_DEPTH + 1):
+		upgrades[d].clear()
+		instab_reduce_level[d] = 0
+		unlock_next_bought[d] = 0
 
 # ---------------------------------------------------
 # COST HELPERS (recipes)
@@ -434,3 +447,29 @@ static func get_depth_name(d: int) -> String:
 		14: return "Depth 14 — Blackwater"
 		15: return "Depth 15 — Abyss"
 		_:  return "Depth %d" % d
+
+func _get_depth_name(d: int) -> String:
+	# Prefer asking the scene instance (this is the correct way)
+	var meta := get_tree().current_scene.find_child("DepthMetaSystem", true, false)
+	if meta != null:
+		if meta.has_method("get_depth_name"):
+			return str(meta.call("get_depth_name", d))
+		if meta.has_method("get_depth_currency_name"):
+			return str(meta.call("get_depth_currency_name", d))
+		if meta.has_method("get_depth_name_static"):
+			return str(meta.call("get_depth_name_static", d)) # only if you made one
+
+	# Safe fallback
+	return "Depth %d" % d
+
+func add_memories(amount: float) -> void:
+	bank_memories += maxf(0.0, amount)
+
+func add_thoughts(amount: float) -> void:
+	bank_thoughts += maxf(0.0, amount)
+
+func get_memories() -> float:
+	return bank_memories
+
+func get_thoughts() -> float:
+	return bank_thoughts

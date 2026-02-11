@@ -1,0 +1,83 @@
+[gd_scene load_steps=2 format=3 uid="uid://b4v27paimyq1l"]
+
+[ext_resource type="Script" uid="uid://dmvqhlkle5qaa" path="res://DepthBarRow.gd" id="1_3n1db"]
+
+[node name="DepthBarRow" type="PanelContainer"]
+custom_minimum_size = Vector2(0, 80)
+offset_right = 32.0
+offset_bottom = 78.0
+size_flags_horizontal = 3
+script = ExtResource("1_3n1db")
+
+[node name="Hbox" type="HBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="DepthLabel" type="Label" parent="Hbox"]
+layout_mode = 2
+
+[node name="CrystalIcon" type="TextureRect" parent="Hbox"]
+layout_mode = 2
+
+[node name="CrystalValue" type="Label" parent="Hbox"]
+layout_mode = 2
+
+[node name="MemoriesIcon" type="TextureRect" parent="Hbox"]
+layout_mode = 2
+
+[node name="MemoriesValue" type="Label" parent="Hbox"]
+layout_mode = 2
+
+[node name="Spacer" type="Control" parent="Hbox"]
+layout_mode = 2
+
+[node name="PercentLabel" type="Label" parent="Hbox"]
+layout_mode = 2
+
+[node name="LockIcon" type="TextureRect" parent="Hbox"]
+layout_mode = 2
+
+[node name="Progress" type="ProgressBar" parent="."]
+custom_minimum_size = Vector2(0, 22)
+layout_mode = 2
+show_percentage = false
+
+[node name="PercentLabel" type="Label" parent="Progress"]
+layout_mode = 0
+offset_top = 41.0
+offset_right = 64.0
+offset_bottom = 64.0
+
+[node name="Details" type="PanelContainer" parent="."]
+layout_mode = 2
+
+[node name="DetailsVBox" type="VBoxContainer" parent="Details"]
+layout_mode = 2
+
+[node name="BigProgress" type="ProgressBar" parent="Details/DetailsVBox"]
+layout_mode = 2
+
+[node name="StatsLine" type="Label" parent="Details/DetailsVBox"]
+layout_mode = 2
+
+[node name="LocalUpgradesBox" type="VBoxContainer" parent="Details/DetailsVBox"]
+layout_mode = 2
+
+[node name="FrozenPassiveBox" type="VBoxContainer" parent="Details/DetailsVBox"]
+layout_mode = 2
+
+[node name="ActionRow" type="HBoxContainer" parent="Details/DetailsVBox"]
+layout_mode = 2
+
+[node name="DiveButton" type="Button" parent="Details/DetailsVBox/ActionRow"]
+layout_mode = 2
+text = "Dive"
+
+[node name="CloseButton" type="Button" parent="Details/DetailsVBox/ActionRow"]
+layout_mode = 2
+text = "X"
+
+[node name="MinigameArea" type="Control" parent="Details/DetailsVBox"]
+layout_mode = 2
+
+[node name="RunUpgradesBox" type="VBoxContainer" parent="Details/DetailsVBox"]
+layout_mode = 2

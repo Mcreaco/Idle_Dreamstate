@@ -7,27 +7,96 @@ const COLOR_BAR_AMBER: Color = Color(0.95, 0.65, 0.15)
 const COLOR_BAR_RED: Color = Color(0.85, 0.18, 0.18)
 
 @export var depth_label_path: NodePath
+
 @onready var depth_label: Label = _resolve_depth_label()
 
 @onready var thoughts_value: Label = $TopBar/MarginContainer/ThoughtsBox/ThoughtsValue
 @onready var thoughts_gain: Label = $TopBar/MarginContainer/ThoughtsBox/ThoughtsGain
+
 @onready var control_value: Label = $TopBar/ControlPad/ControlBox/ControlValue
 @onready var control_gain: Label = $TopBar/ControlPad/ControlBox/ControlGain
+
 @onready var inst_title: Label = $TopBar/InstabilityCenter/InstabilityVBox/InstabilityTitle
 @onready var inst_bar: ProgressBar = $TopBar/InstabilityCenter/InstabilityVBox/InstabilityBar
 @onready var inst_hint: Label = $TopBar/InstabilityCenter/InstabilityVBox/InstabilityHint
 
+var _run: Node = null
+
 func _ready() -> void:
+	_style_top_bar_panel()
 	_set_label_colors()
 	if inst_hint:
-		inst_hint.visible = false  # hide inline; tooltip only
+		inst_hint.visible = false # hide inline; tooltip only
+
 	if inst_bar:
 		inst_bar.tooltip_text = "Instability rises from idle gain and events. Reaching 100 ends the run."
+
 	_style_inst_bar()
+
 	if inst_title:
-		inst_title.tooltip_text = "Time to fail (TTF) is estimated from current idle instability gain; overclock increases gain."
-	if depth_label == null:
-		push_warning("TopBarPanel: depth_label is null; set depth_label_path or name the node DepthLabel")
+		inst_title.tooltip_text = "Time to fail (TTF) is estimated from current idle instability gain."
+
+	set_process(true)
+
+func _process(_delta: float) -> void:
+	# Resolve autoload safely (autoload timing / scene reload proof)
+	if _run == null:
+		_run = get_node_or_null("/root/DepthRunController")
+		if _run == null:
+			return
+
+	# --- Read values from controller ---
+	var thoughts: float = float(_run.get("thoughts"))
+	var control: float = float(_run.get("control"))
+
+	var thoughts_ps: float = 0.0
+	if _run.has_method("get_thoughts_per_sec"):
+		thoughts_ps = float(_run.call("get_thoughts_per_sec"))
+
+	var control_ps: float = 0.0
+	if _run.has_method("get_control_per_sec"):
+		control_ps = float(_run.call("get_control_per_sec"))
+
+	var inst_raw: float = float(_run.get("instability")) # should be 0..100 in your debug
+	var inst_pct: float = inst_raw
+	if inst_pct <= 1.0:
+		# if you ever store 0..1 instead, convert
+		inst_pct = inst_raw * 100.0
+
+	var active_depth: int = int(_run.get("active_depth"))
+	var max_depth: int = 0
+	if _run.get("max_unlocked_depth") != null:
+		max_depth = int(_run.get("max_unlocked_depth"))
+
+	set_depth_ui(active_depth, max_depth)
+
+	# Instability gain + TTF
+	var inst_gain: float = 0.0
+	if _run.has_method("get_instability_per_sec"):
+		inst_gain = float(_run.call("get_instability_per_sec"))
+	elif _run.get("instability_per_sec") != null:
+		inst_gain = float(_run.get("instability_per_sec"))
+
+	var ttf: float = 999999.0
+	if inst_gain > 0.000001:
+		ttf = (100.0 - inst_pct) / inst_gain
+
+	# Overclock placeholders (wire later if you have it)
+	var is_overclock: bool = false
+	var overclock_time_left: float = 0.0
+
+	# --- This is the key: call the OLD updater every frame ---
+	update_top_bar(
+		thoughts,
+		thoughts_ps,
+		control,
+		control_ps,
+		inst_pct,
+		is_overclock,
+		overclock_time_left,
+		ttf,
+		inst_gain
+	)
 
 func _resolve_depth_label() -> Label:
 	if depth_label_path != NodePath(""):
@@ -50,6 +119,7 @@ func _set_label_colors() -> void:
 func _style_inst_bar() -> void:
 	if inst_bar == null:
 		return
+
 	var bg := StyleBoxFlat.new()
 	bg.bg_color = Color(0.08, 0.08, 0.1, 0.85)
 	bg.border_color = Color(1, 1, 1, 0.12)
@@ -100,17 +170,24 @@ func update_top_bar(
 		thoughts_value.text = "%s" % _fmt_num(thoughts)
 	if thoughts_gain:
 		thoughts_gain.text = "+%.1f/s" % thoughts_ps
+
 	if control_value:
 		control_value.text = "%s" % _fmt_num(control)
 	if control_gain:
 		control_gain.text = "+%.1f/s" % control_ps
+
 	if inst_bar:
 		inst_bar.value = inst_pct
+
 	if inst_title:
 		inst_title.text = "Instability (TTF %s)" % _fmt_time_ui(ttf)
-		inst_title.tooltip_text = "Instab +%.3f/s%s" % [inst_gain, (" | OC %.1fs" % overclock_time_left) if is_overclock else ""]
+		inst_title.tooltip_text = "Instab +%.3f/s%s" % [
+			inst_gain,
+			(" | OC %.1fs" % overclock_time_left) if is_overclock else ""
+		]
+
 	if inst_hint:
-		inst_hint.visible = false  # keep hidden inline
+		inst_hint.visible = false
 
 func _fmt_num(v: float) -> String:
 	if v >= 1000000.0:
@@ -126,3 +203,20 @@ func _fmt_time_ui(sec: float) -> String:
 	var m: int = int(floor(sec / 60.0))
 	var s: int = int(fmod(sec, 60.0))
 	return "%d:%02d" % [m, s]
+
+func _style_top_bar_panel() -> void:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.04, 0.06, 0.10, 0.95)
+	sb.border_color = COLOR_BAR_BLUE
+	sb.border_width_left = 2
+	sb.border_width_top = 2
+	sb.border_width_right = 2
+	sb.border_width_bottom = 2
+	sb.corner_radius_top_left = 10
+	sb.corner_radius_top_right = 10
+	sb.corner_radius_bottom_left = 10
+	sb.corner_radius_bottom_right = 10
+	sb.shadow_color = Color(0, 0, 0, 0.45)
+	sb.shadow_size = 8
+
+	add_theme_stylebox_override("panel", sb)

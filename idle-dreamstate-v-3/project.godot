@@ -19,6 +19,10 @@ config/icon="uid://dosy6to8brccv"
 
 SceneManager="*res://scripts/core/SceneManager.gd"
 SaveSystem="*res://scripts/SaveSystem.gd"
+AdService="*res://AdService.gd"
+TimedBoostController="*res://TimedBoostController.gd"
+DepthRunController="*res://UI/DepthRunController.gd"
+DepthMeta="*res://DepthMetaSystem.gd"
 
 [display]
 

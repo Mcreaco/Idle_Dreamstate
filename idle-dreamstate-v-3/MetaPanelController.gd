@@ -383,3 +383,8 @@ func _show_depth(depth_index: int) -> void:
 func _on_dim_gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		close()
+
+func open_to_depth(depth_index: int) -> void:
+	open()
+	_show_meta("depth")
+	_show_depth(depth_index)
