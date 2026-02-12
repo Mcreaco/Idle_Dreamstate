@@ -16,6 +16,7 @@ signal abyss_unlocked
 @onready var depth_meta_system: DepthMetaSystem = $"../Systems/DepthMetaSystem"
 @onready var sound_system = $"../SoundSystem"
 @onready var top_bar_panel: TopBarPanel = $"../MainUI/Root/TopBarPanel"
+@onready var ad_service: AdService = get_node_or_null("/root/AdService")
 
 @export var dive_cd_min: float = 0.0
 @export var perk2_cd_reduction_per_level: float = 0.0
@@ -68,9 +69,6 @@ var fail_penalty_mult: float = 0.60
 var depth_thoughts_step: float = 0.05
 var depth_instab_step: float = 0.08
 
-var dive_cooldown: float = 10.0
-var dive_cooldown_timer: float = 0.0
-
 var wake_guard_seconds: float = 0.35
 var wake_guard_timer: float = 0.0
 
@@ -98,9 +96,13 @@ static var _persist_debug_visible: bool = false
 var _debug_overlay_layer: CanvasLayer
 var _debug_label: Label
 var _debug_visible: bool = false
-var _depth_cache: int = 1  # Cache for depth - always read from DepthRunController
+var _depth_cache: int = 1
 var run_time: float = 0.0
 
+var timed_boost_timer: float = 0.0
+var timed_boost_active: bool = false
+var _fail_save_prompt_shown: bool = false
+var _fail_save_used: bool = false
 
 func _fmt_num(v: float) -> String:
 	if v >= 1000000.0:
@@ -118,15 +120,15 @@ func _fmt_time_ui(sec: float) -> String:
 	return "%d:%02d" % [m, s]
 
 func get_current_depth() -> int:
-	"""Get the current depth from DepthRunController (single source of truth)"""
 	var drc := get_node_or_null("/root/DepthRunController")
-	if drc != null and drc.has("active_depth"):
-		_depth_cache = int(drc.get("active_depth"))
-		return _depth_cache
-	return _depth_cache  # Return cached value if DRC not available
+	if drc != null:
+		var ad = drc.get("active_depth")
+		if ad != null:
+			_depth_cache = int(ad)
+			return _depth_cache
+	return _depth_cache
 
 func _on_depth_changed_from_controller(new_depth: int) -> void:
-	"""Called when DepthRunController changes depth"""
 	_depth_cache = new_depth
 	_update_depth_ui()
 	save_game()
@@ -167,6 +169,12 @@ func _ready() -> void:
 	_connect_pressed_once(wake_button, Callable(self, "_on_wake_pressed"))
 	_connect_pressed_once(meta_button, Callable(self, "_on_meta_pressed"))
 	
+	if ad_service != null:
+		if not ad_service.reward_timed_boost.is_connected(Callable(self, "_on_ad_timed_boost")):
+			ad_service.reward_timed_boost.connect(Callable(self, "_on_ad_timed_boost"))
+		if not ad_service.reward_fail_save.is_connected(Callable(self, "_on_ad_fail_save_reward")):
+			ad_service.reward_fail_save.connect(Callable(self, "_on_ad_fail_save_reward"))
+	
 	if auto_dive_toggle != null:
 		auto_dive_toggle.button_pressed = false
 	if auto_overclock_toggle != null:
@@ -180,14 +188,12 @@ func _ready() -> void:
 	if auto_overclock_toggle != null and not auto_overclock_toggle.toggled.is_connected(Callable(self, "_on_auto_overclock_toggled")):
 		auto_overclock_toggle.toggled.connect(Callable(self, "_on_auto_overclock_toggled"))
 	
-	# Connect to DepthRunController's depth change signal
 	var drc := get_node_or_null("/root/DepthRunController")
 	if drc != null:
 		if drc.has_signal("active_depth_changed"):
 			if not drc.is_connected("active_depth_changed", Callable(self, "_on_depth_changed_from_controller")):
 				drc.connect("active_depth_changed", Callable(self, "_on_depth_changed_from_controller"))
-		# Initialize cache
-		if drc.has("active_depth"):
+		if "active_depth" in drc:
 			_depth_cache = int(drc.get("active_depth"))
 	
 	if time_in_run <= 0.0:
@@ -211,124 +217,6 @@ func _ready() -> void:
 		_toggle_debug_overlay()
 		_debug_visible = true
 	_update_debug_overlay()
-
-func _process(delta: float) -> void:
-	run_time += delta
-	autosave_timer += delta
-	if autosave_timer >= autosave_interval:
-		autosave_timer = 0.0
-		save_game()
-	
-	if prestige_panel != null and prestige_panel.visible:
-		_refresh_top_ui()
-		_update_buttons_ui()
-		_force_cooldown_texts()
-		return
-	
-	dive_cooldown_timer = maxf(dive_cooldown_timer - delta, 0.0)
-	wake_guard_timer = maxf(wake_guard_timer - delta, 0.0)
-	time_in_run += delta
-	
-	overclock_system.update(delta)
-	
-	if auto_dive_toggle != null:
-		automation_system.auto_dive = auto_dive_toggle.button_pressed
-	if auto_overclock_toggle != null:
-		automation_system.auto_overclock = auto_overclock_toggle.button_pressed
-	
-	if automation_system.auto_overclock:
-		_try_auto_overclock()
-	
-	var attempt: int = automation_system.update(delta)
-	if attempt > 0:
-		_press_button(dive_button)
-	
-	var _corruption = corruption_system.update(delta, instability)
-	
-	var thoughts_mult: float = _safe_mult(upgrade_manager.get_thoughts_mult()) * _safe_mult(perk_system.get_thoughts_mult()) * _safe_mult(nightmare_system.get_thoughts_mult())
-	var instability_mult: float = _safe_mult(upgrade_manager.get_instability_mult()) * _safe_mult(perk_system.get_instability_mult()) * _safe_mult(nightmare_system.get_instability_mult())
-	var control_mult: float = _safe_mult(perk_system.get_control_mult()) * _safe_mult(nightmare_system.get_control_mult())
-	
-	var depth_meta_thoughts_mult: float = 1.0
-	var depth_meta_control_mult: float = 1.0
-	var depth_meta_instab_mult: float = 1.0
-	var depth_meta_idle_instab_mult: float = 1.0
-	
-	if depth_meta_system != null:
-		depth_meta_thoughts_mult = _safe_mult(depth_meta_system.get_global_thoughts_mult())
-		depth_meta_control_mult = _safe_mult(depth_meta_system.get_global_control_mult())
-		depth_meta_instab_mult = _safe_mult(depth_meta_system.get_global_instability_mult())
-		depth_meta_idle_instab_mult = _safe_mult(depth_meta_system.get_global_idle_instability_mult())
-	
-	thoughts_mult *= depth_meta_thoughts_mult
-	control_mult *= depth_meta_control_mult
-	
-	if perm_perk_system != null:
-		thoughts_mult *= _safe_mult(perm_perk_system.get_thoughts_mult())
-		instability_mult *= _safe_mult(perm_perk_system.get_instability_mult())
-		control_mult *= _safe_mult(perm_perk_system.get_control_mult())
-	
-	if abyss_perk_system != null:
-		thoughts_mult *= _safe_mult(abyss_perk_system.get_thoughts_mult())
-		control_mult *= _safe_mult(abyss_perk_system.get_control_mult())
-	
-	var deep_bonus_per_depth: float = upgrade_manager.get_deep_dives_thoughts_bonus_per_depth()
-	var deep_risk_per_depth: float = upgrade_manager.get_deep_dives_instab_bonus_per_depth()
-	
-	# ✅ FIX: Get current depth ONCE at the start
-	var current_depth = get_current_depth()
-	var depth_thoughts_mult: float = 1.0 + (float(current_depth) * (depth_thoughts_step + deep_bonus_per_depth))
-	var depth_instab_mult: float = 1.0 + (float(current_depth) * (depth_instab_step + deep_risk_per_depth))
-	
-	if overclock_system.active:
-		thoughts_mult *= _safe_mult(overclock_system.thoughts_mult)
-		instability_mult *= _safe_mult(overclock_system.instability_mult)
-	
-	thoughts_mult *= _safe_mult(_corruption.thoughts_mult)
-	instability_mult *= _safe_mult(_corruption.instability_mult)
-	
-	var abyss_instab_mult: float = 1.0
-	if abyss_perk_system != null:
-		abyss_instab_mult = abyss_perk_system.get_instability_reduction_mult(current_depth)
-	
-	thoughts += idle_thoughts_rate * thoughts_mult * depth_thoughts_mult * delta
-	control += idle_control_rate * control_mult * delta
-	
-	var idle_risk_gain: float = (idle_instability_rate * instability_mult * depth_instab_mult * delta) + float(_corruption.extra_instability)
-	instability = risk_system.add_risk(
-		instability,
-		idle_risk_gain * abyss_instab_mult * depth_meta_instab_mult * depth_meta_idle_instab_mult
-	)
-	
-	_crack_sync_timer += delta
-	if _crack_sync_timer >= 0.1:
-		_crack_sync_timer = 0.0
-		_sync_cracks()
-	
-	total_thoughts_earned = maxf(total_thoughts_earned, thoughts)
-	max_instability = maxf(max_instability, instability)
-	
-	nightmare_system.check_unlock(max_instability)
-	
-	_rate_sample_timer += delta
-	if _rate_sample_timer >= 0.5:
-		var inv_dt: float = 1.0 / _rate_sample_timer
-		_thoughts_ps = (thoughts - _last_thoughts_sample) * inv_dt
-		_control_ps = (control - _last_control_sample) * inv_dt
-		_last_thoughts_sample = thoughts
-		_last_control_sample = control
-		_rate_sample_timer = 0.0
-	
-	_refresh_top_ui()
-	_update_buttons_ui()
-	_force_cooldown_texts()
-	_update_overclock_flash(delta)
-	
-	if _debug_visible:
-		_update_debug_overlay()
-	
-	if instability >= 100.0:
-		do_fail()
 
 func _force_rate_sample() -> void:
 	_last_thoughts_sample = thoughts
@@ -460,7 +348,6 @@ func _on_meta_pressed() -> void:
 	_force_rate_sample()
 	_refresh_top_ui()
 
-
 func _sync_meta_progress() -> void:
 	var current_depth = get_current_depth()
 	max_depth_reached = maxi(max_depth_reached, maxi(1, current_depth))
@@ -476,14 +363,12 @@ func force_unlock_depth_tab(new_depth: int) -> void:
 	_sync_meta_progress()
 
 func _on_dive_pressed() -> void:
-	# New system: the DepthBarsPanel owns “which depth is active” + bar visuals.
 	var bars := get_tree().current_scene.find_child("DepthBarsPanel", true, false)
 	if bars != null and bars.has_method("on_dive_pressed"):
 		bars.call("on_dive_pressed")
 		return
 
 	push_warning("GameManager: DepthBarsPanel not found or missing on_dive_pressed().")
-
 
 func _on_wake_pressed() -> void:
 	if prestige_panel == null:
@@ -497,16 +382,14 @@ func _on_wake_pressed() -> void:
 	var mem_gain: float = 0.0
 	var crystals_by_name: Dictionary = {}
 
-	if drc != null and drc.has("active_depth"):
+	if drc != null and "active_depth" in drc:
 		d = int(drc.get("active_depth"))
 
-	# Use DepthRunController's preview (sums ALL depths)
 	if drc != null and drc.has_method("preview_wake"):
 		var prev: Dictionary = drc.call("preview_wake", 1.0, false)
 		mem_gain = float(prev.get("memories", 0.0))
 		crystals_by_name = prev.get("crystals_by_name", {})
 	else:
-		# Fallback
 		mem_gain = calc_memories_gain() * wake_bonus_mult
 		var current_depth = get_current_depth()
 		for depth_i in range(1, current_depth + 1):
@@ -523,18 +406,13 @@ func _on_prestige_confirm_wake() -> void:
 		push_warning("GameManager: /root/DepthRunController not found; cannot wake.")
 		return
 	
-	# Do the actual cashout using the bars system (this is what matches the preview)
 	drc.call("wake_cashout", 1.0, false)
-	
-	# Reset the TOP HUD run stats (your GameManager still owns these UI values)
 	reset_run()
 	save_game()
 	
-	# Close confirm panel
 	if prestige_panel != null:
 		prestige_panel.close()
 	
-	# Open Meta to the depth we woke from
 	if meta_panel == null:
 		meta_panel = _ui_find("MetaPanel") as MetaPanelController
 	if meta_panel != null and meta_panel.has_method("open_to_depth"):
@@ -545,14 +423,16 @@ func _on_prestige_confirm_wake() -> void:
 	_force_rate_sample()
 	_refresh_top_ui()
 
-
 func do_fail() -> void:
+	if ad_service != null and ad_service.can_show(AdService.AD_FAIL_SAVE) and not _fail_save_prompt_shown:
+		_show_fail_save_prompt()
+		return
+	
 	if sound_system != null:
 		sound_system.play_fail()
 	
 	var drc := get_node_or_null("/root/DepthRunController")
 	if drc != null and drc.has_method("wake_cashout"):
-		# Use forced=true for fail (reduced multipliers)
 		drc.call("wake_cashout", 1.0, true)
 	
 	reset_run()
@@ -565,7 +445,6 @@ func calc_depth_currency_gain(depth_i: int) -> float:
 func do_dive() -> void:
 	var current_depth = get_current_depth()
 	
-	# Update stats tracking BEFORE incrementing
 	SaveSystem.set_max_stat("deepest_depth", current_depth + 1)
 	max_depth_reached = maxi(max_depth_reached, current_depth + 1)
 	
@@ -605,7 +484,6 @@ func do_dive() -> void:
 	var deep_bonus_per_depth: float = upgrade_manager.get_deep_dives_thoughts_bonus_per_depth()
 	var deep_risk_per_depth: float = upgrade_manager.get_deep_dives_instab_bonus_per_depth()
 	
-	# Use current_depth + 1 since we're diving TO the next depth
 	var next_depth = current_depth + 1
 	var depth_thoughts_mult: float = 1.0 + (float(next_depth) * (depth_thoughts_step + deep_bonus_per_depth))
 	var depth_instab_mult: float = 1.0 + (float(next_depth) * (depth_instab_step + deep_risk_per_depth))
@@ -665,12 +543,9 @@ func reset_run() -> void:
 		thoughts = perm_perk_system.get_starting_thoughts()
 		instability = maxf(0.0, instability - perm_perk_system.get_starting_instability_reduction())
 	
-	# DepthRunController already reset depth to 1 in wake_cashout()
-	# Just update our tracking var
 	var current_depth = get_current_depth()
 	run_start_depth = current_depth
 	
-	# Reset run upgrades
 	upgrade_manager.thoughts_level = 0
 	upgrade_manager.stability_level = 0
 	upgrade_manager.deep_dives_level = 0
@@ -679,7 +554,6 @@ func reset_run() -> void:
 	upgrade_manager.overclock_safety_level = 0
 	
 	overclock_system.active = false
-	dive_cooldown_timer = 0.0
 	wake_guard_timer = wake_guard_seconds
 	
 	if pillar_stack != null and pillar_stack.has_method("reset_visuals"):
@@ -693,7 +567,6 @@ func reset_run() -> void:
 	
 	_sync_cracks()
 	_sync_meta_progress()
-	
 
 func _check_abyss_unlock() -> void:
 	if abyss_unlocked_flag:
@@ -806,6 +679,9 @@ func _apply_offline_progress() -> void:
 	if perm_perk_system != null:
 		offline_mult = perm_perk_system.get_offline_mult()
 	
+	if ad_service != null and ad_service._offline_used_this_session:
+		offline_mult *= 2.0
+	
 	thoughts += idle_thoughts_rate * thoughts_mult * depth_thoughts_mult * offline_seconds * offline_mult
 	control += idle_control_rate * control_mult * offline_seconds * offline_mult
 	
@@ -839,7 +715,6 @@ func save_game() -> void:
 	data["total_thoughts_earned"] = total_thoughts_earned
 	data["max_instability"] = max_instability
 	
-	# Get depth from DepthRunController
 	data["depth"] = get_current_depth()
 	
 	data["max_depth_reached"] = max_depth_reached
@@ -894,7 +769,6 @@ func load_game() -> void:
 	total_thoughts_earned = float(data.get("total_thoughts_earned", 0.0))
 	max_instability = float(data.get("max_instability", 0.0))
 	
-	# Load depth and SET it in DepthRunController
 	var loaded_depth = int(data.get("depth", 1))
 	var drc := get_node_or_null("/root/DepthRunController")
 	if drc != null and drc.has_method("set_active_depth"):
@@ -937,9 +811,6 @@ func load_game() -> void:
 	perk_system.perk2_level = int(data.get("perk2_level", 0))
 	perk_system.perk3_level = int(data.get("perk3_level", 0))
 	
-# -------------------------
-# UI BINDING
-# -------------------------
 func _bind_ui_mainui() -> void:
 	thoughts_label = _ui_find("ThoughtsLabel") as Label
 	control_label = _ui_find("ControlLabel") as Label
@@ -959,7 +830,6 @@ func _bind_ui_mainui() -> void:
 		dive_button.visible = false
 		dive_button.disabled = true
 
-	
 	for b in [dive_button, overclock_button, wake_button, meta_button]:
 		if b == null:
 			continue
@@ -1265,3 +1135,269 @@ func _update_debug_overlay() -> void:
 		+ "TTF: %s (raw %.1fs)\n" % [_fmt_time_ui(ttf), ttf] \
 		+ "Overclock: %s (%.2fs left)\n" % [(overclock_system.active if overclock_system != null else false), oc_left] \
 		+ "Depth: %d\n" % current_depth
+
+func _process(delta: float) -> void:
+	run_time += delta
+	
+	# AD_TIMED_BOOST: Handle countdown
+	if timed_boost_active:
+		timed_boost_timer -= delta
+		if timed_boost_timer <= 0:
+			timed_boost_active = false
+			timed_boost_timer = 0.0
+	
+	autosave_timer += delta
+	if autosave_timer >= autosave_interval:
+		autosave_timer = 0.0
+		save_game()
+	
+	if prestige_panel != null and prestige_panel.visible:
+		_refresh_top_ui()
+		_update_buttons_ui()
+		_force_cooldown_texts()
+		return
+	
+	wake_guard_timer = maxf(wake_guard_timer - delta, 0.0)
+	time_in_run += delta
+	
+	overclock_system.update(delta)
+	
+	if auto_dive_toggle != null:
+		automation_system.auto_dive = auto_dive_toggle.button_pressed
+	if auto_overclock_toggle != null:
+		automation_system.auto_overclock = auto_overclock_toggle.button_pressed
+	
+	if automation_system.auto_overclock:
+		_try_auto_overclock()
+	
+	var attempt: int = automation_system.update(delta)
+	if attempt > 0:
+		_press_button(dive_button)
+	
+	var _corruption = corruption_system.update(delta, instability)
+	
+	var thoughts_mult: float = _safe_mult(upgrade_manager.get_thoughts_mult()) * _safe_mult(perk_system.get_thoughts_mult()) * _safe_mult(nightmare_system.get_thoughts_mult())
+	var instability_mult: float = _safe_mult(upgrade_manager.get_instability_mult()) * _safe_mult(perk_system.get_instability_mult()) * _safe_mult(nightmare_system.get_instability_mult())
+	var control_mult: float = _safe_mult(perk_system.get_control_mult()) * _safe_mult(nightmare_system.get_control_mult())
+	
+	var depth_meta_thoughts_mult: float = 1.0
+	var depth_meta_control_mult: float = 1.0
+	var depth_meta_instab_mult: float = 1.0
+	var depth_meta_idle_instab_mult: float = 1.0
+	
+	if depth_meta_system != null:
+		depth_meta_thoughts_mult = _safe_mult(depth_meta_system.get_global_thoughts_mult())
+		depth_meta_control_mult = _safe_mult(depth_meta_system.get_global_control_mult())
+		depth_meta_instab_mult = _safe_mult(depth_meta_system.get_global_instability_mult())
+		depth_meta_idle_instab_mult = _safe_mult(depth_meta_system.get_global_idle_instability_mult())
+	
+	thoughts_mult *= depth_meta_thoughts_mult
+	control_mult *= depth_meta_control_mult
+	
+	if perm_perk_system != null:
+		thoughts_mult *= _safe_mult(perm_perk_system.get_thoughts_mult())
+		instability_mult *= _safe_mult(perm_perk_system.get_instability_mult())
+		control_mult *= _safe_mult(perm_perk_system.get_control_mult())
+	
+	if abyss_perk_system != null:
+		thoughts_mult *= _safe_mult(abyss_perk_system.get_thoughts_mult())
+		control_mult *= _safe_mult(abyss_perk_system.get_control_mult())
+	
+	var deep_bonus_per_depth: float = upgrade_manager.get_deep_dives_thoughts_bonus_per_depth()
+	var deep_risk_per_depth: float = upgrade_manager.get_deep_dives_instab_bonus_per_depth()
+	
+	var current_depth = get_current_depth()
+	var depth_thoughts_mult: float = 1.0 + (float(current_depth) * (depth_thoughts_step + deep_bonus_per_depth))
+	var depth_instab_mult: float = 1.0 + (float(current_depth) * (depth_instab_step + deep_risk_per_depth))
+	
+	if overclock_system.active:
+		thoughts_mult *= _safe_mult(overclock_system.thoughts_mult)
+		instability_mult *= _safe_mult(overclock_system.instability_mult)
+	
+	thoughts_mult *= _safe_mult(_corruption.thoughts_mult)
+	instability_mult *= _safe_mult(_corruption.instability_mult)
+	
+	var abyss_instab_mult: float = 1.0
+	if abyss_perk_system != null:
+		abyss_instab_mult = abyss_perk_system.get_instability_reduction_mult(current_depth)
+	
+	# AD_TIMED_BOOST: Apply 2x multiplier
+	var boost_mult := 2.0 if timed_boost_active else 1.0
+	thoughts_mult *= boost_mult
+	control_mult *= boost_mult
+	
+	thoughts += idle_thoughts_rate * thoughts_mult * depth_thoughts_mult * delta
+	control += idle_control_rate * control_mult * delta
+	
+	# Only gain instability at depth 2+
+	if current_depth >= 2:
+		var idle_risk_gain: float = (idle_instability_rate * instability_mult * depth_instab_mult * delta) + float(_corruption.extra_instability)
+		instability = risk_system.add_risk(
+			instability,
+			idle_risk_gain * abyss_instab_mult * depth_meta_instab_mult * depth_meta_idle_instab_mult
+		)
+	
+	_crack_sync_timer += delta
+	if _crack_sync_timer >= 0.1:
+		_crack_sync_timer = 0.0
+		_sync_cracks()
+	
+	total_thoughts_earned = maxf(total_thoughts_earned, thoughts)
+	max_instability = maxf(max_instability, instability)
+	
+	nightmare_system.check_unlock(max_instability)
+	
+	_rate_sample_timer += delta
+	if _rate_sample_timer >= 0.5:
+		var inv_dt: float = 1.0 / _rate_sample_timer
+		_thoughts_ps = (thoughts - _last_thoughts_sample) * inv_dt
+		_control_ps = (control - _last_control_sample) * inv_dt
+		_last_thoughts_sample = thoughts
+		_last_control_sample = control
+		_rate_sample_timer = 0.0
+	
+	_refresh_top_ui()
+	_update_buttons_ui()
+	_force_cooldown_texts()
+	_update_overclock_flash(delta)
+	
+	if _debug_visible:
+		_update_debug_overlay()
+	
+	if instability >= 100.0:
+		do_fail()
+		
+func _show_fail_save_prompt() -> void:
+	_fail_save_prompt_shown = true
+	
+	# Check if mobile - if not, just fail immediately
+	var os_name := OS.get_name()
+	if os_name != "Android" and os_name != "iOS":
+		# On PC, skip the ad prompt and just fail
+		do_fail()
+		return
+	
+	var popup := PanelContainer.new()
+	popup.name = "FailSavePopup"
+	popup.set_anchors_preset(Control.PRESET_CENTER)
+	popup.custom_minimum_size = Vector2(400, 200)
+	popup.z_index = 300  # HIGHER than depth bars to appear on top
+	
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.04, 0.07, 0.12, 0.98)  # More opaque background
+	sb.border_color = Color(0.24, 0.67, 0.94, 1.0)
+	sb.border_width_left = 2
+	sb.border_width_top = 2
+	sb.border_width_right = 2
+	sb.border_width_bottom = 2
+	sb.corner_radius_top_left = 12
+	sb.corner_radius_top_right = 12
+	sb.corner_radius_bottom_left = 12
+	sb.corner_radius_bottom_right = 12
+	popup.add_theme_stylebox_override("panel", sb)
+	
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 12)
+	popup.add_child(vbox)
+	
+	var title := Label.new()
+	title.text = "Instability Critical!"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 20)
+	vbox.add_child(title)
+	
+	var desc := Label.new()
+	desc.text = "Watch an ad to stabilize your mind and continue?"
+	desc.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	desc.autowrap_mode = TextServer.AUTOWRAP_WORD
+	vbox.add_child(desc)
+	
+	var hbox := HBoxContainer.new()
+	hbox.add_theme_constant_override("separation", 12)
+	vbox.add_child(hbox)
+	
+	var watch_btn := Button.new()
+	watch_btn.text = "Watch Ad (Continue)"
+	watch_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	watch_btn.pressed.connect(Callable(self, "_on_watch_ad_save").bind(popup))
+	hbox.add_child(watch_btn)
+	
+	var give_up_btn := Button.new()
+	give_up_btn.text = "Give Up"
+	give_up_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	give_up_btn.pressed.connect(Callable(self, "_on_give_up").bind(popup))
+	hbox.add_child(give_up_btn)
+	
+	# Add to a CanvasLayer to ensure it's on top of everything
+	var layer := CanvasLayer.new()
+	layer.layer = 100  # Above everything else
+	layer.add_child(popup)
+	add_child(layer)
+	
+	set_process(false)
+	
+func _on_watch_ad_save(layer: Node) -> void:
+	layer.queue_free()
+	set_process(true)
+	
+	if ad_service != null:
+		ad_service.show_rewarded(AdService.AD_FAIL_SAVE)
+	
+	instability = 75.0
+	_sync_cracks()
+	
+	_fail_save_used = true
+	await get_tree().create_timer(3.0).timeout
+	_fail_save_used = false
+	_fail_save_prompt_shown = false
+	
+func _on_give_up(layer: Node) -> void:
+	layer.queue_free()
+	set_process(true)
+	_fail_save_prompt_shown = false
+	do_fail()
+	
+func _on_ad_timed_boost(seconds: float) -> void:
+	timed_boost_timer = seconds
+	timed_boost_active = true
+	
+	var notif := Label.new()
+	notif.text = "TIMED BOOST ACTIVE: 2x Production for %d minutes!" % int(seconds / 60.0)
+	notif.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	notif.add_theme_font_size_override("font_size", 18)
+	notif.add_theme_color_override("font_color", Color(0.35, 0.8, 0.95, 1.0))
+	
+	notif.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	notif.position.y = 50
+	
+	add_child(notif)
+	
+	await get_tree().create_timer(3.0).timeout
+	notif.queue_free()
+
+func _on_ad_fail_save_reward() -> void:
+	pass
+
+func can_dive_to_next_depth() -> bool:
+	# Can only dive if current depth instability upgrade is maxed
+	var current_instab_upgrade_level: int = upgrade_manager.stability_level
+	var max_instab_upgrade: int = 10  # Default max, or get from upgrade_manager if it exists
+	
+	# Check if upgrade_manager has max_stability_level property
+	if "max_stability_level" in upgrade_manager:
+		max_instab_upgrade = upgrade_manager.max_stability_level
+	
+	# Get current depth from DepthRunController
+	var current_depth: int = get_current_depth()
+	
+	# Check if next depth is unlocked (permanently unlocked via meta progression)
+	# This should check depth_meta_system or similar
+	var next_depth_unlocked: bool = false
+	if depth_meta_system != null:
+		# Check if next depth is unlocked (depth + 1)
+		next_depth_unlocked = depth_meta_system.is_depth_unlocked(current_depth + 1)
+	
+	if not next_depth_unlocked:
+		return false
+	
+	return current_instab_upgrade_level >= max_instab_upgrade

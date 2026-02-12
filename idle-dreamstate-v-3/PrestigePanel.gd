@@ -131,6 +131,27 @@ func open_with_depth(mem: float, crystals_dict: Dictionary, wake_depth: int) -> 
 			label.modulate = Color(0.7, 0.7, 0.7)
 			currency_container.add_child(label)
 	
+		if keep_label != null:
+			keep_label.text = """You Keep:
+• Memories (permanent meta-currency)
+• All Depth Crystals (Amethyst, Ruby, etc.)
+• Permanent Perks (Memory Engine, Calm Mind, etc.)
+• Depth Meta Upgrades (global bonuses)
+• Abyss Unlocks and Abyss Perks"""
+	
+	if reset_label != null:
+		reset_label.text = """You Reset:
+• Thoughts (return to 0)
+• Control (return to 0)
+• Instability (return to 0)
+• Run Upgrades (Thoughts Flow, Stability, etc.)
+• Current Depth (return to 1)
+• Time in Run (reset)"""
+	
+	# Reset ad bonus state when opening fresh
+		_ad_bonus = 0.0
+		_ad_used = false
+		_update_ad_button_state()
 	# Option B: Pre-made labels approach (if you have Depth1Label, Depth2Label, etc.)
 	# Uncomment this section if you use pre-made labels instead of a dynamic container
 	"""

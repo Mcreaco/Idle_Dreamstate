@@ -35,7 +35,7 @@ func _ready() -> void:
 			btn.pressed.connect(Callable(self, "_on_buy"))
 
 	if bar != null:
-		bar.mouse_filter = Control.MOUSE_FILTER_IGNORE  # don’t block clicks
+		bar.mouse_filter = Control.MOUSE_FILTER_IGNORE  # don't block clicks
 		bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		bar.size_flags_stretch_ratio = 2   # keep your 60/40 split
 		bar.custom_minimum_size.x = 0
@@ -84,6 +84,16 @@ func _on_buy() -> void:
 		"starting_insight":   res = perm.try_buy_starting_insight(gm.memories)
 		"stability_buffer":   res = perm.try_buy_stability_buffer(gm.memories)
 		"offline_echo":       res = perm.try_buy_offline_echo(gm.memories)
+		"recursive_memory":   res = perm.try_buy_recursive_memory(gm.memories)
+		"lucid_dreaming":     res = perm.try_buy_lucid_dreaming(gm.memories)
+		"deep_sleeper":       res = perm.try_buy_deep_sleeper(gm.memories)
+		"night_owl":          res = perm.try_buy_night_owl(gm.memories)
+		"dream_catcher":      res = perm.try_buy_dream_catcher(gm.memories)
+		"subconscious_miner": res = perm.try_buy_subconscious_miner(gm.memories)
+		"void_walker":        res = perm.try_buy_void_walker(gm.memories)
+		"rapid_eye":          res = perm.try_buy_rapid_eye(gm.memories)
+		"sleep_paralysis":    res = perm.try_buy_sleep_paralysis(gm.memories)
+		"oneiromancy":        res = perm.try_buy_oneiromancy(gm.memories)
 		_:
 			return
 
@@ -91,7 +101,6 @@ func _on_buy() -> void:
 	var cost := float(res.get("cost", 0.0))
 
 	if bought:
-		# PermPerkSystem only increments level + returns cost, it does NOT spend.
 		gm.memories = maxf(gm.memories - cost, 0.0)
 		gm.save_game()
 
@@ -111,33 +120,83 @@ func refresh() -> void:
 		"memory_engine":
 			title = "Memory Engine"
 			lvl = perm.memory_engine_level
-			cost = perm.cost_memory_engine()
+			cost = perm.get_cost_by_id(perk_id)
 			tip = "+5% Thoughts per level"
 		"calm_mind":
 			title = "Calm Mind"
 			lvl = perm.calm_mind_level
-			cost = perm.cost_calm_mind()
+			cost = perm.get_cost_by_id(perk_id)
 			tip = "-4% Instability gain per level"
 		"focused_will":
 			title = "Focused Will"
 			lvl = perm.focused_will_level
-			cost = perm.cost_focused_will()
+			cost = perm.get_cost_by_id(perk_id)
 			tip = "+6% Control per level"
 		"starting_insight":
 			title = "Starting Insight"
 			lvl = perm.starting_insight_level
-			cost = perm.cost_starting_insight()
+			cost = perm.get_cost_by_id(perk_id)
 			tip = "Start each run with +25 Thoughts per level"
 		"stability_buffer":
 			title = "Stability Buffer"
 			lvl = perm.stability_buffer_level
-			cost = perm.cost_stability_buffer()
+			cost = perm.get_cost_by_id(perk_id)
 			tip = "Start each run with -2 Instability per level"
 		"offline_echo":
 			title = "Offline Echo"
 			lvl = perm.offline_echo_level
-			cost = perm.cost_offline_echo()
+			cost = perm.get_cost_by_id(perk_id)
 			tip = "+8% Offline gains per level"
+		"recursive_memory":
+			title = "Recursive Memory"
+			lvl = perm.recursive_memory_level
+			cost = perm.get_cost_by_id(perk_id)
+			tip = "+5% Memories gain per level"
+		"lucid_dreaming":
+			title = "Lucid Dreaming"
+			lvl = perm.lucid_dreaming_level
+			cost = perm.get_cost_by_id(perk_id)
+			tip = "+10% Overclock duration per level"
+		"deep_sleeper":
+			title = "Deep Sleeper"
+			lvl = perm.deep_sleeper_level
+			cost = perm.get_cost_by_id(perk_id)
+			tip = "+2% Thoughts per depth level per level"
+		"night_owl":
+			title = "Night Owl"
+			lvl = perm.night_owl_level
+			cost = perm.get_cost_by_id(perk_id)
+			tip = "+8% Idle Thoughts per level"
+		"dream_catcher":
+			title = "Dream Catcher"
+			lvl = perm.dream_catcher_level
+			cost = perm.get_cost_by_id(perk_id)
+			tip = "+3% chance to not consume Control on Overclock"
+		"subconscious_miner":
+			title = "Subconscious Miner"
+			lvl = perm.subconscious_miner_level
+			cost = perm.get_cost_by_id(perk_id)
+			tip = "+0.5 passive Thoughts/sec even while offline"
+		"void_walker":
+			title = "Void Walker"
+			lvl = perm.void_walker_level
+			cost = perm.get_cost_by_id(perk_id)
+			tip = "+5 Instability cap per level (can exceed 100%)"
+		"rapid_eye":
+			title = "Rapid Eye"
+			lvl = perm.rapid_eye_level
+			cost = perm.get_cost_by_id(perk_id)
+			tip = "-3% Dive cooldown per level"
+		"sleep_paralysis":
+			title = "Sleep Paralysis"
+			lvl = perm.sleep_paralysis_level
+			cost = perm.get_cost_by_id(perk_id)
+			tip = "+1s frozen Instability after Wake/Fail per level"
+		"oneiromancy":
+			title = "Oneiromancy"
+			lvl = perm.oneiromancy_level
+			cost = perm.get_cost_by_id(perk_id)
+			tip = "+1 depth preview per level"
 
 	if btn != null:
 		btn.text = "%s (Lv %d/%d)" % [title, lvl, max_lvl]

@@ -22,6 +22,16 @@ func _build() -> void:
 		"starting_insight",
 		"stability_buffer",
 		"offline_echo",
+		"recursive_memory",
+		"lucid_dreaming",
+		"deep_sleeper",
+		"night_owl",
+		"dream_catcher",
+		"subconscious_miner",
+		"void_walker",
+		"rapid_eye",
+		"sleep_paralysis",
+		"oneiromancy",
 	]
 
 	for id in perk_ids:

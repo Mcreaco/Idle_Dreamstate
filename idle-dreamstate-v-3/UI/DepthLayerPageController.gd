@@ -69,7 +69,7 @@ func _refresh() -> void:
 func _refresh_afk_only() -> void:
 	if gm == null or afk_label == null:
 		return
-	if gm.depth != depth_index:
+	if gm.get_current_depth() != depth_index:
 		afk_label.text = "AFK: (enter this depth to estimate)"
 		return
 	var s := gm.get_seconds_until_fail()
