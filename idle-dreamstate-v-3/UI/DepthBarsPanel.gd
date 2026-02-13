@@ -183,6 +183,12 @@ func _ensure_overlay() -> void:
 
 
 func _build_rows() -> void:
+		# Check if containers are ready
+	if left_col == null or right_col == null or depth15_slot == null:
+		push_warning("DepthBarsPanel: Containers not ready, deferring _build_rows")
+		call_deferred("_build_rows")
+		return
+
 	_clear_container(left_col)
 	_clear_container(right_col)
 	_clear_container(depth15_slot)
@@ -280,6 +286,14 @@ func _open_overlay(depth_index: int) -> void:
 	_overlay_slot.add_child(overlay_row)
 	_overlay_row = overlay_row
 
+	# Get FRESH data from controller, not cache
+	var drc := get_node_or_null("/root/DepthRunController")
+	var fresh_data: Dictionary = {"progress": 0.0, "memories": 0.0, "crystals": 0.0}
+	if drc != null:
+		var run_data: Array = drc.get("run") as Array
+		if run_data != null and depth_index >= 1 and depth_index <= run_data.size():
+			fresh_data = run_data[depth_index - 1].duplicate(true)
+
 	# Apply index + state
 	var locked: bool = depth_index > max_unlocked_depth
 	var frozen: bool = depth_index < active_depth
@@ -294,9 +308,11 @@ func _open_overlay(depth_index: int) -> void:
 	if overlay_row.has_method("set_active"):
 		overlay_row.call("set_active", is_active)
 
-	# Copy cached data/upgrades (so it matches the real row)
-	if _row_data_cache.has(depth_index) and overlay_row.has_method("set_data"):
-		overlay_row.call("set_data", _row_data_cache[depth_index])
+	# Use FRESH data, not cached
+	if overlay_row.has_method("set_data"):
+		overlay_row.call("set_data", fresh_data)
+
+	# Copy cached upgrades (these don't change as often)
 	if _row_local_upgrades_cache.has(depth_index) and overlay_row.has_method("set_local_upgrades"):
 		overlay_row.call("set_local_upgrades", _row_local_upgrades_cache[depth_index])
 	if _row_frozen_upgrades_cache.has(depth_index) and overlay_row.has_method("set_frozen_upgrades"):
@@ -341,8 +357,19 @@ func _clear_placeholder() -> void:
 # -------------------------
 # Public API (called by controller)
 # -------------------------
-func set_active_depth(depth_index: int) -> void:
-	active_depth = clamp(depth_index, 1, 15)
+func set_active_depth(d: int) -> void:
+	# Use a local constant or get from controller
+	var max_depth_val: int = 15
+	var drc := get_node_or_null("/root/DepthRunController")
+	if drc != null and drc.get("max_depth") != null:
+		max_depth_val = int(drc.get("max_depth"))
+	
+	active_depth = clampi(d, 1, max_depth_val)
+	
+	# If you need to emit a signal, declare it at the top of the script:
+	# signal active_depth_changed(new_depth: int)
+	# Then: active_depth_changed.emit(active_depth)
+	
 	_apply_row_states()
 
 func set_max_unlocked_depth(depth_index: int) -> void:
@@ -350,9 +377,7 @@ func set_max_unlocked_depth(depth_index: int) -> void:
 	_apply_row_states()
 
 func set_row_data(depth_index: int, data: Dictionary) -> void:
-	var prev: Dictionary = _row_data_cache.get(depth_index, {})
-	if prev.hash() == data.hash():
-		return  # No change, skip update
+	# Always update cache with latest data
 	_row_data_cache[depth_index] = data.duplicate(true)
 	
 	var row: Node = _rows.get(depth_index, null)
@@ -392,6 +417,8 @@ func set_active_local_upgrades(depth_index: int, upgrades: Dictionary) -> void:
 # Utils
 # -------------------------
 func _clear_container(n: Node) -> void:
+	if n == null:
+		return
 	for c in n.get_children():
 		c.queue_free()
 
@@ -610,17 +637,35 @@ func clear_all_row_data() -> void:
 		if row == null:
 			continue
 		
-		# Set row as frozen (visited) for depths > 1 so they show 0% not upgrade completion
-		if depth_index > 1:
-			if row.has_method("set_frozen"):
-				row.call("set_frozen", true)
-		else:
-			# Depth 1 is active
+		# After wake: depth 1 is active, all others are locked (not visited this run)
+		if depth_index == 1:
 			if row.has_method("set_active"):
 				row.call("set_active", true)
 			if row.has_method("set_frozen"):
 				row.call("set_frozen", false)
+			if row.has_method("set_locked"):
+				row.call("set_locked", false)
+		else:
+			# NOT visited this run - locked, not frozen
+			if row.has_method("set_active"):
+				row.call("set_active", false)
+			if row.has_method("set_frozen"):
+				row.call("set_frozen", false)  # IMPORTANT: locked, not frozen
+			if row.has_method("set_locked"):
+				row.call("set_locked", true)
 		
-		# Force data update
+		# Force data update with zeros
 		if row.has_method("set_data"):
 			row.call("set_data", empty_data)
+
+func _process(_delta: float) -> void:
+	# Update overlay if open
+	if _overlay != null and _overlay.visible and _expanded_depth > 0 and _overlay_row != null:
+		# Get fresh data from controller
+		var drc := get_node_or_null("/root/DepthRunController")
+		if drc != null:
+			var run_data: Array = drc.get("run") as Array
+			if run_data != null and _expanded_depth >= 1 and _expanded_depth <= run_data.size():
+				var fresh_data: Dictionary = run_data[_expanded_depth - 1]
+				if _overlay_row.has_method("set_data"):
+					_overlay_row.call("set_data", fresh_data)

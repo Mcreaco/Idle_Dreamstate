@@ -142,12 +142,12 @@ func get_depth_upgrade_defs(depth_i: int) -> Array:
 		"kind":"wake_yield",
 		"costs": _pick_costs(d, (2 if d <= 5 else 3))
 	}
-	var dive_eff := {
-		"id":"dive_eff",
-		"name":"Descent Efficiency",
-		"desc":"-3% Dive cooldown per level (global).",
-		"max":10,
-		"kind":"dive_eff",
+	var dive_start := {
+		"id":"dive_start",
+		"name":"Depth Start",
+		"desc":"Start at +5% depth progress per level when diving (max 100%).",
+		"max":20,  # 20 levels x 5% = 100%
+		"kind":"dive_start",
 		"costs": _pick_costs(d, (2 if d <= 8 else 3))
 	}
 
@@ -158,91 +158,91 @@ func get_depth_upgrade_defs(depth_i: int) -> Array:
 			c_gain.name = "Control Habit"
 			idle_soft.name = "Idle Instability Dampener"
 			wake_yield.name = "Amethyst Echo"
-			dive_eff.name = "Shallow Descent"
+			dive_start.name = "Shallow Start"
 		2:
 			t_gain.name = "Thoughts Compression"
 			c_gain.name = "Control Retention"
 			idle_soft.name = "Spike Dampener"
 			wake_yield.name = "Ruby Resonance"
-			dive_eff.name = "Rope Technique"
+			dive_start.name = "Quick Descent"
 		3:
 			t_gain.name = "Pressure-Born Insight"
 			c_gain.name = "Steady Grip"
 			idle_soft.name = "Quiet the Tremors"
 			wake_yield.name = "Emerald Afterglow"
-			dive_eff.name = "Breath Discipline"
+			dive_start.name = "Pressure Entry"
 		4:
 			t_gain.name = "Cognitive Pressure"
 			c_gain.name = "Willpower Reinforcement"
 			idle_soft.name = "Stability Lining"
 			wake_yield.name = "Sapphire Reflection"
-			dive_eff.name = "Murk Navigation"
+			dive_start.name = "Murk Entry"
 		5:
 			t_gain.name = "Rift Spark"
 			c_gain.name = "Anchor Mind"
 			idle_soft.name = "Fray Suppression"
 			wake_yield.name = "Diamond Shardfall"
-			dive_eff.name = "Rift Momentum"
+			dive_start.name = "Rift Entry"
 		6:
 			t_gain.name = "Hollow Patterning"
 			c_gain.name = "Calibrated Nerves"
 			idle_soft.name = "Hush the Static"
 			wake_yield.name = "Topaz Refrain"
-			dive_eff.name = "Hollow Routing"
+			dive_start.name = "Hollow Entry"
 		7:
 			t_gain.name = "Dread Clarity"
 			c_gain.name = "Fear Harness"
 			idle_soft.name = "Panic Diffuser"
 			wake_yield.name = "Garnet Pulse"
-			dive_eff.name = "Dread Steps"
+			dive_start.name = "Dread Entry"
 		8:
 			t_gain.name = "Chasm Thinking"
 			c_gain.name = "Grip of Stone"
 			idle_soft.name = "Edge Stabiliser"
 			wake_yield.name = "Opal Gleam"
-			dive_eff.name = "Chasm Lines"
+			dive_start.name = "Chasm Entry"
 		9:
 			t_gain.name = "Silence Insight"
 			c_gain.name = "Muted Focus"
 			idle_soft.name = "Noise Canceller"
 			wake_yield.name = "Aquamarine Drift"
-			dive_eff.name = "Still Descent"
+			dive_start.name = "Silent Entry"
 		10:
 			t_gain.name = "Veiled Intuition"
 			c_gain.name = "Control Under Fog"
 			idle_soft.name = "Veil Buffer"
 			wake_yield.name = "Onyx Return"
-			dive_eff.name = "Veil Break"
+			dive_start.name = "Veil Entry"
 		11:
 			t_gain.name = "Ruin Synthesis"
 			c_gain.name = "Rebuild Will"
 			idle_soft.name = "Crack Sealant"
 			wake_yield.name = "Jade Renewal"
-			dive_eff.name = "Ruin Pathing"
+			dive_start.name = "Ruin Entry"
 		12:
 			t_gain.name = "Eclipse Cognition"
 			c_gain.name = "Shadow Control"
 			idle_soft.name = "Dark Calm"
 			wake_yield.name = "Moonstone Halo"
-			dive_eff.name = "Eclipse Timing"
+			dive_start.name = "Eclipse Entry"
 		13:
 			t_gain.name = "Voidline Pattern"
 			c_gain.name = "Threaded Will"
 			idle_soft.name = "Void Insulation"
 			wake_yield.name = "Obsidian Tribute"
-			dive_eff.name = "Voidline Drop"
+			dive_start.name = "Void Entry"
 		14:
 			t_gain.name = "Blackwater Insight"
 			c_gain.name = "Iron Nerve"
 			idle_soft.name = "Pressure Relief"
 			wake_yield.name = "Citrine Surge"
-			dive_eff.name = "Blackwater Current"
+			dive_start.name = "Blackwater Entry"
 		15:
 			t_gain.name = "Abyssal Thought"
 			c_gain.name = "Abyssal Control"
 			idle_soft.name = "Abyss Stillness"
 			wake_yield.name = "Quartz Apotheosis"
-			dive_eff.name = "Final Descent"
+			dive_start.name = "Abyssal Entry"
 
 	return [
 		core_stab,
@@ -250,7 +250,7 @@ func get_depth_upgrade_defs(depth_i: int) -> Array:
 		c_gain,
 		idle_soft,
 		wake_yield,
-		dive_eff,
+		dive_start,
 		core_unlock,
 	]
 
@@ -320,6 +320,11 @@ func get_global_dive_cooldown_mult() -> float:
 		total_lvl += clampi(get_level(d, "dive_eff"), 0, 10)
 	# -0% .. -30% (tune), clamp so it never hits 0
 	return maxf(0.25, 1.0 - 0.03 * float(total_lvl))
+	
+func get_dive_start_progress(depth_i: int) -> float:
+	var lvl := get_level(depth_i, "dive_start")
+	# Each level = 5%, max 20 levels = 100%
+	return clampf(float(lvl) * 0.05, 0.0, 1.0)
 
 func is_instab_fully_reduced(depth_i: int) -> bool:
 	var d := clampi(depth_i, 1, MAX_DEPTH)
@@ -361,8 +366,8 @@ func cost_for(depth_i: int, def: Dictionary) -> float:
 			return (base * 1.35) * pow(1.60, float(lvl))
 		"wake_yield":
 			return (base * 1.75) * pow(1.70, float(lvl))
-		"dive_eff":
-			return (base * 1.45) * pow(1.62, float(lvl))
+		"dive_start":  # Changed from dive_eff
+			return (base * 1.45) * pow(1.55, float(lvl))  # Slightly higher growth
 		_:
 			return base * pow(1.50, float(lvl))
 

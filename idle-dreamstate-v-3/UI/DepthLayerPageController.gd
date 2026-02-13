@@ -19,8 +19,42 @@ func _ready() -> void:
 
 	# Optional: darken panel so text behind doesn't show through visually
 	if bg != null:
-		bg.color = Color(0, 0, 0, 0.72) # tweak alpha to taste
+		bg.color = Color(0, 0, 0, 0.72)
 		bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	
+	# Style the currency label with a border background
+	if currency_label != null:
+		var currency_bg := PanelContainer.new()
+		currency_bg.name = "CurrencyBg"
+		
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = Color(0.08, 0.10, 0.14, 0.95)
+		sb.border_color = Color(0.24, 0.67, 0.94, 0.6)
+		sb.border_width_left = 2
+		sb.border_width_top = 2
+		sb.border_width_right = 2
+		sb.border_width_bottom = 2
+		sb.corner_radius_top_left = 8
+		sb.corner_radius_top_right = 8
+		sb.corner_radius_bottom_left = 8
+		sb.corner_radius_bottom_right = 8
+		sb.content_margin_left = 12
+		sb.content_margin_right = 12
+		sb.content_margin_top = 6
+		sb.content_margin_bottom = 6
+		
+		currency_bg.add_theme_stylebox_override("panel", sb)
+		
+		# Reparent currency_label into the panel
+		if currency_label.get_parent() != null:
+			currency_label.get_parent().remove_child(currency_label)
+		currency_bg.add_child(currency_label)
+		
+		# Add to the vbox at the top
+		if upgrades_vbox != null and upgrades_vbox.get_parent() != null:
+			var vbox_parent = upgrades_vbox.get_parent()
+			vbox_parent.add_child(currency_bg)
+			vbox_parent.move_child(currency_bg, 1)  # After title, before upgrades
 
 	_rebuild_rows()
 	_refresh()

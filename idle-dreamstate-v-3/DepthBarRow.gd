@@ -184,12 +184,19 @@ func set_overlay_mode(v: bool) -> void:
 
 
 func set_data(data: Dictionary) -> void:
-	# Update internal data
-	_data = data.duplicate(true) if data.has("progress") else {"progress": 0.0, "memories": 0.0, "crystals": 0.0}
+	# Update internal data - ensure we have valid values
+	if data.has("progress"):
+		_data = data.duplicate(true)
+	else:
+		_data = {"progress": 0.0, "memories": 0.0, "crystals": 0.0}
+	
+	# Reset partial accumulators when data is explicitly set (prevents double-counting)
+	partial_memories = 0.0
+	partial_crystals = 0.0
 	
 	# Force visual update
 	_apply_visuals()
-
+	
 func set_local_upgrades(d: Dictionary) -> void:
 	_local_upgrades = d
 	if _details_open:
@@ -335,14 +342,18 @@ func _apply_visuals() -> void:
 		else:
 			modulate = Color(1, 1, 1, 1.0)
 
-	# Show run progress for active or frozen depths (visited this run)
-	var display_pct: float
-	if _active or _frozen:
-		# Show actual run progress (0-100%)
+	# Determine what to show in progress bar
+	var display_pct: float = 0.0
+	
+	if _locked:
+		# Locked depth: show 0% (not visited this run)
+		display_pct = 0.0
+	elif _active or _frozen:
+		# Active or frozen (visited) depth: show actual run progress
 		display_pct = _data.get("progress", 0.0) * 100.0
 	else:
-		# Show upgrade completion for locked/unvisited depths
-		display_pct = _get_upgrade_completion_percent()
+		# Fallback - shouldn't happen
+		display_pct = 0.0
 
 	if progress_bar != null:
 		progress_bar.value = display_pct
@@ -350,6 +361,7 @@ func _apply_visuals() -> void:
 
 	if percent_label != null and progress_bar != null:
 		percent_label.text = "%d%%" % int(round(display_pct))
+
 
 	if _title_label != null:
 		_title_label.text = _depth_title_text()

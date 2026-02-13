@@ -102,7 +102,8 @@ func get_starting_instability_reduction() -> float:
 	return float(stability_buffer_level) * 2.0       # -2 per lvl (cap in GM)
 
 func get_offline_mult() -> float:
-	return 1.0 + float(offline_echo_level) * 0.08    # +8%/lvl
+	# Return 1.0 for 100% efficiency, or higher with upgrades
+	return 1.0 + (offline_echo_level * 0.25)  # Example: 1.0, 1.25, 1.5, etc.
 	
 # NEW GETTER METHODS
 func get_recursive_memory_mult() -> float:

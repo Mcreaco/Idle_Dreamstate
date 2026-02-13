@@ -46,7 +46,7 @@ signal active_depth_changed(new_depth: int)
 func set_active_depth(d: int) -> void:
 	active_depth = clampi(d, 1, max_depth)
 	active_depth_changed.emit(active_depth)
-	_sync_all_to_panel()
+	_sync_all_to_panel()  # <-- This is fine, but does it reset anything?
 
 func _ready() -> void:
 	_init_run()
@@ -1591,6 +1591,7 @@ func _on_depth_changed(new_depth: int) -> void:
 	_ensure_depth_runtime(new_depth)
 	_depth_runtime[new_depth]["time_in_depth"] = 0.0
 	_depth_runtime[new_depth]["next_choice_t"] = 0.0
+	# Does this reset progress? It shouldn't!
 
 func _get_depth_currency_name(depth_index: int) -> String:
 	var meta: Node = get_tree().current_scene.find_child("DepthMetaSystem", true, false)

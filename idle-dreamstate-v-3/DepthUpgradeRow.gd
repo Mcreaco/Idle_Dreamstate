@@ -19,6 +19,11 @@ var _bar: ProgressBar
 
 func _ready() -> void:
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	
+	# Add bottom separator/border
+	var separator := HSeparator.new()
+	separator.custom_minimum_size.y = 2
+	add_child(separator)
 
 	_name_lbl = Label.new()
 	_name_lbl.custom_minimum_size.x = 220
@@ -48,20 +53,19 @@ func _ready() -> void:
 
 	_buy_btn = Button.new()
 	_buy_btn.text = "Buy"
-	_buy_btn.custom_minimum_size.x = 70
+	# FIXED: Set fixed size instead of expand
+	_buy_btn.custom_minimum_size = Vector2(120, 40)
+	_buy_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER  # Don't expand
 	add_child(_buy_btn)
 
 	_buy_btn.pressed.connect(_on_buy)
 
-	# Match blue border buttons
-	_buy_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_buy_btn.custom_minimum_size.x = 0
+	# Style the button
 	if gm != null and gm.has_method("_style_button"):
 		gm._style_button(_buy_btn)
 
 	set_process(true)
 	_refresh()
-
 func _process(_delta: float) -> void:
 	_refresh()
 
