@@ -27,6 +27,8 @@ var _current_depth: int = 1
 var _styled_top_tabs := false
 var _styled_depth_tabs := false
 
+var currency_labels: Array[Label] = []  # Store references to update later
+var depth_upgrade_rows: Array = []  # Store row references
 func _ready() -> void:
 	visible = false
 	call_deferred("_late_bind")
@@ -50,26 +52,26 @@ func _late_bind() -> void:
 	if page_depth != null:
 		depth_tabs = page_depth.find_child("DepthTabs", true, false) as Control
 		depth_pages = page_depth.find_child("DepthPages", true, false) as Control
-		# Optional: only if you created a summary node
 		currency_summary = page_depth.find_child("CurrencySummaryVBox", true, false)
 
 	_connect_top_tab(tab_perm, "perm")
 	_connect_top_tab(tab_depth, "depth")
 	_connect_top_tab(tab_abyss, "abyss")
 
-	# Dim click closes
 	if dim != null:
 		dim.mouse_filter = Control.MOUSE_FILTER_STOP
 		if not dim.gui_input.is_connected(Callable(self, "_on_dim_gui_input")):
 			dim.gui_input.connect(Callable(self, "_on_dim_gui_input"))
 
-	# Close button
 	if close_btn != null:
 		close_btn.mouse_filter = Control.MOUSE_FILTER_STOP
 		if not close_btn.pressed.is_connected(Callable(self, "close")):
 			close_btn.pressed.connect(Callable(self, "close"))
 
 	_fix_stacking()
+	
+	# CRITICAL: Find and setup all upgrade rows FIRST
+	_find_and_setup_upgrade_rows()
 
 	_apply_unlocks()
 	_show_meta(_current_meta)
@@ -77,6 +79,76 @@ func _late_bind() -> void:
 	_style_top_tabs()
 	_style_perm_panel()
 	_style_close_button()
+	_style_currency_summary()
+
+func _style_currency_summary() -> void:
+	if currency_summary == null:
+		return
+	
+	# Clear old
+	currency_labels.clear()
+	for child in currency_summary.get_children():
+		child.queue_free()
+	
+	# Ensure it's a PanelContainer with border
+	if not currency_summary is PanelContainer:
+		var wrapper := PanelContainer.new()
+		wrapper.name = "CurrencySummaryPanel"
+		var parent = currency_summary.get_parent()
+		parent.remove_child(currency_summary)
+		wrapper.add_child(currency_summary)
+		parent.add_child(wrapper)
+		currency_summary = wrapper
+	
+	# Add border style
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.05, 0.06, 0.08, 0.9)
+	sb.border_color = Color(0.5, 0.6, 0.9, 0.6)
+	sb.border_width_left = 2
+	sb.border_width_top = 2
+	sb.border_width_right = 2
+	sb.border_width_bottom = 2
+	sb.corner_radius_top_left = 8
+	sb.corner_radius_top_right = 8
+	sb.corner_radius_bottom_left = 8
+	sb.corner_radius_bottom_right = 8
+	sb.content_margin_left = 16
+	sb.content_margin_right = 16
+	sb.content_margin_top = 12
+	sb.content_margin_bottom = 12
+	currency_summary.add_theme_stylebox_override("panel", sb)
+	
+	# Position at bottom-left (or adjust as needed)
+	currency_summary.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	currency_summary.custom_minimum_size = Vector2(800, 140)
+	
+	# Create grid
+	var grid := GridContainer.new()
+	grid.columns = 5
+	grid.add_theme_constant_override("h_separation", 20)
+	grid.add_theme_constant_override("v_separation", 8)
+	currency_summary.add_child(grid)
+	
+	# Create labels and store references
+	for i in range(1, 16):
+		var hbox := HBoxContainer.new()
+		hbox.add_theme_constant_override("separation", 4)
+		
+		var name_lbl := Label.new()
+		name_lbl.text = DepthMetaSystem.get_depth_currency_name(i) + ":"
+		name_lbl.add_theme_font_size_override("font_size", 16)
+		hbox.add_child(name_lbl)
+		
+		var val_lbl := Label.new()
+		val_lbl.add_theme_font_size_override("font_size", 16)
+		val_lbl.add_theme_color_override("font_color", Color(0.9, 0.95, 1.0))
+		hbox.add_child(val_lbl)
+		currency_labels.append(val_lbl)  # Store reference!
+		
+		grid.add_child(hbox)
+	
+	# Update values immediately
+	_update_currency_display()
 
 func _fix_stacking() -> void:
 	# Godot 4: ColorRect doesn't have move_to_back().
@@ -94,20 +166,19 @@ func _fix_stacking() -> void:
 		page_depth.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	if page_abyss != null and not page_abyss.visible:
 		page_abyss.mouse_filter = Control.MOUSE_FILTER_IGNORE
-
-func toggle_open() -> void:
-	visible = not visible
-	if visible:
-		_apply_unlocks()
-		_show_meta(_current_meta)
-		_show_depth(_current_depth)
-
-func open() -> void:
-	visible = true
-	_apply_unlocks()
-	_show_meta(_current_meta)
-	_show_depth(_current_depth)
 	
+func _find_and_setup_upgrade_rows() -> void:
+	# Find ALL DepthUpgradeRow nodes in the entire panel
+	depth_upgrade_rows = find_children("*", "DepthUpgradeRow", true, false)
+	print("Found ", depth_upgrade_rows.size(), " upgrade rows")
+	
+	for row in depth_upgrade_rows:
+		row.depth_meta = depth_meta_system
+		row.gm = get_tree().current_scene.find_child("GameManager", true, false)
+		# Force refresh so buttons update
+		if row.has_method("_refresh"):
+			row.call_deferred("_refresh")
+			
 func _make_tab_style(bg: Color, border: Color, border_w: int = 2, radius: int = 8, shadow_color: Color = Color(0, 0, 0, 0.35), shadow_size: int = 3) -> StyleBoxFlat:
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = bg
@@ -199,6 +270,45 @@ func _style_depth_tabs_bar() -> void:
 		if depth_tabs is BoxContainer:
 			depth_tabs.add_theme_constant_override("separation", 6)
 			depth_tabs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	
+
+func _update_currency_display() -> void:
+	if depth_meta_system == null:
+		return
+	
+	for i in range(1, 16):
+		if i <= currency_labels.size():
+			var amount = depth_meta_system.currency[i]
+			currency_labels[i-1].text = "%.1f" % amount
+
+func _refresh_all_rows() -> void:
+	for row in depth_upgrade_rows:
+		if is_instance_valid(row) and row.has_method("_refresh"):
+			row._refresh()
+			
+func toggle_open() -> void:
+	visible = not visible
+	if visible:
+		_apply_unlocks()
+		_show_meta(_current_meta)
+		_show_depth(_current_depth)
+		_update_currency_display()
+		_refresh_all_rows()
+
+func open() -> void:
+	visible = true
+	_apply_unlocks()
+	_show_meta(_current_meta)
+	_show_depth(_current_depth)
+	_update_currency_display()
+	_refresh_all_rows()
+	
+func _refresh_depth_upgrades() -> void:
+	# Force all upgrade rows to refresh (so Buy buttons update)
+	var rows = find_children("*", "DepthUpgradeRow", true, false)
+	for row in rows:
+		if row.has_method("_refresh"):
+			row._refresh()
 	
 func _style_close_button() -> void:
 	if close_btn == null:
@@ -379,6 +489,9 @@ func _show_depth(depth_index: int) -> void:
 		if page != null:
 			page.visible = (i == _current_depth)
 			page.mouse_filter = Control.MOUSE_FILTER_STOP if page.visible else Control.MOUSE_FILTER_IGNORE
+	
+	# Refresh rows after showing new depth
+	_refresh_all_rows()
 
 func _on_dim_gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:

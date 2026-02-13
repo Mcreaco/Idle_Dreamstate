@@ -375,12 +375,7 @@ func force_unlock_depth_tab(new_depth: int) -> void:
 	_sync_meta_progress()
 
 func _on_dive_pressed() -> void:
-	var bars := get_tree().current_scene.find_child("DepthBarsPanel", true, false)
-	if bars != null and bars.has_method("on_dive_pressed"):
-		bars.call("on_dive_pressed")
-		return
-
-	push_warning("GameManager: DepthBarsPanel not found or missing on_dive_pressed().")
+	do_dive()
 
 func _on_wake_pressed() -> void:
 	if prestige_panel == null:
@@ -413,12 +408,34 @@ func _on_wake_pressed() -> void:
 	prestige_panel.open_with_depth(mem_gain, crystals_by_name, d)
 	
 func _on_prestige_confirm_wake() -> void:
+	print("WAKE CONFIRMED - Adding memories")  # DEBUG
+	
 	var drc := get_node_or_null("/root/DepthRunController")
 	if drc == null:
 		push_warning("GameManager: /root/DepthRunController not found; cannot wake.")
 		return
 	
-	drc.call("wake_cashout", 1.0, false)
+	print("Memories before: ", memories)  # DEBUG
+	# ... rest of function ...
+	print("Memories after: ", memories)  # DEBUG
+	
+	# ADD MEMORIES
+	var result = drc.call("wake_cashout", 1.0, false)
+	if result is Dictionary:
+		var gained = float(result.get("memories", 0.0))
+		memories += gained  # THIS ADDS TO YOUR MEMORIES
+		print("Wake: Added ", gained, " memories. Total: ", memories)
+		
+		# Add crystals too
+		var crystals = result.get("crystals_by_name", {})
+		for currency_name in crystals.keys():
+			var amount = float(crystals[currency_name])
+			for i in range(1, DepthMetaSystem.MAX_DEPTH + 1):
+				if DepthMetaSystem.get_depth_currency_name(i) == currency_name:
+					if depth_meta_system != null:
+						depth_meta_system.currency[i] += amount
+					break
+	
 	reset_run()
 	save_game()
 	
@@ -445,10 +462,25 @@ func do_fail() -> void:
 	
 	var drc := get_node_or_null("/root/DepthRunController")
 	if drc != null and drc.has_method("wake_cashout"):
-		drc.call("wake_cashout", 1.0, true)
+		var result = drc.call("wake_cashout", 1.0, true)
+		if result is Dictionary:
+			var gained_memories = float(result.get("memories", 0.0))
+			memories += gained_memories  # ADD MEMORIES ON FAIL TOO
+			print("Fail: Added ", gained_memories, " memories. Total now: ", memories)
+			
+			# Also add crystals on fail
+			var crystals = result.get("crystals_by_name", {})
+			for currency_name in crystals.keys():
+				var amount = float(crystals[currency_name])
+				for i in range(1, DepthMetaSystem.MAX_DEPTH + 1):
+					if DepthMetaSystem.get_depth_currency_name(i) == currency_name:
+						if depth_meta_system != null:
+							depth_meta_system.currency[i] += amount
+						break
 	
 	reset_run()
 	save_game()
+
 	
 func calc_depth_currency_gain(depth_i: int) -> float:
 	var t := maxf(total_thoughts_earned, 0.0)
@@ -910,22 +942,6 @@ func save_game() -> void:
 	
 	data["last_play_time"] = Time.get_unix_time_from_system()
 	
- # Save depth bar progress from DepthRunController - MUST BE LAST
-	var drc := get_node_or_null("/root/DepthRunController")
-	if drc != null:
-		var run_data: Array = drc.get("run") as Array
-		if run_data != null:
-			# Deep copy to ensure we capture current values
-			var save_run_data: Array = []
-			for i in range(run_data.size()):
-				var depth_dict: Dictionary = run_data[i]
-				save_run_data.append(depth_dict.duplicate(true))
-			data["depth_run_data"] = save_run_data
-		data["active_depth"] = drc.get("active_depth")
-		data["max_unlocked_depth"] = drc.get("max_unlocked_depth")
-	
-	data["last_play_time"] = Time.get_unix_time_from_system()
-	
 	# DEBUG: Print what we're saving for depth 1 and 2
 	if data.has("depth_run_data"):
 		var run_data: Array = data["depth_run_data"]
@@ -942,7 +958,7 @@ func save_game() -> void:
 
 func load_game() -> void:
 	var data: Dictionary = SaveSystem.load_game()
-	
+
 	print("=== LOAD GAME ===")
 	print("Has depth_run_data: ", data.has("depth_run_data"))
 	
@@ -973,13 +989,8 @@ func load_game() -> void:
 	if drc != null:
 		# RESTORE RUN DATA FIRST (before setting active depth)
 		if data.has("depth_run_data"):
-			# Convert to typed array properly
-			var loaded_run: Array = data["depth_run_data"]
-			var typed_run: Array[Dictionary] = []
-			for i in range(loaded_run.size()):
-				typed_run.append(loaded_run[i] as Dictionary)
-			drc.set("run", typed_run)
-			print("LOAD: Restored run data with ", typed_run.size(), " depths")
+			var loaded_run = data["depth_run_data"]
+			drc.set("run", loaded_run.duplicate(true))
 		
 		# NOW check progress (AFTER restoring)
 		var run_data: Array = drc.get("run") as Array
@@ -1037,6 +1048,24 @@ func load_game() -> void:
 	perk_system.perk2_level = int(data.get("perk2_level", 0))
 	perk_system.perk3_level = int(data.get("perk3_level", 0))
 	
+	# Load depth meta system data
+	if depth_meta_system != null:
+		depth_meta_system.ensure_ready()
+		for i in range(1, DepthMetaSystem.MAX_DEPTH + 1):
+			# Load currency
+			depth_meta_system.currency[i] = float(data.get("depth_currency_%d" % i, 0.0))
+			
+			# Load upgrade levels
+			var upgrades = depth_meta_system.get_depth_upgrade_defs(i)
+			for upgrade in upgrades:
+				var uid = upgrade.get("id", "")
+				if uid != "" and uid != "unlock":  # Don't load unlock from here
+					var saved_level = data.get("depth_%d_upgrade_%s" % [i, uid], 0)
+					if saved_level > 0:
+						depth_meta_system.set_level(i, uid, int(saved_level))
+			
+			# Load unlock status
+			depth_meta_system.unlock_next_bought[i] = data.get("depth_unlock_next_bought_%d" % i, false)
 	# Sync panel at end (only once)
 	call_deferred("_sync_panel_after_load")
 
@@ -1644,11 +1673,11 @@ func can_dive_to_next_depth() -> bool:
 	return current_instab_upgrade_level >= max_instab_upgrade
 
 func _show_offline_progress_popup() -> void:
-	# Check if already showing
-	var existing := get_tree().current_scene.find_child("OfflineProgressLayer", true, false)
-	if existing != null:
-		print("OFFLINE POPUP: Already showing, skipping")
-		return
+	# CRITICAL FIX: Remove any existing popup first
+	var existing_layer := get_tree().current_scene.find_child("OfflineProgressLayer", true, false)
+	if existing_layer != null:
+		existing_layer.queue_free()
+		await get_tree().process_frame  # Wait for deletion
 	
 	if offline_seconds < 5.0:
 		return
@@ -1656,20 +1685,20 @@ func _show_offline_progress_popup() -> void:
 	var layer := CanvasLayer.new()
 	layer.name = "OfflineProgressLayer"
 	layer.layer = 100
-	add_child(layer)
+	get_tree().current_scene.add_child(layer)  # Add to scene root, not self
 	
-	# Center container to ensure proper centering
 	var center := CenterContainer.new()
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
 	layer.add_child(center)
 	
 	var popup := PanelContainer.new()
 	popup.name = "OfflineProgressPopup"
-	popup.custom_minimum_size = Vector2(500, 320)  # Slightly taller for padding
+	popup.custom_minimum_size = Vector2(500, 320)
+	center.add_child(popup)
+	
 	
 	# ... stylebox code stays the same ...
 	
-	center.add_child(popup)  # Add to center container instead of layer directly
 	
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_left", 20)
