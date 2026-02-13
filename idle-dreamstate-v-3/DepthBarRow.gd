@@ -62,13 +62,8 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	custom_minimum_size.y = row_height
 	_run = get_node_or_null("/root/DepthRunController")
-
-	# Resolve nodes robustly
-	progress_bar = get_node_or_null("Progress") as ProgressBar
-	if progress_bar == null:
-		progress_bar = get_node_or_null("ProgressBar") as ProgressBar
-	if progress_bar == null:
-		progress_bar = find_child("", true, false) as ProgressBar
+	progress_bar = null
+	percent_label = null
 	_hide_extra_progress_bars()
 	percent_label = get_node_or_null("Progress/PercentLabel") as Label
 	if percent_label == null:
@@ -108,6 +103,15 @@ func _ready() -> void:
 			close_button.pressed.connect(Callable(self, "_on_close_pressed"))
 
 	_apply_visuals()
+	
+		# Hide any mystery buttons (buttons with no text/icon that aren't dive/close)
+	for child in find_children("", "Button", true, false):
+		var btn := child as Button
+		if btn == dive_button or btn == close_button:
+			continue
+		# Hide buttons with no text and no icon
+		if btn.text == "" and btn.icon == null:
+			btn.visible = false
 
 func _gui_input(event: InputEvent) -> void:
 	# Debounce after closing overlay (prevents instant re-open bug)
@@ -223,28 +227,20 @@ func set_details_open(open: bool) -> void:
 # Layout
 # -----------------------
 func _build_layout_bar_then_bottom_text() -> void:
-	if progress_bar == null:
-		push_warning("DepthBarRow: progress_bar not found.")
-		return
-
 	# Prevent duplicate rebuild
 	if _layout_root != null and is_instance_valid(_layout_root):
-		_layout_root.add_theme_constant_override("separation", int(v_separation))
-		progress_bar.custom_minimum_size.y = bar_height
-		progress_bar.custom_minimum_size.x = 0
 		return
 
-	# Remove existing children (we'll recreate)
+	# Remove existing children
 	var old_children: Array = []
 	for c in get_children():
 		old_children.append(c)
 	for c in old_children:
 		remove_child(c)
 
-	# Row background lives on THIS PanelContainer (recreated after layout)
 	_row_bg = null
 
-	# Margin wrapper (padding)
+	# Margin wrapper
 	_margin = MarginContainer.new()
 	_margin.name = "RowMargin"
 	_margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -261,45 +257,29 @@ func _build_layout_bar_then_bottom_text() -> void:
 	_layout_root.add_theme_constant_override("separation", int(v_separation))
 	_margin.add_child(_layout_root)
 
-	# --- BAR (first) ---
-	_layout_root.add_child(progress_bar)
-
+	# --- CREATE PROGRESS BAR IN CODE ---
+	progress_bar = ProgressBar.new()
+	progress_bar.name = "ProgressBar"
 	progress_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	progress_bar.custom_minimum_size.x = 0
 	progress_bar.custom_minimum_size.y = bar_height
 	progress_bar.show_percentage = false
+	_layout_root.add_child(progress_bar)
+	
+	# Style the progress bar
+	_style_progress_bar()
 
-	# Kill any old Label children in the bar
-	for ch in progress_bar.get_children():
-		if ch is Label:
-			(ch as Label).visible = false
-
-	# Ensure PercentLabel is inside bar and centered
-	if percent_label == null or not is_instance_valid(percent_label):
-		percent_label = Label.new()
-		percent_label.name = "PercentLabel"
-		progress_bar.add_child(percent_label)
-	else:
-		if percent_label.get_parent() != progress_bar:
-			if percent_label.get_parent() != null:
-				percent_label.get_parent().remove_child(percent_label)
-			progress_bar.add_child(percent_label)
-
-	percent_label.visible = true
+	# Percent label inside bar
+	percent_label = Label.new()
+	percent_label.name = "PercentLabel"
 	percent_label.set_anchors_preset(Control.PRESET_FULL_RECT)
-	percent_label.offset_left = 0
-	percent_label.offset_top = 0
-	percent_label.offset_right = 0
-	percent_label.offset_bottom = 0
 	percent_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	percent_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	percent_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	percent_label.z_index = 50
 	percent_label.add_theme_color_override("font_color", Color(1, 1, 1, 1))
 	percent_label.add_theme_font_size_override("font_size", percent_font)
-	percent_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.55))
-	percent_label.add_theme_constant_override("shadow_offset_x", 1)
-	percent_label.add_theme_constant_override("shadow_offset_y", 1)
+	progress_bar.add_child(percent_label)
 
 	# --- Bottom row: title left + reward right ---
 	var bottom := HBoxContainer.new()
@@ -326,15 +306,14 @@ func _build_layout_bar_then_bottom_text() -> void:
 	_reward_label.add_theme_font_size_override("font_size", reward_font)
 	bottom.add_child(_reward_label)
 
-	# Put back any other original nodes (Details, etc.)
+	# Put back other original nodes (Details, etc.)
 	for c in old_children:
-		if c == progress_bar:
+		if c is ProgressBar:
+			c.queue_free()  # Delete old progress bars
 			continue
 		_layout_root.add_child(c)
 
-	# Now that layout exists, apply row bg
 	_apply_row_background_texture()
-
 # -----------------------
 # Visuals
 # -----------------------
@@ -350,9 +329,10 @@ func _apply_visuals() -> void:
 		else:
 			modulate = Color(1, 1, 1, 1.0)
 
-	var prog := float(_data.get("progress", 0.0))
+	# NEW: Calculate upgrade completion % instead of depth progress
+	var completion_pct := _get_upgrade_completion_percent()
 	if progress_bar != null:
-		progress_bar.value = prog * 100.0
+		progress_bar.value = completion_pct
 		progress_bar.show_percentage = false
 
 	if percent_label != null and progress_bar != null:
@@ -372,7 +352,7 @@ func _apply_visuals() -> void:
 			can = bool(_run.call("can_dive"))
 		dive_button.disabled = not (_active and can)
 
-	# Background strength (ONLY ONCE — fixes your “double modulate” bug)
+	# Background strength (ONLY ONCE — fixes your "double modulate" bug)
 	if _row_bg != null:
 		var a := 0.70
 		if _locked:
@@ -384,6 +364,37 @@ func _apply_visuals() -> void:
 		if _overlay_mode or _details_open:
 			a = 1.0
 		_row_bg.modulate = Color(1, 1, 1, a)
+
+
+# NEW: Calculate upgrade completion % for this depth
+func _get_upgrade_completion_percent() -> float:
+	var meta := _depth_meta()
+	if meta == null:
+		return 0.0  # Silently return 0, don't warn
+	
+	var total_levels := 0
+	var completed_levels := 0
+	
+	if not meta.has_method("get_depth_upgrade_defs"):
+		return 0.0
+	
+	if not meta.has_method("get_level"):
+		return 0.0
+	
+	var defs := meta.call("get_depth_upgrade_defs", depth_index) as Array
+	
+	for def in defs:
+		var id := String(def.get("id", ""))
+		var max_level := int(def.get("max", 1))
+		var current_level := int(meta.call("get_level", depth_index, id))
+		
+		total_levels += max_level
+		completed_levels += current_level
+	
+	if total_levels == 0:
+		return 0.0
+	
+	return float(completed_levels) / float(total_levels) * 100.00
 
 # -----------------------
 # Meta + text
@@ -683,3 +694,6 @@ func _hide_extra_progress_bars() -> void:
 		var pb := n as ProgressBar
 		pb.show_percentage = false
 		pb.visible = false
+
+func _process(_delta: float) -> void:
+	_apply_visuals()  # Force refresh every frame

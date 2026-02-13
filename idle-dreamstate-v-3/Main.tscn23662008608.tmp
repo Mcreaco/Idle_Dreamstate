@@ -561,6 +561,10 @@ layout_mode = 2
 [node name="AfkLabel" type="Label" parent="MainUI/MetaPanel/Window/RootVBox/PetaPages/DepthPage/VBox/DepthPages/DepthPage1/Margin/VBox"]
 layout_mode = 2
 
+[node name="InstabReduceBar" type="ProgressBar" parent="MainUI/MetaPanel/Window/RootVBox/PetaPages/DepthPage/VBox/DepthPages/DepthPage1/Margin/VBox"]
+custom_minimum_size = Vector2(420, 16)
+layout_mode = 2
+
 [node name="UpgradesVBox" type="VBoxContainer" parent="MainUI/MetaPanel/Window/RootVBox/PetaPages/DepthPage/VBox/DepthPages/DepthPage1/Margin/VBox"]
 layout_mode = 2
 
@@ -597,6 +601,10 @@ theme_override_constants/separation = 12
 layout_mode = 2
 
 [node name="AfkLabel" type="Label" parent="MainUI/MetaPanel/Window/RootVBox/PetaPages/DepthPage/VBox/DepthPages/DepthPage2/Margin/VBox"]
+layout_mode = 2
+
+[node name="InstabReduceBar" type="ProgressBar" parent="MainUI/MetaPanel/Window/RootVBox/PetaPages/DepthPage/VBox/DepthPages/DepthPage2/Margin/VBox"]
+custom_minimum_size = Vector2(420, 16)
 layout_mode = 2
 
 [node name="UpgradesVBox" type="VBoxContainer" parent="MainUI/MetaPanel/Window/RootVBox/PetaPages/DepthPage/VBox/DepthPages/DepthPage2/Margin/VBox"]
@@ -637,6 +645,10 @@ layout_mode = 2
 [node name="AfkLabel" type="Label" parent="MainUI/MetaPanel/Window/RootVBox/PetaPages/DepthPage/VBox/DepthPages/DepthPage3/Margin/VBox"]
 layout_mode = 2
 
+[node name="InstabReduceBar" type="ProgressBar" parent="MainUI/MetaPanel/Window/RootVBox/PetaPages/DepthPage/VBox/DepthPages/DepthPage3/Margin/VBox"]
+custom_minimum_size = Vector2(420, 16)
+layout_mode = 2
+
 [node name="UpgradesVBox" type="VBoxContainer" parent="MainUI/MetaPanel/Window/RootVBox/PetaPages/DepthPage/VBox/DepthPages/DepthPage3/Margin/VBox"]
 layout_mode = 2
 
@@ -673,6 +685,10 @@ theme_override_constants/separation = 12
 layout_mode = 2
 
 [node name="AfkLabel" type="Label" parent="MainUI/MetaPanel/Window/RootVBox/PetaPages/DepthPage/VBox/DepthPages/DepthPage4/Margin/VBox"]
+layout_mode = 2
+
+[node name="InstabReduceBar" type="ProgressBar" parent="MainUI/MetaPanel/Window/RootVBox/PetaPages/DepthPage/VBox/DepthPages/DepthPage4/Margin/VBox"]
+custom_minimum_size = Vector2(420, 16)
 layout_mode = 2
 
 [node name="UpgradesVBox" type="VBoxContainer" parent="MainUI/MetaPanel/Window/RootVBox/PetaPages/DepthPage/VBox/DepthPages/DepthPage4/Margin/VBox"]
@@ -713,6 +729,10 @@ layout_mode = 2
 [node name="AfkLabel" type="Label" parent="MainUI/MetaPanel/Window/RootVBox/PetaPages/DepthPage/VBox/DepthPages/DepthPage5/Margin/VBox"]
 layout_mode = 2
 
+[node name="InstabReduceBar" type="ProgressBar" parent="MainUI/MetaPanel/Window/RootVBox/PetaPages/DepthPage/VBox/DepthPages/DepthPage5/Margin/VBox"]
+custom_minimum_size = Vector2(420, 16)
+layout_mode = 2
+
 [node name="UpgradesVBox" type="VBoxContainer" parent="MainUI/MetaPanel/Window/RootVBox/PetaPages/DepthPage/VBox/DepthPages/DepthPage5/Margin/VBox"]
 layout_mode = 2
 
@@ -749,6 +769,10 @@ theme_override_constants/separation = 12
 layout_mode = 2
 
 [node name="AfkLabel" type="Label" parent="MainUI/MetaPanel/Window/RootVBox/PetaPages/DepthPage/VBox/DepthPages/DepthPage6/Margin/VBox"]
+layout_mode = 2
+
+[node name="InstabReduceBar" type="ProgressBar" parent="MainUI/MetaPanel/Window/RootVBox/PetaPages/DepthPage/VBox/DepthPages/DepthPage6/Margin/VBox"]
+custom_minimum_size = Vector2(420, 16)
 layout_mode = 2
 
 [node name="UpgradesVBox" type="VBoxContainer" parent="MainUI/MetaPanel/Window/RootVBox/PetaPages/DepthPage/VBox/DepthPages/DepthPage6/Margin/VBox"]
@@ -789,6 +813,10 @@ layout_mode = 2
 [node name="AfkLabel" type="Label" parent="MainUI/MetaPanel/Window/RootVBox/PetaPages/DepthPage/VBox/DepthPages/DepthPage7/Margin/VBox"]
 layout_mode = 2
 
+[node name="InstabReduceBar" type="ProgressBar" parent="MainUI/MetaPanel/Window/RootVBox/PetaPages/DepthPage/VBox/DepthPages/DepthPage7/Margin/VBox"]
+custom_minimum_size = Vector2(420, 16)
+layout_mode = 2
+
 [node name="UpgradesVBox" type="VBoxContainer" parent="MainUI/MetaPanel/Window/RootVBox/PetaPages/DepthPage/VBox/DepthPages/DepthPage7/Margin/VBox"]
 layout_mode = 2
 
@@ -825,6 +853,10 @@ theme_override_constants/separation = 12
 layout_mode = 2
 
 [node name="AfkLabel" type="Label" parent="MainUI/MetaPanel/Window/RootVBox/PetaPages/DepthPage/VBox/DepthPages/DepthPage8/Margin/VBox"]
+layout_mode = 2
+
+[node name="InstabReduceBar" type="ProgressBar" parent="MainUI/MetaPanel/Window/RootVBox/PetaPages/DepthPage/VBox/DepthPages/DepthPage8/Margin/VBox"]
+custom_minimum_size = Vector2(420, 16)
 layout_mode = 2
 
 [node name="UpgradesVBox" type="VBoxContainer" parent="MainUI/MetaPanel/Window/RootVBox/PetaPages/DepthPage/VBox/DepthPages/DepthPage8/Margin/VBox"]
@@ -865,6 +897,10 @@ layout_mode = 2
 [node name="AfkLabel" type="Label" parent="MainUI/MetaPanel/Window/RootVBox/PetaPages/DepthPage/VBox/DepthPages/DepthPage9/Margin/VBox"]
 layout_mode = 2
 
+[node name="InstabReduceBar" type="ProgressBar" parent="MainUI/MetaPanel/Window/RootVBox/PetaPages/DepthPage/VBox/DepthPages/DepthPage9/Margin/VBox"]
+custom_minimum_size = Vector2(420, 16)
+layout_mode = 2
+
 [node name="UpgradesVBox" type="VBoxContainer" parent="MainUI/MetaPanel/Window/RootVBox/PetaPages/DepthPage/VBox/DepthPages/DepthPage9/Margin/VBox"]
 layout_mode = 2
 
@@ -901,6 +937,10 @@ theme_override_constants/separation = 12
 layout_mode = 2
 
 [node name="AfkLabel" type="Label" parent="MainUI/MetaPanel/Window/RootVBox/PetaPages/DepthPage/VBox/DepthPages/DepthPage10/Margin/VBox"]
+layout_mode = 2
+
+[node name="InstabReduceBar" type="ProgressBar" parent="MainUI/MetaPanel/Window/RootVBox/PetaPages/DepthPage/VBox/DepthPages/DepthPage10/Margin/VBox"]
+custom_minimum_size = Vector2(420, 16)
 layout_mode = 2
 
 [node name="UpgradesVBox" type="VBoxContainer" parent="MainUI/MetaPanel/Window/RootVBox/PetaPages/DepthPage/VBox/DepthPages/DepthPage10/Margin/VBox"]
@@ -941,6 +981,10 @@ layout_mode = 2
 [node name="AfkLabel" type="Label" parent="MainUI/MetaPanel/Window/RootVBox/PetaPages/DepthPage/VBox/DepthPages/DepthPage11/Margin/VBox"]
 layout_mode = 2
 
+[node name="InstabReduceBar" type="ProgressBar" parent="MainUI/MetaPanel/Window/RootVBox/PetaPages/DepthPage/VBox/DepthPages/DepthPage11/Margin/VBox"]
+custom_minimum_size = Vector2(420, 16)
+layout_mode = 2
+
 [node name="UpgradesVBox" type="VBoxContainer" parent="MainUI/MetaPanel/Window/RootVBox/PetaPages/DepthPage/VBox/DepthPages/DepthPage11/Margin/VBox"]
 layout_mode = 2
 
@@ -977,6 +1021,10 @@ theme_override_constants/separation = 12
 layout_mode = 2
 
 [node name="AfkLabel" type="Label" parent="MainUI/MetaPanel/Window/RootVBox/PetaPages/DepthPage/VBox/DepthPages/DepthPage12/Margin/VBox"]
+layout_mode = 2
+
+[node name="InstabReduceBar" type="ProgressBar" parent="MainUI/MetaPanel/Window/RootVBox/PetaPages/DepthPage/VBox/DepthPages/DepthPage12/Margin/VBox"]
+custom_minimum_size = Vector2(420, 16)
 layout_mode = 2
 
 [node name="UpgradesVBox" type="VBoxContainer" parent="MainUI/MetaPanel/Window/RootVBox/PetaPages/DepthPage/VBox/DepthPages/DepthPage12/Margin/VBox"]
@@ -1017,6 +1065,10 @@ layout_mode = 2
 [node name="AfkLabel" type="Label" parent="MainUI/MetaPanel/Window/RootVBox/PetaPages/DepthPage/VBox/DepthPages/DepthPage13/Margin/VBox"]
 layout_mode = 2
 
+[node name="InstabReduceBar" type="ProgressBar" parent="MainUI/MetaPanel/Window/RootVBox/PetaPages/DepthPage/VBox/DepthPages/DepthPage13/Margin/VBox"]
+custom_minimum_size = Vector2(420, 16)
+layout_mode = 2
+
 [node name="UpgradesVBox" type="VBoxContainer" parent="MainUI/MetaPanel/Window/RootVBox/PetaPages/DepthPage/VBox/DepthPages/DepthPage13/Margin/VBox"]
 layout_mode = 2
 
@@ -1055,6 +1107,10 @@ layout_mode = 2
 [node name="AfkLabel" type="Label" parent="MainUI/MetaPanel/Window/RootVBox/PetaPages/DepthPage/VBox/DepthPages/DepthPage14/Margin/VBox"]
 layout_mode = 2
 
+[node name="InstabReduceBar" type="ProgressBar" parent="MainUI/MetaPanel/Window/RootVBox/PetaPages/DepthPage/VBox/DepthPages/DepthPage14/Margin/VBox"]
+custom_minimum_size = Vector2(420, 16)
+layout_mode = 2
+
 [node name="UpgradesVBox" type="VBoxContainer" parent="MainUI/MetaPanel/Window/RootVBox/PetaPages/DepthPage/VBox/DepthPages/DepthPage14/Margin/VBox"]
 layout_mode = 2
 
@@ -1091,6 +1147,10 @@ theme_override_constants/separation = 12
 layout_mode = 2
 
 [node name="AfkLabel" type="Label" parent="MainUI/MetaPanel/Window/RootVBox/PetaPages/DepthPage/VBox/DepthPages/DepthPage15/Margin/VBox"]
+layout_mode = 2
+
+[node name="InstabReduceBar" type="ProgressBar" parent="MainUI/MetaPanel/Window/RootVBox/PetaPages/DepthPage/VBox/DepthPages/DepthPage15/Margin/VBox"]
+custom_minimum_size = Vector2(420, 16)
 layout_mode = 2
 
 [node name="UpgradesVBox" type="VBoxContainer" parent="MainUI/MetaPanel/Window/RootVBox/PetaPages/DepthPage/VBox/DepthPages/DepthPage15/Margin/VBox"]

@@ -102,7 +102,7 @@ func get_depth_upgrade_defs(depth_i: int) -> Array:
 		"desc":"Unlocks the next Depth tab (requires Stabilise maxed).",
 		"max":1,
 		"kind":"unlock",
-		"costs": _pick_costs(d, 2)
+		"costs": { d: 1.0 }  # Only current depth currency, not multi-currency
 	}
 
 	# Core trio (global)
@@ -323,7 +323,8 @@ func get_global_dive_cooldown_mult() -> float:
 
 func is_instab_fully_reduced(depth_i: int) -> bool:
 	var d := clampi(depth_i, 1, MAX_DEPTH)
-	return instab_reduce_level[d] >= 10
+	var max_lvl := 3 if d == 1 else 10
+	return instab_reduce_level[d] >= max_lvl
 
 func can_show_unlock_upgrade(depth_i: int) -> bool:
 	return is_instab_fully_reduced(depth_i)
@@ -341,11 +342,15 @@ func cost_for(depth_i: int, def: Dictionary) -> float:
 	var id := String(def.get("id", ""))
 
 	var lvl := get_level(d, id)
-	var base := 50.0 + float(d - 1) * 35.0
+	
+	# Much cheaper base for Depth 1
+	var base := 10.0 if d == 1 else (50.0 + float(d - 1) * 35.0)
 
 	match kind:
 		"stab":
-			return base * pow(1.45, float(lvl))
+			# Gentler curve for Depth 1
+			var growth := 1.25 if d == 1 else 1.45
+			return base * pow(growth, float(lvl))
 		"unlock":
 			return 250.0 + float(d - 1) * 150.0
 		"thoughts_mult":
@@ -473,3 +478,16 @@ func get_memories() -> float:
 
 func get_thoughts() -> float:
 	return bank_thoughts
+
+func is_next_depth_unlocked(current_depth: int) -> bool:
+	var next_depth := current_depth + 1
+	if next_depth > MAX_DEPTH:
+		return false
+	return is_depth_unlocked(next_depth)
+
+func is_depth_unlocked(depth: int) -> bool:
+	var d := clampi(depth, 1, MAX_DEPTH)
+	if d == 1:
+		return true  # Depth 1 always unlocked
+	# Check if previous depth has unlock bought
+	return unlock_next_bought[d - 1] > 0

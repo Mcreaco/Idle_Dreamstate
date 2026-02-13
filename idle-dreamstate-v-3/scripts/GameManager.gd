@@ -288,9 +288,15 @@ func _update_buttons_ui() -> void:
 		_set_button_dim(overclock_button, not overclock_button.disabled)
 
 	if dive_button != null:
-		dive_button.disabled = false
-		dive_button.tooltip_text = ""
-		_set_button_dim(dive_button, true)
+		# Check if dive is available (next depth unlocked)
+		var can_dive_now := false
+		var drc := get_node_or_null("/root/DepthRunController")
+		if drc != null and drc.has_method("can_dive"):
+			can_dive_now = drc.can_dive()
+		
+		dive_button.visible = can_dive_now
+		dive_button.disabled = not can_dive_now
+		dive_button.tooltip_text = "Dive to next depth" if can_dive_now else "Unlock in Meta panel first"
 
 	if wake_button != null:
 		wake_button.tooltip_text = "End run and convert to memories."
@@ -562,9 +568,6 @@ func reset_run() -> void:
 	if pillar_stack != null and pillar_stack.has_method("set_depth"):
 		pillar_stack.call("set_depth", current_depth)
 	
-	if depth_meta_system != null:
-		depth_meta_system.reset_run_upgrades()
-	
 	_sync_cracks()
 	_sync_meta_progress()
 
@@ -695,6 +698,43 @@ func _apply_offline_progress() -> void:
 	)
 	instability = minf(instability, 99.9)
 	
+	# NEW: Calculate offline memories and crystals from depth bars
+	var drc := get_node_or_null("/root/DepthRunController")
+	if drc != null:
+		# Get current progress and rates from the active depth
+		var active_d := drc.get("active_depth") as int
+		if active_d >= 1 and active_d <= 15:
+			# Get the data for current depth
+			var run_data := drc.get("run") as Array
+			if run_data != null and active_d <= run_data.size():
+				var depth_data := run_data[active_d - 1] as Dictionary
+				
+				# Calculate base rates (same as in _tick_active_depth)
+				var base_mem_per_sec: float = 2.0  # base_memories_per_sec
+				var base_cry_per_sec: float = 1.0  # base_crystals_per_sec
+				
+				# Apply multipliers (simplified - you may want to match _tick_active_depth exactly)
+				var mem_mult := 1.0 + (0.15 * float(upgrade_manager.memories_gain_level if "memories_gain_level" in upgrade_manager else 0))
+				var cry_mult := 1.0 + (0.12 * float(upgrade_manager.crystals_gain_level if "crystals_gain_level" in upgrade_manager else 0))
+				
+				# Calculate offline gains (50% efficiency for offline)
+				var offline_efficiency := 0.5
+				var offline_memories := base_mem_per_sec * mem_mult * offline_seconds * offline_mult * offline_efficiency
+				var offline_crystals := base_cry_per_sec * cry_mult * offline_seconds * offline_mult * offline_efficiency
+				
+				# Add to depth data
+				depth_data["memories"] = float(depth_data.get("memories", 0.0)) + offline_memories
+				depth_data["crystals"] = float(depth_data.get("crystals", 0.0)) + offline_crystals
+				
+				# Also add to meta memories directly
+				if depth_meta_system != null:
+					if depth_meta_system.has_method("add_memories"):
+						depth_meta_system.call("add_memories", offline_memories * 0.1)  # 10% of memories go to meta
+				
+				# Update the run data
+				run_data[active_d - 1] = depth_data
+				drc.set("run", run_data)
+	
 	time_in_run += offline_seconds
 	total_thoughts_earned = maxf(total_thoughts_earned, thoughts)
 	max_instability = maxf(max_instability, instability)
@@ -704,7 +744,7 @@ func _apply_offline_progress() -> void:
 	_sync_cracks()
 	_sync_meta_progress()
 	_force_rate_sample()
-
+	
 func save_game() -> void:
 	var data = SaveSystem.load_game()
 	data["memories"] = memories
@@ -740,6 +780,11 @@ func save_game() -> void:
 			data["depth_currency_%d" % i] = depth_meta_system.currency[i]
 			data["depth_instab_reduce_level_%d" % i] = depth_meta_system.instab_reduce_level[i]
 			data["depth_unlock_next_bought_%d" % i] = depth_meta_system.unlock_next_bought[i]
+			data["depth_t_gain_%d" % i] = depth_meta_system.get_level(i, "t_gain")
+			data["depth_c_gain_%d" % i] = depth_meta_system.get_level(i, "c_gain")
+			data["depth_idle_soft_%d" % i] = depth_meta_system.get_level(i, "idle_soft")
+			data["depth_wake_yield_%d" % i] = depth_meta_system.get_level(i, "wake_yield")
+			data["depth_dive_eff_%d" % i] = depth_meta_system.get_level(i, "dive_eff")
 	
 	data["thoughts_level"] = upgrade_manager.thoughts_level
 	data["stability_level"] = upgrade_manager.stability_level
@@ -799,6 +844,11 @@ func load_game() -> void:
 			depth_meta_system.currency[i] = float(data.get("depth_currency_%d" % i, 0.0))
 			depth_meta_system.instab_reduce_level[i] = int(data.get("depth_instab_reduce_level_%d" % i, 0))
 			depth_meta_system.unlock_next_bought[i] = int(data.get("depth_unlock_next_bought_%d" % i, 0))
+			depth_meta_system.set_level(i, "t_gain", int(data.get("depth_t_gain_%d" % i, 0)))
+			depth_meta_system.set_level(i, "c_gain", int(data.get("depth_c_gain_%d" % i, 0)))
+			depth_meta_system.set_level(i, "idle_soft", int(data.get("depth_idle_soft_%d" % i, 0)))
+			depth_meta_system.set_level(i, "wake_yield", int(data.get("depth_wake_yield_%d" % i, 0)))
+			depth_meta_system.set_level(i, "dive_eff", int(data.get("depth_dive_eff_%d" % i, 0)))
 	
 	upgrade_manager.thoughts_level = int(data.get("thoughts_level", 0))
 	upgrade_manager.stability_level = int(data.get("stability_level", 0))

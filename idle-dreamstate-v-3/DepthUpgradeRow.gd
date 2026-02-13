@@ -152,3 +152,8 @@ func _on_buy() -> void:
 			if upgrade_id == "unlock":
 				gm.force_unlock_depth_tab(depth_index + 1)
 			gm.save_game()
+			var meta_panel := get_tree().current_scene.find_child("MetaPanel", true, false)
+			if meta_panel != null:
+				var bars_panel := meta_panel.find_child("DepthBarsPanel", true, false)
+				if bars_panel != null and bars_panel.has_method("_apply_row_states"):
+					bars_panel._apply_row_states()
