@@ -51,6 +51,9 @@ var _row_bg: TextureRect = null
 
 var _block_click_until_msec: int = 0
 
+var partial_memories: float = 0.0
+var partial_crystals: float = 0.0
+
 func block_row_clicks(ms: int = 200) -> void:
 	_block_click_until_msec = Time.get_ticks_msec() + ms
 
@@ -180,8 +183,11 @@ func set_overlay_mode(v: bool) -> void:
 
 
 
-func set_data(d: Dictionary) -> void:
-	_data = d
+func set_data(data: Dictionary) -> void:
+	# Update internal data
+	_data = data.duplicate(true) if data.has("progress") else {"progress": 0.0, "memories": 0.0, "crystals": 0.0}
+	
+	# Force visual update
 	_apply_visuals()
 
 func set_local_upgrades(d: Dictionary) -> void:
@@ -329,14 +335,21 @@ func _apply_visuals() -> void:
 		else:
 			modulate = Color(1, 1, 1, 1.0)
 
-	# NEW: Calculate upgrade completion % instead of depth progress
-	var completion_pct := _get_upgrade_completion_percent()
+	# Show run progress for active or frozen depths (visited this run)
+	var display_pct: float
+	if _active or _frozen:
+		# Show actual run progress (0-100%)
+		display_pct = _data.get("progress", 0.0) * 100.0
+	else:
+		# Show upgrade completion for locked/unvisited depths
+		display_pct = _get_upgrade_completion_percent()
+
 	if progress_bar != null:
-		progress_bar.value = completion_pct
+		progress_bar.value = display_pct
 		progress_bar.show_percentage = false
 
 	if percent_label != null and progress_bar != null:
-		percent_label.text = "%d%%" % int(round(progress_bar.value))
+		percent_label.text = "%d%%" % int(round(display_pct))
 
 	if _title_label != null:
 		_title_label.text = _depth_title_text()

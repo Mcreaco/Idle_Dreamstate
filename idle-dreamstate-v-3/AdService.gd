@@ -90,11 +90,11 @@ func _wake_multiplier() -> float:
 	return 1.0  # +100% Memories
 
 func _cooldown_ready(key: String) -> bool:
-	var data := SaveSystem.load_game()
+	var data: Dictionary = SaveSystem.load_game()
 	var t := float(data.get(key, 0.0))
 	return Time.get_unix_time_from_system() >= t
 
 func _set_cd(key: String, time: float) -> void:
-	var data := SaveSystem.load_game()
+	var data: Dictionary = SaveSystem.load_game()
 	data[key] = time
 	SaveSystem.save_game(data)

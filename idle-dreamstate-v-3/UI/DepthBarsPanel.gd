@@ -350,15 +350,16 @@ func set_max_unlocked_depth(depth_index: int) -> void:
 	_apply_row_states()
 
 func set_row_data(depth_index: int, data: Dictionary) -> void:
-	_row_data_cache[depth_index] = data
-
+	var prev: Dictionary = _row_data_cache.get(depth_index, {})
+	if prev.hash() == data.hash():
+		return  # No change, skip update
+	_row_data_cache[depth_index] = data.duplicate(true)
+	
 	var row: Node = _rows.get(depth_index, null)
-	if row != null and row.has_method("set_data"):
+	if row == null:
+		return
+	if row.has_method("set_data"):
 		row.call("set_data", data)
-
-	# If the overlay is open for this depth, keep the clone in sync too
-	if _overlay_row != null and _expanded_depth == depth_index and _overlay_row.has_method("set_data"):
-		_overlay_row.call("set_data", data)
 
 
 func request_refresh_details(depth_index: int) -> void:
@@ -594,3 +595,32 @@ func _restore_row_after_overlay(row: Node) -> void:
 	_clear_placeholder()
 	_overlay_prev_parent = null
 	_overlay_prev_index = -1
+
+func clear_all_row_data() -> void:
+	_row_data_cache.clear()
+	_row_local_upgrades_cache.clear()
+	_row_frozen_upgrades_cache.clear()
+	
+	# Reset all row displays to 0
+	for depth_index in range(1, 16):
+		var empty_data: Dictionary = {"progress": 0.0, "memories": 0.0, "crystals": 0.0}
+		_row_data_cache[depth_index] = empty_data
+		
+		var row: Node = _rows.get(depth_index, null)
+		if row == null:
+			continue
+		
+		# Set row as frozen (visited) for depths > 1 so they show 0% not upgrade completion
+		if depth_index > 1:
+			if row.has_method("set_frozen"):
+				row.call("set_frozen", true)
+		else:
+			# Depth 1 is active
+			if row.has_method("set_active"):
+				row.call("set_active", true)
+			if row.has_method("set_frozen"):
+				row.call("set_frozen", false)
+		
+		# Force data update
+		if row.has_method("set_data"):
+			row.call("set_data", empty_data)

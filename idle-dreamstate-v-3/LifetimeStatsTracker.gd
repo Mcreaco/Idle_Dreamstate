@@ -96,7 +96,7 @@ func _flush_now() -> void:
 	if _pending_add.is_empty() and _pending_setmax.is_empty():
 		return
 
-	var data := SaveSystem.load_game()
+	var data: Dictionary = SaveSystem.load_game()
 
 	for k in _pending_add.keys():
 		var addv := float(_pending_add[k])

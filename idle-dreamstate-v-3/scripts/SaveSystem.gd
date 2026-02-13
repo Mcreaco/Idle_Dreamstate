@@ -10,12 +10,20 @@ func save_game(data: Dictionary) -> void:
 func load_game() -> Dictionary:
 	if not FileAccess.file_exists(SAVE_PATH):
 		return {}
+	
 	var file: FileAccess = FileAccess.open(SAVE_PATH, FileAccess.READ)
 	var text: String = file.get_as_text()
 	file.close()
+	
+	if text.is_empty():
+		return {}
+	
 	var parsed: Variant = JSON.parse_string(text)
 	if typeof(parsed) == TYPE_DICTIONARY:
 		return parsed as Dictionary
+	
+	# If parsing failed or returned wrong type, delete corrupted save
+	delete_save()
 	return {}
 
 func has_save() -> bool:
@@ -27,17 +35,17 @@ func delete_save() -> void:
 
 # ---- Lifetime stat helpers ----
 func add_stat(key: String, delta: float) -> void:
-	var data := load_game()
+	var data: Dictionary = load_game()
 	data[key] = float(data.get(key, 0.0)) + delta
 	save_game(data)
 
 func add_stat_int(key: String, delta: int) -> void:
-	var data := load_game()
+	var data: Dictionary = load_game()
 	data[key] = int(data.get(key, 0)) + delta
 	save_game(data)
 
 func set_max_stat(key: String, value: int) -> void:
-	var data := load_game()
+	var data: Dictionary = load_game()
 	var cur := int(data.get(key, 0))
 	if value > cur:
 		data[key] = value
