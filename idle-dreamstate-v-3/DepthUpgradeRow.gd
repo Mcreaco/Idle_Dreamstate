@@ -196,25 +196,62 @@ func _refresh() -> void:
 
 func _on_buy() -> void:
 	if depth_meta == null:
-		push_warning("Cannot buy: depth_meta is null!")
 		return
 	
-	print("Attempting to buy: ", upgrade_id, " at depth ", depth_index)
-	var current_amount = 0.0
-	if depth_index >= 1 and depth_index < depth_meta.currency.size():
-		current_amount = depth_meta.currency[depth_index]
-	print("Current currency: ", current_amount)
+	# Get level BEFORE buying
+	var d := clampi(depth_index, 1, DepthMetaSystem.MAX_DEPTH)
 	
+	# Try to buy
 	var res := depth_meta.try_buy(depth_index, upgrade_id)
-	print("Buy result: ", res)
 	
 	if bool(res.get("bought", false)):
+		# Get level AFTER buying
+		var new_level := depth_meta.get_level(d, upgrade_id)
+		
+		# IMMEDIATELY update the display
+		_lvl_lbl.text = "Lv %d/%d" % [new_level, max_level]
+		
+		# Handle maxed case
+		if new_level >= max_level:
+			_cost_lbl.text = "MAXED"
+			_bar.visible = false
+			_buy_btn.disabled = true
+			_buy_btn.text = "MAXED"
+		else:
+			# Update cost for next level
+			var defs := depth_meta.get_depth_upgrade_defs(d)
+			var def: Dictionary = {}
+			for item in defs:
+				if String(item.get("id", "")) == upgrade_id:
+					def = item
+					break
+			
+			if not def.is_empty():
+				var info := _format_costs(d, def)
+				_cost_lbl.text = String(info["text"])
+				
+				# Check if can afford next level
+				var can_afford = bool(info["ok"])
+				_buy_btn.disabled = not can_afford
+		
+		# Update meta panel currency display
+		var meta_panel := get_tree().current_scene.find_child("MetaPanelController", true, false)
+		if meta_panel != null:
+			if meta_panel.has_method("_update_currency_display"):
+				meta_panel._update_currency_display()
+			if meta_panel.has_method("_refresh_depth_tabs"):
+				meta_panel._refresh_depth_tabs()
+		
+		# Save and unlock logic
 		if gm != null:
 			if upgrade_id == "unlock":
 				gm.force_unlock_depth_tab(depth_index + 1)
 			gm.save_game()
-			var meta_panel := get_tree().current_scene.find_child("MetaPanel", true, false)
-			if meta_panel != null:
-				var bars_panel := meta_panel.find_child("DepthBarsPanel", true, false)
-				if bars_panel != null and bars_panel.has_method("_apply_row_states"):
-					bars_panel._apply_row_states()
+
+func _process(_delta: float) -> void:
+	# Only refresh periodically to catch currency changes
+	if Engine.get_process_frames() % 10 == 0:
+		if _buy_btn != null and not _buy_btn.disabled:
+			var d := clampi(depth_index, 1, DepthMetaSystem.MAX_DEPTH)
+			var lvl := depth_meta.get_level(d, upgrade_id)
+			_lvl_lbl.text = "Lv %d/%d" % [lvl, max_level]

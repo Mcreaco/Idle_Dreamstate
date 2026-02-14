@@ -193,15 +193,14 @@ func dive() -> void:
 
 	active_depth += 1
 	active_depth = clampi(active_depth, 1, max_depth)
-	
-	# NEW: Update max unlocked and notify panel
 	max_unlocked_depth = maxi(max_unlocked_depth, active_depth)
-	_sync_all_to_panel()
 
 	if not local_upgrades.has(active_depth):
 		local_upgrades[active_depth] = {}
 
-	_sync_all_to_panel()
+	# CRITICAL: Only sync if panel exists
+	if _panel != null:
+		_sync_all_to_panel()
 
 
 func dive_next_depth() -> void:
@@ -292,7 +291,7 @@ func get_depth_length(depth_index: int) -> float:
 	return pow(depth_length_growth, pow(d - 1.0, length_curve_power))
 
 
-func wake_cashout(ad_multiplier: float, forced: bool) -> void:
+func wake_cashout(ad_multiplier: float, forced: bool) -> Dictionary:
 	var thoughts_mult: float = 1.0
 	var memories_mult: float = 1.0
 	var crystals_mult: float = 1.0
@@ -301,7 +300,6 @@ func wake_cashout(ad_multiplier: float, forced: bool) -> void:
 		memories_mult = 0.55
 		crystals_mult = 0.40
 
-	# Sum everything up to active depth (for UI / totals)
 	var totals := _sum_run_totals(active_depth)
 	var bank_thoughts: float = float(thoughts) * thoughts_mult * ad_multiplier
 	var bank_memories: float = float(totals["memories"]) * memories_mult * ad_multiplier
@@ -313,7 +311,6 @@ func wake_cashout(ad_multiplier: float, forced: bool) -> void:
 		if meta.has_method("add_memories"):
 			meta.call("add_memories", bank_memories)
 
-	# Bank crystals PER DEPTH into the correct currency bucket
 	var max_d := clampi(active_depth, 1, max_depth)
 	for depth_i in range(1, max_d + 1):
 		var data: Dictionary = run[depth_i - 1]
@@ -322,17 +319,10 @@ func wake_cashout(ad_multiplier: float, forced: bool) -> void:
 		if bank_cry > 0.0:
 			_apply_bank(depth_i, 0.0, 0.0, bank_cry)
 
-	# NOTE: right now your meta banking only supports crystals (add_currency / currency array/dict).
-	# Keep thoughts/memories in controller for now, or add meta methods later.
-	# (If you later add meta.add_memories/add_thoughts, we’ll wire these two in properly.)
-	# _apply_bank(active_depth, bank_thoughts, bank_memories, 0.0)
-
-	# Reset ALL run bars + run-only currencies
 	_reset_all_depth_progress()
 	thoughts = 0.0
 	control = 0.0
 	instability = 0.0
-	# Return to Depth 1 after waking
 	active_depth = 1
 	max_unlocked_depth = 1
 	_last_depth = active_depth
@@ -340,6 +330,13 @@ func wake_cashout(ad_multiplier: float, forced: bool) -> void:
 	
 	_sync_all_to_panel()
 	_sync_hud()
+	
+	# THIS IS THE FIX - return the dictionary
+	return {
+		"thoughts": bank_thoughts,
+		"memories": bank_memories,
+		"crystals_by_name": totals["crystals_by_name"]
+	}
 
 
 func reset_active_depth_progress_only() -> void:

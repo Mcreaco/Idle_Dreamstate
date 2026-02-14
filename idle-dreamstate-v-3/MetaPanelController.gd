@@ -175,9 +175,40 @@ func _find_and_setup_upgrade_rows() -> void:
 	for row in depth_upgrade_rows:
 		row.depth_meta = depth_meta_system
 		row.gm = get_tree().current_scene.find_child("GameManager", true, false)
+		
+		# CONNECT the buy signal if it exists
+		if row.has_signal("upgrade_bought"):
+			if not row.is_connected("upgrade_bought", Callable(self, "_on_upgrade_bought")):
+				row.connect("upgrade_bought", Callable(self, "_on_upgrade_bought"))
+		
 		# Force refresh so buttons update
 		if row.has_method("_refresh"):
 			row.call_deferred("_refresh")
+			
+func _on_upgrade_bought(depth: int, upgrade_id: String) -> void:
+	# Refresh this specific row
+	for row in depth_upgrade_rows:
+		if row.depth_index == depth and row.upgrade_id == upgrade_id:
+			if row.has_method("_refresh"):
+				row._refresh()
+			break
+	
+	# Update currency display at bottom
+	_update_currency_display()
+	
+	# Update the depth tab text to show new currency amount
+	_refresh_depth_tabs()
+	
+func _refresh_depth_tabs() -> void:
+	if depth_tabs == null:
+		return
+	for i in range(1, 16):
+		var tab := depth_tabs.get_node_or_null("DepthTab%d" % i) as Button
+		if tab == null:
+			continue
+		var depth_title := DepthMetaSystem.get_depth_name(i)
+		var amount := depth_meta_system.currency[i] if depth_meta_system != null else 0.0
+		tab.text = "%s (%.0f)" % [depth_title, amount]
 			
 func _make_tab_style(bg: Color, border: Color, border_w: int = 2, radius: int = 8, shadow_color: Color = Color(0, 0, 0, 0.35), shadow_size: int = 3) -> StyleBoxFlat:
 	var sb := StyleBoxFlat.new()
@@ -501,3 +532,73 @@ func open_to_depth(depth_index: int) -> void:
 	open()
 	_show_meta("depth")
 	_show_depth(depth_index)
+
+func _on_buy_upgrade_pressed(depth: int, upgrade_id: String) -> void:
+	var result = depth_meta_system.buy_upgrade(depth, upgrade_id)
+	if result == false:
+		return
+	
+	var new_level = depth_meta_system.get_level(depth, upgrade_id)
+	var max_level = depth_meta_system.get_max_level(depth, upgrade_id)
+	
+	var row = _find_upgrade_row(depth, upgrade_id)
+	if row == null:
+		return
+	
+	var level_label = row.get_node_or_null("LevelLabel")
+	if level_label == null:
+		for child in row.get_children():
+			if child is Label and ("Lv" in child.text or "/" in child.text or "0/" in child.text):
+				level_label = child
+				break
+	
+	if level_label != null:
+		if new_level >= max_level:
+			level_label.text = "MAXED"
+		else:
+			level_label.text = "Lv %d/%d" % [new_level, max_level]
+	
+	var cost_label = row.get_node_or_null("CostLabel")
+	if cost_label:
+		if new_level >= max_level:
+			cost_label.text = ""
+		else:
+			var cost = depth_meta_system.get_upgrade_cost(depth, upgrade_id, new_level)
+			cost_label.text = _format_cost(cost)
+	
+	var buy_btn = row.get_node_or_null("BuyButton")
+	if buy_btn:
+		if new_level >= max_level:
+			buy_btn.disabled = true
+			buy_btn.text = "MAXED"
+		else:
+			var can_afford = depth_meta_system.can_afford_upgrade(depth, upgrade_id)
+			buy_btn.disabled = not can_afford
+	
+	_refresh_currency_display()
+	_refresh_depth_tabs()
+
+func _find_upgrade_row(depth: int, upgrade_id: String) -> Node:
+	for row in depth_upgrade_rows:
+		if row.has_method("get_depth") and row.has_method("get_upgrade_id"):
+			if row.get_depth() == depth and row.get_upgrade_id() == upgrade_id:
+				return row
+		# Alternative: check metadata if the row stores it
+		if "depth_index" in row and "upgrade_id" in row:
+			if row.depth_index == depth and row.upgrade_id == upgrade_id:
+				return row
+	return null
+
+func _format_cost(cost_dict: Dictionary) -> String:
+	if cost_dict.is_empty():
+		return ""
+	
+	var parts: Array[String] = []
+	for currency_name in cost_dict.keys():
+		var amount = float(cost_dict[currency_name])
+		parts.append("%.0f %s" % [amount, currency_name])
+	
+	return " + ".join(parts)
+
+func _refresh_currency_display() -> void:
+	_update_currency_display()
