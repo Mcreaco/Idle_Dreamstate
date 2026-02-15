@@ -53,12 +53,18 @@ func cost_sleep_paralysis() -> float: return _cost_for(sleep_paralysis_level)
 func cost_oneiromancy() -> float: return _cost_for(oneiromancy_level)
 
 # ---- buy helpers ----
+# ---- buy helpers ----
 func _try_buy(memories: float, level_ref: String) -> Dictionary:
 	var lvl := int(get(level_ref))
+	
+	# Extract perk_id from "memory_engine_level" -> "memory_engine"
+	var perk_id := level_ref.replace("_level", "")
+	
 	if lvl >= max_level:
-		return {"bought": false, "cost": _cost_for(lvl), "reason": "max"}
+		return {"bought": false, "cost": get_cost_by_id(perk_id), "reason": "max"}
 
-	var cost := _cost_for(lvl)
+	var cost := get_cost_by_id(perk_id)  # Use SAME formula as UI!
+	
 	if memories < cost:
 		return {"bought": false, "cost": cost, "reason": "funds"}
 

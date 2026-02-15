@@ -27,6 +27,7 @@ var _frozen: bool = false
 var _locked: bool = false
 var _details_open: bool = false
 var _overlay_mode: bool = false
+var _upgrade_ui_refs: Dictionary = {}  # id -> {button, cost_label, lvl_label, base_cost, growth, max_lvl}
 
 var _data: Dictionary = {"progress": 0.0, "memories": 0.0, "crystals": 0.0}
 var _local_upgrades: Dictionary = {}
@@ -79,7 +80,7 @@ func _ready() -> void:
 
 	_ensure_bg_map()
 	_build_layout_bar_then_bottom_text()
-
+	_arrange_dive_close_buttons()
 	_apply_bar_style()
 	_style_progress_bar()
 	_apply_row_background_texture()
@@ -201,6 +202,9 @@ func set_local_upgrades(d: Dictionary) -> void:
 	_local_upgrades = d
 	if _details_open:
 		_build_upgrades_ui()
+		# Refresh all upgrade UIs
+		for id in _upgrade_ui_refs.keys():
+			_update_upgrade_row_ui(id)
 
 func set_frozen_upgrades(d: Dictionary) -> void:
 	_frozen_upgrades = d
@@ -240,7 +244,7 @@ func set_details_open(open: bool) -> void:
 # Layout
 # -----------------------
 func _build_layout_bar_then_bottom_text() -> void:
-	# Prevent duplicate rebuild
+	# Keep the original early return
 	if _layout_root != null and is_instance_valid(_layout_root):
 		return
 
@@ -331,7 +335,7 @@ func _build_layout_bar_then_bottom_text() -> void:
 # Visuals
 # -----------------------
 func _apply_visuals() -> void:
-	# When expanded in overlay, NEVER dim the whole row (keeps PNG visible)
+	# When expanded/overlayed, NEVER dim the whole row
 	if _overlay_mode or _details_open:
 		modulate = Color(1, 1, 1, 1)
 	else:
@@ -346,13 +350,10 @@ func _apply_visuals() -> void:
 	var display_pct: float = 0.0
 	
 	if _locked:
-		# Locked depth: show 0% (not visited this run)
 		display_pct = 0.0
 	elif _active or _frozen:
-		# Active or frozen (visited) depth: show actual run progress
 		display_pct = _data.get("progress", 0.0) * 100.0
 	else:
-		# Fallback - shouldn't happen
 		display_pct = 0.0
 
 	if progress_bar != null:
@@ -362,22 +363,37 @@ func _apply_visuals() -> void:
 	if percent_label != null and progress_bar != null:
 		percent_label.text = "%d%%" % int(round(display_pct))
 
-
+	# NULL CHECKS ADDED HERE:
 	if _title_label != null:
 		_title_label.text = _depth_title_text()
 
 	if _reward_label != null:
-		var mem := float(_data.get("memories", 0.0))
-		var cry := float(_data.get("crystals", 0.0))
-		_reward_label.text = "+%.1f Mem  +%.1f %s" % [mem, cry, _crystal_name()]
+		# Check if this is Murk (Depth 4) with hidden rewards
+		var show_hidden := false
+		if depth_index == 4:
+			var drc := get_node_or_null("/root/DepthRunController")
+			if drc != null:
+				var local_upgs := drc.get("local_upgrades") as Dictionary
+				if local_upgs.has(4):
+					var dark_adapt := int(local_upgs[4].get("dark_adaptation", 0))
+					if dark_adapt == 0:
+						show_hidden = true
+		
+		if show_hidden:
+			_reward_label.text = "+??? Mem  +??? %s" % _crystal_name()
+		else:
+			var mem := float(_data.get("memories", 0.0))
+			var cry := float(_data.get("crystals", 0.0))
+			_reward_label.text = "+%.1f Mem  +%.1f %s" % [mem, cry, _crystal_name()]
 
 	if dive_button != null:
 		var can := false
 		if _run != null and _run.has_method("can_dive"):
 			can = bool(_run.call("can_dive"))
+		
 		dive_button.disabled = not (_active and can)
+		dive_button.visible = _active
 
-	# Background strength (ONLY ONCE — fixes your "double modulate" bug)
 	if _row_bg != null:
 		var a := 0.70
 		if _locked:
@@ -389,6 +405,17 @@ func _apply_visuals() -> void:
 		if _overlay_mode or _details_open:
 			a = 1.0
 		_row_bg.modulate = Color(1, 1, 1, a)
+		
+	# If Murk and not upgraded, hide crystal numbers
+	if depth_index == 4:
+		var dark_adapt := 0 # Get from local upgrades
+		if dark_adapt == 0:
+			_reward_label.text = "+??? Mem  +??? %s" % _crystal_name()
+		else:
+			# Show partial based on upgrade level
+			var mem := float(_data.get("memories", 0.0))
+			var cry := float(_data.get("crystals", 0.0))
+			_reward_label.text = "+%.1f Mem  +%.1f %s" % [mem, cry, _crystal_name()]
 
 
 # NEW: Calculate upgrade completion % for this depth
@@ -463,30 +490,40 @@ func _crystal_name() -> String:
 # Panel styling
 # -----------------------
 func _apply_bar_style() -> void:
+	
+	
 	var sb := StyleBoxFlat.new()
-
-	# IMPORTANT:
-	# In overlay/details, the panel must be transparent so the PNG behind can show.
-	sb.bg_color = Color(0, 0, 0, 0.0) if (_overlay_mode or _details_open) else Color(0.06, 0.08, 0.12, 0.16)
-
-	# Keep the blue border ALWAYS (so border wraps the PNG in overlay too)
+	
+	# Thicker border for expanded view
+	var border_width := 4 if (_overlay_mode or _details_open) else 2
+	var bg_alpha := 0.0 if (_overlay_mode or _details_open) else 0.16
+	
+	sb.bg_color = Color(0, 0, 0, bg_alpha)
 	sb.border_color = COLOR_BLUE
-	sb.border_width_left = ROW_BORDER_INSET
-	sb.border_width_top = ROW_BORDER_INSET
-	sb.border_width_right = ROW_BORDER_INSET
-	sb.border_width_bottom = ROW_BORDER_INSET
-
+	sb.border_width_left = border_width
+	sb.border_width_top = border_width
+	sb.border_width_right = border_width
+	sb.border_width_bottom = border_width
 	sb.corner_radius_top_left = 10
 	sb.corner_radius_top_right = 10
 	sb.corner_radius_bottom_left = 10
 	sb.corner_radius_bottom_right = 10
 
 	add_theme_stylebox_override("panel", sb)
+	
+	# Thicker progress bar when expanded
+	if progress_bar != null and (_overlay_mode or _details_open):
+		progress_bar.custom_minimum_size.y = 24  # Was 14, now thicker
+		progress_bar.add_theme_constant_override("outline_size", 2)
 
 
 func _style_progress_bar() -> void:
 	if progress_bar == null:
 		return
+	
+	# Thicker when expanded
+	var target_height: float = 24.0 if (_overlay_mode or _details_open) else bar_height
+	progress_bar.custom_minimum_size.y = target_height
 
 	progress_bar.custom_minimum_size.y = bar_height
 	progress_bar.custom_minimum_size.x = 0
@@ -631,11 +668,40 @@ func _build_upgrades_ui() -> void:
 
 	var title := Label.new()
 	title.text = "Run Upgrades (Depth %d)" % depth_index
+	title.add_theme_font_size_override("font_size", 24)  # Bigger title
+	title.add_theme_color_override("font_color", Color(0.35, 0.8, 0.95))  # Blue color
 	upgrades_box.add_child(title)
+	
+	# Add spacing
+	upgrades_box.add_theme_constant_override("separation", 12)
 
-	_add_upgrade_row("progress_speed", "Progress Speed")
-	_add_upgrade_row("memories_gain", "Memories Gain")
-	_add_upgrade_row("crystals_gain", "Crystals Gain")
+	# Get dynamic upgrades from DepthRunController
+	var drc := get_node_or_null("/root/DepthRunController")
+	if drc == null:
+		push_warning("DepthBarRow: DepthRunController not found, using fallback upgrades")
+		# Fallback to generic if controller missing
+		_add_upgrade_row("progress_speed", "Progress Speed")
+		_add_upgrade_row("memories_gain", "Memories Gain")
+		_add_upgrade_row("crystals_gain", "Crystals Gain")
+		return
+	
+	# Get upgrade IDs for this depth
+	var upgrade_ids: Array[String] = []
+	if drc.has_method("get_run_upgrade_ids"):
+		upgrade_ids = drc.call("get_run_upgrade_ids", depth_index)
+	else:
+		# Fallback: use the old hardcoded ones
+		upgrade_ids = ["progress_speed", "memories_gain", "crystals_gain"]
+	
+	# Build UI for each upgrade
+	for upg_id in upgrade_ids:
+		var upg_data: Dictionary = {}
+		if drc.has_method("get_run_upgrade_data"):
+			upg_data = drc.call("get_run_upgrade_data", depth_index, upg_id)
+		else:
+			upg_data = {"name": upg_id.capitalize(), "description": ""}
+		
+		_add_upgrade_row_dynamic(upg_id, upg_data)
 
 func _add_upgrade_row(id: String, label_text: String) -> void:
 	var row := HBoxContainer.new()
@@ -720,5 +786,191 @@ func _hide_extra_progress_bars() -> void:
 		pb.show_percentage = false
 		pb.visible = false
 
+func _add_upgrade_row_dynamic(id: String, data: Dictionary) -> void:
+	var row := HBoxContainer.new()
+	row.name = "UpgradeRow_%s" % id
+	row.add_theme_constant_override("separation", 16)
+	
+	# NAME + DESCRIPTION
+	var name_desc_hbox := HBoxContainer.new()
+	name_desc_hbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	name_desc_hbox.add_theme_constant_override("separation", 12)
+	name_desc_hbox.custom_minimum_size.x = 450
+	
+	var name_label := Label.new()
+	name_label.text = data.get("name", id.capitalize())
+	name_label.add_theme_font_size_override("font_size", 20)
+	name_label.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0))
+	name_label.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	
+	var desc_label := Label.new()
+	desc_label.text = data.get("description", "")
+	desc_label.add_theme_font_size_override("font_size", 15)
+	desc_label.add_theme_color_override("font_color", Color(0.75, 0.85, 0.95))
+	desc_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	desc_label.max_lines_visible = 1
+	desc_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	desc_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	
+	name_desc_hbox.add_child(name_label)
+	name_desc_hbox.add_child(desc_label)
+	
+	# Get upgrade data
+	var lvl := int(_local_upgrades.get(id, 0))
+	var max_lvl: int = data.get("max_level", 1)
+	var base_cost: float = data.get("base_cost", 100.0)
+	var growth: float = data.get("cost_growth", 1.5)
+	
+	# LEVEL LABEL
+	var lvl_label := Label.new()
+	lvl_label.name = "LevelLabel"
+	lvl_label.text = "Lv %d/%d" % [lvl, max_lvl]
+	lvl_label.add_theme_font_size_override("font_size", 18)
+	lvl_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lvl_label.custom_minimum_size.x = 90
+	
+	# COST LABEL (will be updated dynamically)
+	var cost_label := Label.new()
+	cost_label.name = "CostLabel"
+	cost_label.add_theme_font_size_override("font_size", 16)
+	cost_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	cost_label.custom_minimum_size.x = 140
+	
+	# BUTTON (will be updated dynamically)
+	var btn := Button.new()
+	btn.text = "+" if lvl < max_lvl else "MAX"
+	_apply_blue_button_style(btn)
+	btn.custom_minimum_size = Vector2(50, 50)
+	
+	# Store references for real-time updates
+	_upgrade_ui_refs[id] = {
+		"button": btn,
+		"cost_label": cost_label,
+		"lvl_label": lvl_label,
+		"base_cost": base_cost,
+		"growth": growth,
+		"max_lvl": max_lvl,
+		"row": row
+	}
+	
+	# Initial update
+	_update_upgrade_row_ui(id)
+	
+	# Button pressed logic
+	btn.pressed.connect(func():
+		var game_mgr := get_tree().current_scene.find_child("GameManager", true, false) as GameManager
+		if game_mgr == null:
+			return
+		
+		var current_lvl := int(_local_upgrades.get(id, 0))
+		var current_cost := base_cost * pow(growth, current_lvl)
+		
+		if current_lvl < max_lvl and game_mgr.thoughts >= current_cost:
+			game_mgr.thoughts -= current_cost
+			
+			# REMOVE THIS LINE (it was causing double increment):
+			# _local_upgrades[id] = current_lvl + 1
+			
+			# Just call the controller - it will update and signal back
+			if _run != null and _run.has_method("add_local_upgrade"):
+				_run.call("add_local_upgrade", depth_index, id, 1)
+			
+			if game_mgr.has_method("_refresh_top_ui"):
+				game_mgr._refresh_top_ui()
+	)
+	
+	row.add_child(name_desc_hbox)
+	row.add_child(lvl_label)
+	row.add_child(cost_label)
+	row.add_child(btn)
+	upgrades_box.add_child(row)
+
+func _update_upgrade_row_ui(id: String) -> void:
+	if not _upgrade_ui_refs.has(id):
+		return
+	
+	var refs := _upgrade_ui_refs[id] as Dictionary
+	var btn: Button = refs["button"]
+	var cost_label: Label = refs["cost_label"]
+	var lvl_label: Label = refs["lvl_label"]
+	var base_cost: float = refs["base_cost"]
+	var growth: float = refs["growth"]
+	var max_lvl: int = refs["max_lvl"]
+	
+	var gm := get_tree().current_scene.find_child("GameManager", true, false) as GameManager
+	var current_thoughts := 0.0
+	if gm != null:
+		current_thoughts = gm.thoughts
+	
+	var lvl := int(_local_upgrades.get(id, 0))
+	lvl_label.text = "Lv %d/%d" % [lvl, max_lvl]
+	
+	if lvl >= max_lvl:
+		btn.text = "MAX"
+		btn.disabled = true
+		cost_label.text = ""
+		cost_label.modulate = Color(1, 1, 1)
+	else:
+		var depth_multiplier := pow(float(depth_index), 2.5) * 3.0  # Exponential scaling
+		var effective_base := base_cost * depth_multiplier
+		var cost := effective_base * pow(growth, lvl)
+		var can_afford := current_thoughts >= cost
+		
+		btn.text = "+"
+		btn.disabled = not can_afford
+		cost_label.text = "%d Thoughts" % int(cost)
+		cost_label.modulate = Color(0.6, 0.6, 0.6) if not can_afford else Color(1, 1, 1)
+
+# Update all upgrade buttons every frame while details are open
 func _process(_delta: float) -> void:
-	_apply_visuals()  # Force refresh every frame
+	_apply_visuals()
+	
+	# Real-time update of upgrade button states
+	if _details_open and upgrades_box != null and upgrades_box.visible:
+		for id in _upgrade_ui_refs.keys():
+			_update_upgrade_row_ui(id)
+
+func _refresh_upgrade_row(id: String, lvl_label: Label, btn: Button, max_lvl: int) -> void:
+	var current_lvl := int(_local_upgrades.get(id, 0))
+	lvl_label.text = "Lv %d/%d" % [current_lvl, max_lvl]
+	if current_lvl >= max_lvl:
+		btn.text = "MAX"
+		btn.disabled = true
+
+func _arrange_dive_close_buttons() -> void:
+	if dive_button == null or close_button == null:
+		return
+	
+	var parent = dive_button.get_parent()
+	if parent == null:
+		return
+	
+	# Ensure parent fills the width
+	parent.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	
+	# Order: X first, then spacer, then Dive (right-aligned)
+	parent.move_child(close_button, 0)
+	
+	# Check if we already added a spacer
+	var spacer = parent.get_node_or_null("ButtonSpacer")
+	if spacer == null:
+		spacer = Control.new()
+		spacer.name = "ButtonSpacer"
+		spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		parent.add_child(spacer)
+		parent.move_child(spacer, 1)
+	
+	if dive_button.get_index() != 2:
+		parent.move_child(dive_button, 2)
+	
+	# X button: Small, anchored left
+	close_button.custom_minimum_size = Vector2(50, 44)
+	close_button.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	close_button.size_flags_stretch_ratio = 0
+	close_button.text = "X"
+	
+	# Dive button: Wide, anchored right (near the + buttons)
+	dive_button.custom_minimum_size = Vector2(400, 44)
+	dive_button.size_flags_horizontal = Control.SIZE_SHRINK_END
+	dive_button.size_flags_stretch_ratio = 0
+	dive_button.text = "Dive"

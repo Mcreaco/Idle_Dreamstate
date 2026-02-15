@@ -91,6 +91,8 @@ func _apply_bars_margins_force() -> void:
 func _ready() -> void:
 	_depth_run = get_node_or_null("/root/DepthRunController")
 	_build_rows()
+	 # Force refresh after a brief delay to ensure controller has loaded data
+	call_deferred("_refresh_all_rows")
 	_apply_bars_root_rect()
 	_ensure_overlay()
 	call_deferred("_apply_safe_margins_centered")
@@ -112,6 +114,16 @@ func _ready() -> void:
 		root.offset_top += bars_margin_top
 		root.offset_right -= bars_margin_right
 		
+func _refresh_all_rows() -> void:
+	var drc := get_node_or_null("/root/DepthRunController")
+	if drc == null:
+		return
+	
+	for i in range(1, 16):
+		var local_upgs = drc.get("local_upgrades")
+		if local_upgs is Dictionary and local_upgs.has(i):
+			set_active_local_upgrades(i, local_upgs[i])
+			
 func _ensure_overlay() -> void:
 	if _overlay != null:
 		return
@@ -216,7 +228,7 @@ func _build_rows() -> void:
 
 func _wire_row(row: Node, depth_index: int) -> void:
 	if row.has_method("set_depth_index"):
-		row.call("set_depth_index", depth_index)
+		row.call_deferred("set_depth_index", depth_index)
 
 	if row.has_signal("clicked_depth") and not row.clicked_depth.is_connected(_on_row_clicked_depth):
 		row.clicked_depth.connect(_on_row_clicked_depth)
