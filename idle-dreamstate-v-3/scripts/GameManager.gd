@@ -23,7 +23,7 @@ signal abyss_unlocked
 func _get_effective_dive_cooldown() -> float:
 	return 0.0
 @export var auto_overclock_instability_limit: float = 85.0
-
+var auto_buy_unlocked_depths: Array[int] = []
 var _last_wake_depth_for_meta: int = 1
 var thoughts_label: Label
 var control_label: Label
@@ -100,6 +100,7 @@ var timed_boost_timer: float = 0.0
 var timed_boost_active: bool = false
 var _fail_save_prompt_shown: bool = false
 var _fail_save_used: bool = false
+var tutorial_manager: TutorialManager = null
 
 func get_dive_instability_gain(depth: int) -> float:
 	return 5.0 + (depth * 1.5)
@@ -236,6 +237,11 @@ func _ready() -> void:
 		_toggle_debug_overlay()
 		_debug_visible = true
 	_update_debug_overlay()
+	
+		# Create tutorial manager
+	tutorial_manager = TutorialManager.new()
+	add_child(tutorial_manager)
+
 	
 func _force_rate_sample() -> void:
 	_last_thoughts_sample = thoughts
@@ -462,6 +468,28 @@ func _on_wake_pressed() -> void:
 	_last_wake_depth_for_meta = d
 	prestige_panel.open_with_depth(mem_gain, crystals_by_name, d)
 	
+	# Trigger first wake tutorial
+	set_meta("just_woke", true)
+	if tutorial_manager != null:
+		tutorial_manager._check_trigger_tutorials()
+		remove_meta("just_woke")
+
+# Connect button clicks to tutorial manager
+func _connect_tutorial_signals() -> void:
+	# This should be called after UI is ready
+	var meta = find_child("MetaPanelController", true, false)
+	if meta != null and tutorial_manager != null:
+		var tab_perm = meta.find_child("TabPerm", true, false) as Button
+		var tab_depth = meta.find_child("TabDepth", true, false) as Button
+		var close_btn = meta.find_child("CloseButton", true, false) as Button
+		
+		if tab_perm:
+			tab_perm.pressed.connect(func(): tutorial_manager.on_button_clicked("TabPerm"))
+		if tab_depth:
+			tab_depth.pressed.connect(func(): tutorial_manager.on_button_clicked("TabDepth"))
+		if close_btn:
+			close_btn.pressed.connect(func(): tutorial_manager.on_button_clicked("CloseButton"))
+		
 func _on_prestige_confirm_wake() -> void:
 	var drc := get_node_or_null("/root/DepthRunController")
 	if drc == null:
@@ -1699,14 +1727,67 @@ func _process(delta: float) -> void:
 	if instability >= 100.0:
 		do_fail()
 	
-	# Auto-buy run upgrades every 5 seconds
+	# Auto-buy timer
 	_auto_buy_timer += delta
 	if _auto_buy_timer >= 5.0:
 		_auto_buy_timer = 0.0
-		_try_auto_buy_upgrades()
+		_try_auto_buy()
 
 var _auto_buy_timer: float = 0.0
 
+func _try_auto_buy() -> void:
+	var drc = get_node_or_null("/root/DepthRunController")
+	if not drc:
+		return
+	
+	# Try to auto-buy for each depth that has it unlocked
+	for depth in range(1, 16):
+		if not is_auto_buy_unlocked_for_depth(depth):
+			continue
+		
+		_auto_buy_for_depth(depth, drc)
+
+func _auto_buy_for_depth(depth: int, drc: Node) -> void:
+	var upgrade_ids = []
+	if drc.has_method("get_run_upgrade_ids"):
+		upgrade_ids = drc.call("get_run_upgrade_ids", depth)
+	
+	# Get the depth definition to check actual max levels
+	var meta = get_tree().current_scene.find_child("DepthMetaSystem", true, false)
+	var depth_def = {}
+	if meta and meta.has_method("get_depth_def"):
+		depth_def = meta.call("get_depth_def", depth)
+	
+	var upgrades_def = depth_def.get("upgrades", {})
+	
+	for upg_id in upgrade_ids:
+		var upg_data = {}
+		if drc.has_method("get_run_upgrade_data"):
+			upg_data = drc.call("get_run_upgrade_data", depth, upg_id)
+		
+		# Get current level
+		var lvl = 0
+		if drc.has_method("get_local_upgrades"):
+			var local_upgs = drc.call("get_local_upgrades")
+			if local_upgs.has(depth):
+				lvl = int(local_upgs[depth].get(upg_id, 0))
+		
+		# Get actual max level from depth definition
+		var upgrade_def = upgrades_def.get(upg_id, {})
+		var max_lvl = upgrade_def.get("max_level", 1)
+		
+		# Double check - don't buy if at or over cap
+		if lvl >= max_lvl:
+			continue
+		
+		var base_cost = upg_data.get("base_cost", 100.0)
+		var growth = upg_data.get("cost_growth", 1.5)
+		var cost = base_cost * pow(growth, lvl)
+		
+		if thoughts >= cost:
+			thoughts -= cost
+			drc.call("add_local_upgrade", depth, upg_id, 1)
+			
 func _try_auto_buy_upgrades() -> void:
 	var shop = get_tree().current_scene.find_child("ShopPanel", true, false)
 	if not shop or not shop.has_method("has_auto_buy"):
@@ -2137,3 +2218,26 @@ func _get_current_depth_progress_multiplier(depth_idx: int) -> float:
 	
 	
 	return multiplier
+	
+func is_auto_buy_unlocked_for_depth(depth: int) -> bool:
+	# Check shop early unlock
+	var shop = get_tree().current_scene.find_child("ShopPanel", true, false)
+	if shop and shop.has_method("has_early_auto_buy"):
+		if shop.has_early_auto_buy():
+			return true
+	
+	# Check depth meta upgrades
+	var meta = get_tree().current_scene.find_child("DepthMetaSystem", true, false)
+	if not meta:
+		return false
+	
+	# Check if any unlocked upgrade grants auto-buy for this depth
+	for upgrade_id in meta.auto_buy_unlocks.keys():
+		var unlocks_depth: int = meta.auto_buy_unlocks[upgrade_id]
+		if unlocks_depth == depth:
+			# Check if player has this upgrade
+			var level = meta.get_level(depth, upgrade_id)  # or however you check upgrade levels
+			if level > 0:
+				return true
+	
+	return false

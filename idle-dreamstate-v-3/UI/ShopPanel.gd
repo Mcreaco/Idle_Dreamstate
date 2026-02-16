@@ -50,16 +50,14 @@ var shop_items: Array[Dictionary] = [
 	},
 	
 	# CONVENIENCE
-	{
-		"id": "auto_buy",
-		"name": "Auto-Purchase",
-		"desc": "Automatically buy affordable upgrades",
-		"price_usd": 4.99,
-		"price_display": "$4.99",
+		{
+		"id": "early_auto_buy",
+		"name": "Automated Mind (Early)",
+		"desc": "Unlock auto-buy for ALL depths immediately",
+		"price_usd": 4.99,  # Or include in £9.99 supporter pack
 		"type": "permanent",
 		"icon": "🤖",
-		"effect": "auto_buy_enabled",
-		"owned": false
+		"effect": "early_auto_buy"
 	},
 	{
 		"id": "fast_mode",
@@ -171,49 +169,13 @@ func _process(_delta: float) -> void:
 	if active_boost.expires > 0 and Time.get_unix_time_from_system() > active_boost.expires:
 		active_boost = {"mult": 1.0, "expires": 0}
 		_save_shop_data()
-		
-	# Auto-buy run upgrades
-	if _shop_has_auto_buy():
-		_auto_buy_upgrades()
+	
 
 func _shop_has_auto_buy() -> bool:
 	var shop = get_tree().current_scene.find_child("ShopPanel", true, false)
 	if shop and shop.has_method("has_auto_buy"):
 		return shop.has_auto_buy()
 	return false
-
-func _auto_buy_upgrades() -> void:
-	var shop = get_tree().current_scene.find_child("ShopPanel", true, false)
-	if not shop or not shop.has_method("has_auto_buy"):
-		return
-	if not shop.has_auto_buy():
-		return
-	
-	var drc = get_node_or_null("/root/DepthRunController")
-	if not drc:
-		return
-	
-	var current_depth: int = drc.active_depth if drc else 1
-	var upgrade_ids = drc.get_run_upgrade_ids(current_depth) if drc.has_method("get_run_upgrade_ids") else []
-	
-	for upg_id in upgrade_ids:
-		var upg_data = {}
-		if drc.has_method("get_run_upgrade_data"):
-			upg_data = drc.call("get_run_upgrade_data", current_depth, upg_id)
-		
-		var lvl = int(drc.local_upgrades.get(upg_id, 0)) if drc.has_method("get_local_upgrades") else 0
-		var max_lvl = upg_data.get("max_level", 1)
-		
-		if lvl >= max_lvl:
-			continue
-		
-		var base_cost = upg_data.get("base_cost", 100.0)
-		var growth = upg_data.get("cost_growth", 1.5)
-		var cost = base_cost * pow(growth, lvl)
-		
-		if self.thoughts >= cost:
-			self.thoughts -= cost
-			drc.call("add_local_upgrade", current_depth, upg_id, 1)
 	
 func open() -> void:
 	_force_close_overlay(settings_panel_node_name)
@@ -594,3 +556,6 @@ func _force_close_overlay(node_name: String) -> void:
 		n.call("close")
 	elif n is CanvasItem:
 		(n as CanvasItem).visible = false
+
+func has_early_auto_buy() -> bool:
+	return "early_auto_buy" in owned_items

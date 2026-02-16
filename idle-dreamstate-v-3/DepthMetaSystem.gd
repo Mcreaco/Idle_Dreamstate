@@ -4,6 +4,25 @@ class_name DepthMetaSystem
 
 const MAX_DEPTH: int = 15
 
+# Maps upgrade_id -> which depth's run upgrades it auto-buys
+var auto_buy_unlocks: Dictionary = {
+	"automated_mind_1": 1,
+	"automated_mind_2": 2,
+	"automated_mind_3": 3,
+	"automated_mind_4": 4,
+	"automated_mind_5": 5,
+	"automated_mind_6": 6,
+	"automated_mind_7": 7,
+	"automated_mind_8": 8,
+	"automated_mind_9": 9,
+	"automated_mind_10": 10,
+	"automated_mind_11": 11,
+	"automated_mind_12": 12,
+	"automated_mind_13": 13,
+	"automated_mind_14": 14,
+	"automated_mind_15": 15
+}
+
 # Permanent currencies earned on wake/fail per depth
 var currency: Array[float] = []
 
@@ -117,10 +136,9 @@ func get_depth_upgrade_defs(depth_i: int) -> Array:
 		"desc":"Unlocks the next Depth tab (requires Stabilise maxed).",
 		"max":1,
 		"kind":"unlock",
-		"costs": { d: 1.0 }  # Only current depth currency, not multi-currency
+		"costs": { d: 1.0 }
 	}
 
-	# Core trio (global)
 	var t_gain := {
 		"id":"t_gain",
 		"name":"Thoughts Weaving",
@@ -146,9 +164,6 @@ func get_depth_upgrade_defs(depth_i: int) -> Array:
 		"costs": _pick_costs(d, 2)
 	}
 
-	# Two extra “bigger” upgrades (global)
-	# wake_yield: increases crystal gain on Wake/Fail (meta snowball)
-	# dive_eff: reduces dive cooldown (or you can repurpose to dive reward)
 	var wake_yield := {
 		"id":"wake_yield",
 		"name":"Crystalline Echo",
@@ -161,12 +176,11 @@ func get_depth_upgrade_defs(depth_i: int) -> Array:
 		"id":"dive_start",
 		"name":"Depth Start",
 		"desc":"Start at +5% depth progress per level when diving (max 100%).",
-		"max":20,  # 20 levels x 5% = 100%
+		"max":20,
 		"kind":"dive_start",
 		"costs": _pick_costs(d, (2 if d <= 8 else 3))
 	}
 
-	# Give each depth different names/descriptions (same kinds)
 	match d:
 		1:
 			t_gain.name = "Thoughts Flow"
@@ -174,91 +188,403 @@ func get_depth_upgrade_defs(depth_i: int) -> Array:
 			idle_soft.name = "Idle Instability Dampener"
 			wake_yield.name = "Amethyst Echo"
 			dive_start.name = "Shallow Start"
+			
+			return [
+				core_stab,
+				t_gain,
+				c_gain,
+				idle_soft,
+				wake_yield,
+				dive_start,
+				core_unlock,
+			]
+			
 		2:
 			t_gain.name = "Thoughts Compression"
 			c_gain.name = "Control Retention"
 			idle_soft.name = "Spike Dampener"
 			wake_yield.name = "Ruby Resonance"
 			dive_start.name = "Quick Descent"
+			
+			return [
+				core_stab,
+				t_gain,
+				c_gain,
+				idle_soft,
+				wake_yield,
+				dive_start,
+				core_unlock,
+			]
+			
 		3:
 			t_gain.name = "Pressure-Born Insight"
 			c_gain.name = "Steady Grip"
 			idle_soft.name = "Quiet the Tremors"
 			wake_yield.name = "Emerald Afterglow"
 			dive_start.name = "Pressure Entry"
+			
+			var auto_mind_1 := {
+				"id": "automated_mind_1",
+				"name": "Automated Mind I",
+				"desc": "Auto-buy run upgrades for Depth 1",
+				"max": 1,
+				"kind": "auto_buy",
+				"costs": { 3: 75.0 }
+			}
+			
+			return [
+				core_stab,
+				t_gain,
+				c_gain,
+				idle_soft,
+				wake_yield,
+				dive_start,
+				auto_mind_1,
+				core_unlock,
+			]
+			
 		4:
 			t_gain.name = "Cognitive Pressure"
 			c_gain.name = "Willpower Reinforcement"
 			idle_soft.name = "Stability Lining"
 			wake_yield.name = "Sapphire Reflection"
 			dive_start.name = "Murk Entry"
+			
+			var auto_mind_2 := {
+				"id": "automated_mind_2",
+				"name": "Automated Mind II",
+				"desc": "Auto-buy run upgrades for Depth 2",
+				"max": 1,
+				"kind": "auto_buy",
+				"costs": { 4: 120.0 }
+			}
+			
+			return [
+				core_stab,
+				t_gain,
+				c_gain,
+				idle_soft,
+				wake_yield,
+				dive_start,
+				auto_mind_2,
+				core_unlock,
+			]
+			
 		5:
 			t_gain.name = "Rift Spark"
 			c_gain.name = "Anchor Mind"
 			idle_soft.name = "Fray Suppression"
 			wake_yield.name = "Diamond Shardfall"
 			dive_start.name = "Rift Entry"
+			
+			var auto_mind_3 := {
+				"id": "automated_mind_3",
+				"name": "Automated Mind III",
+				"desc": "Auto-buy run upgrades for Depth 3",
+				"max": 1,
+				"kind": "auto_buy",
+				"costs": { 5: 180.0 }
+			}
+			
+			return [
+				core_stab,
+				t_gain,
+				c_gain,
+				idle_soft,
+				wake_yield,
+				dive_start,
+				auto_mind_3,
+				core_unlock,
+			]
+			
 		6:
 			t_gain.name = "Hollow Patterning"
 			c_gain.name = "Calibrated Nerves"
 			idle_soft.name = "Hush the Static"
 			wake_yield.name = "Topaz Refrain"
 			dive_start.name = "Hollow Entry"
+			
+			var auto_mind_4 := {
+				"id": "automated_mind_4",
+				"name": "Automated Mind IV",
+				"desc": "Auto-buy run upgrades for Depth 4",
+				"max": 1,
+				"kind": "auto_buy",
+				"costs": { 6: 260.0 }
+			}
+			
+			return [
+				core_stab,
+				t_gain,
+				c_gain,
+				idle_soft,
+				wake_yield,
+				dive_start,
+				auto_mind_4,
+				core_unlock,
+			]
+			
 		7:
 			t_gain.name = "Dread Clarity"
 			c_gain.name = "Fear Harness"
 			idle_soft.name = "Panic Diffuser"
 			wake_yield.name = "Garnet Pulse"
 			dive_start.name = "Dread Entry"
+			
+			var auto_mind_5 := {
+				"id": "automated_mind_5",
+				"name": "Automated Mind V",
+				"desc": "Auto-buy run upgrades for Depth 5",
+				"max": 1,
+				"kind": "auto_buy",
+				"costs": { 7: 370.0 }
+			}
+			
+			return [
+				core_stab,
+				t_gain,
+				c_gain,
+				idle_soft,
+				wake_yield,
+				dive_start,
+				auto_mind_5,
+				core_unlock,
+			]
+			
 		8:
 			t_gain.name = "Chasm Thinking"
 			c_gain.name = "Grip of Stone"
 			idle_soft.name = "Edge Stabiliser"
 			wake_yield.name = "Opal Gleam"
 			dive_start.name = "Chasm Entry"
+			
+			var auto_mind_6 := {
+				"id": "automated_mind_6",
+				"name": "Automated Mind VI",
+				"desc": "Auto-buy run upgrades for Depth 6",
+				"max": 1,
+				"kind": "auto_buy",
+				"costs": { 8: 520.0 }
+			}
+			
+			return [
+				core_stab,
+				t_gain,
+				c_gain,
+				idle_soft,
+				wake_yield,
+				dive_start,
+				auto_mind_6,
+				core_unlock,
+			]
+			
 		9:
 			t_gain.name = "Silence Insight"
 			c_gain.name = "Muted Focus"
 			idle_soft.name = "Noise Canceller"
 			wake_yield.name = "Aquamarine Drift"
 			dive_start.name = "Silent Entry"
+			
+			var auto_mind_7 := {
+				"id": "automated_mind_7",
+				"name": "Automated Mind VII",
+				"desc": "Auto-buy run upgrades for Depth 7",
+				"max": 1,
+				"kind": "auto_buy",
+				"costs": { 9: 720.0 }
+			}
+			
+			return [
+				core_stab,
+				t_gain,
+				c_gain,
+				idle_soft,
+				wake_yield,
+				dive_start,
+				auto_mind_7,
+				core_unlock,
+			]
+			
 		10:
 			t_gain.name = "Veiled Intuition"
 			c_gain.name = "Control Under Fog"
 			idle_soft.name = "Veil Buffer"
 			wake_yield.name = "Onyx Return"
 			dive_start.name = "Veil Entry"
+			
+			var auto_mind_8 := {
+				"id": "automated_mind_8",
+				"name": "Automated Mind VIII",
+				"desc": "Auto-buy run upgrades for Depth 8",
+				"max": 1,
+				"kind": "auto_buy",
+				"costs": { 10: 980.0 }
+			}
+			
+			return [
+				core_stab,
+				t_gain,
+				c_gain,
+				idle_soft,
+				wake_yield,
+				dive_start,
+				auto_mind_8,
+				core_unlock,
+			]
+			
 		11:
 			t_gain.name = "Ruin Synthesis"
 			c_gain.name = "Rebuild Will"
 			idle_soft.name = "Crack Sealant"
 			wake_yield.name = "Jade Renewal"
 			dive_start.name = "Ruin Entry"
+			
+			var auto_mind_9 := {
+				"id": "automated_mind_9",
+				"name": "Automated Mind IX",
+				"desc": "Auto-buy run upgrades for Depth 9",
+				"max": 1,
+				"kind": "auto_buy",
+				"costs": { 11: 1300.0 }
+			}
+			
+			return [
+				core_stab,
+				t_gain,
+				c_gain,
+				idle_soft,
+				wake_yield,
+				dive_start,
+				auto_mind_9,
+				core_unlock,
+			]
+			
 		12:
 			t_gain.name = "Eclipse Cognition"
 			c_gain.name = "Shadow Control"
 			idle_soft.name = "Dark Calm"
 			wake_yield.name = "Moonstone Halo"
 			dive_start.name = "Eclipse Entry"
+			
+			var auto_mind_10 := {
+				"id": "automated_mind_10",
+				"name": "Automated Mind X",
+				"desc": "Auto-buy run upgrades for Depth 10",
+				"max": 1,
+				"kind": "auto_buy",
+				"costs": { 12: 1700.0 }
+			}
+			
+			return [
+				core_stab,
+				t_gain,
+				c_gain,
+				idle_soft,
+				wake_yield,
+				dive_start,
+				auto_mind_10,
+				core_unlock,
+			]
+			
 		13:
 			t_gain.name = "Voidline Pattern"
 			c_gain.name = "Threaded Will"
 			idle_soft.name = "Void Insulation"
 			wake_yield.name = "Obsidian Tribute"
 			dive_start.name = "Void Entry"
+			
+			var auto_mind_11 := {
+				"id": "automated_mind_11",
+				"name": "Automated Mind XI",
+				"desc": "Auto-buy run upgrades for Depth 11",
+				"max": 1,
+				"kind": "auto_buy",
+				"costs": { 13: 2200.0 }
+			}
+			
+			return [
+				core_stab,
+				t_gain,
+				c_gain,
+				idle_soft,
+				wake_yield,
+				dive_start,
+				auto_mind_11,
+				core_unlock,
+			]
+			
 		14:
 			t_gain.name = "Blackwater Insight"
 			c_gain.name = "Iron Nerve"
 			idle_soft.name = "Pressure Relief"
 			wake_yield.name = "Citrine Surge"
 			dive_start.name = "Blackwater Entry"
+			
+			var auto_mind_12 := {
+				"id": "automated_mind_12",
+				"name": "Automated Mind XII",
+				"desc": "Auto-buy run upgrades for Depth 12",
+				"max": 1,
+				"kind": "auto_buy",
+				"costs": { 14: 2800.0 }
+			}
+			
+			return [
+				core_stab,
+				t_gain,
+				c_gain,
+				idle_soft,
+				wake_yield,
+				dive_start,
+				auto_mind_12,
+				core_unlock,
+			]
+			
 		15:
 			t_gain.name = "Abyssal Thought"
 			c_gain.name = "Abyssal Control"
 			idle_soft.name = "Abyss Stillness"
 			wake_yield.name = "Quartz Apotheosis"
 			dive_start.name = "Abyssal Entry"
-
+			
+			var auto_mind_13 := {
+				"id": "automated_mind_13",
+				"name": "Automated Mind XIII",
+				"desc": "Auto-buy run upgrades for Depth 13",
+				"max": 1,
+				"kind": "auto_buy",
+				"costs": { 15: 3500.0 }
+			}
+			var auto_mind_14 := {
+				"id": "automated_mind_14",
+				"name": "Automated Mind XIV",
+				"desc": "Auto-buy run upgrades for Depth 14",
+				"max": 1,
+				"kind": "auto_buy",
+				"costs": { 15: 4500.0 }
+			}
+			var auto_mind_15 := {
+				"id": "automated_mind_15",
+				"name": "Automated Mind XV",
+				"desc": "Auto-buy run upgrades for Depth 15",
+				"max": 1,
+				"kind": "auto_buy",
+				"costs": { 15: 6000.0 }
+			}
+			
+			return [
+				core_stab,
+				t_gain,
+				c_gain,
+				idle_soft,
+				wake_yield,
+				dive_start,
+				auto_mind_13,
+				auto_mind_14,
+				auto_mind_15,
+				core_unlock,
+			]
+	
 	return [
 		core_stab,
 		t_gain,
@@ -383,6 +709,8 @@ func cost_for(depth_i: int, def: Dictionary) -> float:
 			return (base * 1.75) * pow(1.70, float(lvl))
 		"dive_start":  # Changed from dive_eff
 			return (base * 1.45) * pow(1.55, float(lvl))  # Slightly higher growth
+		"auto_buy":
+			return (base * 2.0) * pow(1.3, float(lvl))
 		_:
 			return base * pow(1.50, float(lvl))
 

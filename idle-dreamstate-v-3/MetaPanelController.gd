@@ -29,6 +29,7 @@ var _styled_depth_tabs := false
 
 var currency_labels: Array[Label] = []  # Store references to update later
 var depth_upgrade_rows: Array = []  # Store row references
+
 func _ready() -> void:
 	visible = false
 	call_deferred("_late_bind")
@@ -72,7 +73,7 @@ func _late_bind() -> void:
 	
 	# CRITICAL: Find and setup all upgrade rows FIRST
 	_find_and_setup_upgrade_rows()
-
+	_wrap_upgrade_rows_in_scroll()
 	_apply_unlocks()
 	_show_meta(_current_meta)
 	_show_depth(_current_depth)
@@ -80,6 +81,8 @@ func _late_bind() -> void:
 	_style_perm_panel()
 	_style_close_button()
 	_style_currency_summary()
+	_update_currency_display()
+	_refresh_all_rows()
 
 func _style_currency_summary() -> void:
 	if currency_summary == null:
@@ -184,6 +187,57 @@ func _find_and_setup_upgrade_rows() -> void:
 		# Force refresh so buttons update
 		if row.has_method("_refresh"):
 			row.call_deferred("_refresh")
+			
+func _wrap_upgrade_rows_in_scroll() -> void:
+	for i in range(1, 16):
+		var page := depth_pages.get_node_or_null("DepthPage%d" % i) as Control
+		if page == null:
+			continue
+		
+		var upgrades_vbox := page.find_child("UpgradesVBox", true, false) as VBoxContainer
+		if upgrades_vbox == null:
+			continue
+		
+		if upgrades_vbox.get_parent() is ScrollContainer:
+			continue
+		
+		var parent := upgrades_vbox.get_parent()
+		
+		# Create ScrollContainer
+		var scroll := ScrollContainer.new()
+		scroll.name = "UpgradesScroll"
+		scroll.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+		scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		
+		# INCREASED HEIGHT - almost to currency
+		scroll.custom_minimum_size = Vector2(0, 600)
+		
+		# ADD BORDER
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = Color(0.05, 0.06, 0.08, 0.7)
+		sb.border_color = Color(0.4, 0.5, 0.8, 0.5)
+		sb.border_width_left = 2
+		sb.border_width_top = 2
+		sb.border_width_right = 2
+		sb.border_width_bottom = 2
+		sb.corner_radius_top_left = 8
+		sb.corner_radius_top_right = 8
+		sb.corner_radius_bottom_left = 8
+		sb.corner_radius_bottom_right = 8
+		sb.content_margin_left = 8
+		sb.content_margin_right = 8
+		sb.content_margin_top = 8
+		sb.content_margin_bottom = 8
+		scroll.add_theme_stylebox_override("panel", sb)
+		
+		var idx := upgrades_vbox.get_index()
+		parent.remove_child(upgrades_vbox)
+		parent.add_child(scroll)
+		parent.move_child(scroll, idx)
+		
+		scroll.add_child(upgrades_vbox)
+		upgrades_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		upgrades_vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
 			
 func _on_upgrade_bought(depth: int, upgrade_id: String) -> void:
 	# Refresh this specific row
