@@ -1,113 +1,168 @@
-class_name RightRail
 extends PanelContainer
+class_name RightRail
 
-# ============================================
-# IDLE DREAMSTATE - RIGHT RAIL UI
-# ============================================
-# Contains Settings, Shop, and Tutorials buttons
-# ============================================
+@export var settings_panel_path: NodePath
+@export var shop_panel_path: NodePath
 
-signal settings_pressed
-signal shop_pressed
-signal tutorials_pressed
+# Position
+@export var right_margin: float = 18.0
+@export var button_size: Vector2 = Vector2(44, 44)
+@export var gap: float = 8.0
+@export var top_margin: float = 150.0
 
-var settings_btn: Button = null
-var shop_btn: Button = null
-var tutorials_btn: Button = null
+@onready var settings_btn: Button = $"VBoxContainer/SettingsButton"
+@onready var shop_btn: Button = $"VBoxContainer/ShopButton"
+
+var settings_panel: Control
+var shop_panel: Control
+var tutorials_btn: Button = null  # Store reference
 
 func _ready() -> void:
-	custom_minimum_size = Vector2(60, 400)
-	size_flags_vertical = Control.SIZE_EXPAND_FILL
-	
-	var rail_style = StyleBoxFlat.new()
-	rail_style.bg_color = Color(0.06, 0.06, 0.1, 0.9)
-	rail_style.border_width_left = 1
-	rail_style.border_color = Color(0.2, 0.2, 0.3, 1.0)
-	add_theme_stylebox_override("panel", rail_style)
-	
-	_create_buttons()
+	add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 
-func _create_buttons() -> void:
-	var vbox = VBoxContainer.new()
-	vbox.name = "ButtonContainer"
-	vbox.set_anchors_preset(Control.PRESET_FULL_RECT)
-	vbox.alignment = BoxContainer.ALIGNMENT_BEGIN
-	vbox.add_theme_constant_override("separation", 10)
-	
-	var margin = MarginContainer.new()
-	margin.name = "ButtonMargin"
-	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
-	margin.add_theme_constant_override("margin_top", 20)
-	margin.add_theme_constant_override("margin_left", 10)
-	margin.add_theme_constant_override("margin_right", 10)
-	add_child(margin)
-	margin.add_child(vbox)
-	
-	# Settings button
-	settings_btn = Button.new()
-	settings_btn.name = "SettingsButton"
-	settings_btn.text = ""
-	settings_btn.custom_minimum_size = Vector2(40, 40)
-	settings_btn.tooltip_text = "Settings"
-	
-	var settings_icon = _create_settings_icon()
-	settings_btn.add_child(settings_icon)
-	settings_btn.pressed.connect(_on_settings_pressed)
-	vbox.add_child(settings_btn)
-	
-	# Shop button
-	shop_btn = Button.new()
-	shop_btn.name = "ShopButton"
-	shop_btn.text = ""
-	shop_btn.custom_minimum_size = Vector2(40, 40)
-	shop_btn.tooltip_text = "Shop"
-	
-	var shop_icon = _create_shop_icon()
-	shop_btn.add_child(shop_icon)
-	shop_btn.pressed.connect(_on_shop_pressed)
-	vbox.add_child(shop_btn)
-	
-	# Tutorials button
+	# Position rail
+	anchor_left = 1.0
+	anchor_right = 1.0
+	anchor_top = 0.0
+	anchor_bottom = 0.0
+
+	var h := (button_size.y * 3.0) + (gap * 2)  # 3 buttons now
+	offset_left = -button_size.x - right_margin
+	offset_right = -right_margin
+	offset_top = top_margin
+	offset_bottom = top_margin + h
+
+	mouse_filter = Control.MOUSE_FILTER_PASS
+
+	# Panels
+	settings_panel = get_node_or_null(settings_panel_path) as Control
+	shop_panel = get_node_or_null(shop_panel_path) as Control
+	if settings_panel: settings_panel.visible = false
+	if shop_panel: shop_panel.visible = false
+
+	# Setup buttons
+	_setup_button(settings_btn, "⚙")
+	_setup_button(shop_btn, "🛒")
+
+	# Copy upgrade button style
+	var ref_btn := _find_any_upgrade_button()
+	if ref_btn != null:
+		_copy_button_theme(ref_btn, settings_btn)
+		_copy_button_theme(ref_btn, shop_btn)
+
+	# Connect clicks
+	if settings_btn and not settings_btn.pressed.is_connected(_on_settings_pressed):
+		settings_btn.pressed.connect(_on_settings_pressed)
+	if shop_btn and not shop_btn.pressed.is_connected(_on_shop_pressed):
+		shop_btn.pressed.connect(_on_shop_pressed)
+
+	# ADD TUTORIALS BUTTON
+	_add_tutorials_button(ref_btn)
+
+func _add_tutorials_button(ref_btn: Button) -> void:
 	tutorials_btn = Button.new()
 	tutorials_btn.name = "TutorialsButton"
-	tutorials_btn.text = ""
-	tutorials_btn.custom_minimum_size = Vector2(40, 40)
-	tutorials_btn.tooltip_text = "Tutorials"
+	tutorials_btn.text = "📖"
+	tutorials_btn.custom_minimum_size = button_size
+	tutorials_btn.size_flags_horizontal = Control.SIZE_SHRINK_END
+	tutorials_btn.mouse_filter = Control.MOUSE_FILTER_PASS  # CHANGE to PASS, not STOP
 	
-	var tutorials_icon = _create_tutorials_icon()
-	tutorials_btn.add_child(tutorials_icon)
+	if ref_btn != null:
+		_copy_button_theme(ref_btn, tutorials_btn)
+	
 	tutorials_btn.pressed.connect(_on_tutorials_pressed)
-	vbox.add_child(tutorials_btn)
-
-func _create_settings_icon() -> Control:
-	var icon = Control.new()
-	icon.name = "SettingsIcon"
-	icon.custom_minimum_size = Vector2(24, 24)
-	icon.set_anchors_preset(Control.PRESET_CENTER)
-	return icon
-
-func _create_shop_icon() -> Control:
-	var icon = Control.new()
-	icon.name = "ShopIcon"
-	icon.custom_minimum_size = Vector2(24, 24)
-	icon.set_anchors_preset(Control.PRESET_CENTER)
-	return icon
-
-func _create_tutorials_icon() -> Control:
-	var icon = Control.new()
-	icon.name = "TutorialsIcon"
-	icon.custom_minimum_size = Vector2(24, 24)
-	icon.set_anchors_preset(Control.PRESET_CENTER)
-	return icon
-
-func _on_settings_pressed() -> void:
-	settings_pressed.emit()
-
-func _on_shop_pressed() -> void:
-	shop_pressed.emit()
+	
+	# CRITICAL: Make sure we're adding to the VBoxContainer
+	var vbox = $VBoxContainer  # Direct reference instead of get_parent()
+	if vbox:
+		vbox.add_child(tutorials_btn)
+		print("Tutorial button added to VBoxContainer")
+	else:
+		push_error("VBoxContainer not found in RightRail")
+		
+		vbox.add_child(tutorials_btn)
+		print("RightRail buttons added - Settings:", settings_btn != null, " Shop:", shop_btn != null, " Tutorial:", tutorials_btn != null)
 
 func _on_tutorials_pressed() -> void:
-	tutorials_pressed.emit()
-	var tutorial_mgr = get_node_or_null("/root/TutorialManager")
-	if tutorial_mgr:
-		tutorial_mgr.show_tutorial_menu()
+	print("Tutorial button pressed!")
+	if settings_panel:
+		settings_panel.visible = false
+	if shop_panel:
+		shop_panel.visible = false
+	
+	var tm = get_node_or_null("/root/TutorialManage")
+	if tm and tm.has_method("show_tutorial_menu"):
+		tm.show_tutorial_menu()
+	else:
+		push_error("TutorialManage not found")
+
+func _copy_button_theme(from_btn: Button, to_btn: Button) -> void:
+	if from_btn == null or to_btn == null:
+		return
+
+	for k in ["normal", "hover", "pressed", "disabled", "focus"]:
+		var sb := from_btn.get_theme_stylebox(k)
+		if sb:
+			to_btn.add_theme_stylebox_override(k, sb)
+	
+	# FIX: Ensure blue border is applied (in case reference button has no theme)
+	var border_color := Color(0.3, 0.5, 0.7, 1.0)  # Blue border
+	for k in ["normal", "hover", "pressed"]:
+		var existing := to_btn.get_theme_stylebox(k)
+		if existing is StyleBoxFlat:
+			existing.border_width_left = 2
+			existing.border_width_right = 2
+			existing.border_width_top = 2
+			existing.border_width_bottom = 2
+			existing.border_color = border_color
+
+func _setup_button(btn: Button, text: String) -> void:
+	if btn == null:
+		return
+
+	btn.text = text
+	btn.custom_minimum_size = button_size
+	btn.size_flags_horizontal = Control.SIZE_SHRINK_END
+	btn.mouse_filter = Control.MOUSE_FILTER_STOP
+
+	btn.add_theme_constant_override("h_separation", 0)
+	btn.add_theme_constant_override("content_margin_left", 6)
+	btn.add_theme_constant_override("content_margin_right", 6)
+	btn.add_theme_constant_override("content_margin_top", 6)
+	btn.add_theme_constant_override("content_margin_bottom", 6)
+
+func _on_settings_pressed() -> void:
+	if shop_panel:
+		shop_panel.visible = false
+	if tutorials_btn:
+		# Optional: hide tutorials indicator
+		pass
+	if settings_panel:
+		if settings_panel.has_method("open"):
+			settings_panel.call("open")
+		else:
+			settings_panel.visible = not settings_panel.visible
+
+func _on_shop_pressed() -> void:
+	if settings_panel:
+		settings_panel.visible = false
+	if shop_panel:
+		if shop_panel.has_method("open"):
+			shop_panel.call("open")
+		else:
+			shop_panel.visible = not shop_panel.visible
+
+func _find_any_upgrade_button() -> Button:
+	var row := get_tree().current_scene.find_child("UpgradeRow", true, false)
+	if row == null:
+		return get_tree().current_scene.find_child("Button", true, false) as Button
+	return _find_first_button(row)
+
+func _find_first_button(n: Node) -> Button:
+	if n is Button:
+		return n as Button
+	for c in n.get_children():
+		var b := _find_first_button(c)
+		if b != null:
+			return b
+	return null

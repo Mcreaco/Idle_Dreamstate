@@ -23,6 +23,7 @@ AdService="*res://AdService.gd"
 TimedBoostController="*res://TimedBoostController.gd"
 DepthRunController="*res://UI/DepthRunController.gd"
 DepthMeta="*res://DepthMetaSystem.gd"
+TutorialManage="*res://UI/TutorialManager.gd"
 
 [display]
 

@@ -1,8 +1,14 @@
 class_name TutorialManager
-extends CanvasLayer  # CRITICAL: Was Node, must be CanvasLayer for UI overlay
+extends CanvasLayer
 
 # ============================================
 # IDLE DREAMSTATE - TUTORIAL SYSTEM
+# ============================================
+# Comprehensive tutorial system with:
+# - Automatic triggers based on game state
+# - Highlight overlays showing where to click
+# - Forced navigation through Meta Panel
+# - Replay menu via Tutorials button
 # ============================================
 
 signal tutorial_started(tutorial_key: String)
@@ -16,22 +22,32 @@ enum TutorialState {
 	FORCED_NAVIGATION
 }
 
+# Current state
 var current_state: TutorialState = TutorialState.IDLE
 var active_tutorial: String = ""
 var current_step_idx: int = 0
 var tutorial_history: Array[String] = []
 var completed_tutorials: Array[String] = []
 
+# UI References
 var popup_panel: Panel = null
-var highlight_overlay: Panel = null  # Changed from ColorRect to Panel for borders
+var highlight_overlay: ColorRect = null
 var tutorial_menu: Control = null
 
+# Forced navigation tracking
 var expected_click_target: String = ""
 var navigation_queue: Array[Dictionary] = []
 
+var arrow_label: Label = null
+var block_overlay: ColorRect = null
+var pending_continue: bool = false
+
+# ============================================
+# TUTORIAL DEFINITIONS
+# ============================================
+
 const TUTORIALS: Dictionary = {
-	"first_run": {
-		"condition": "first_run",
+	"start_game": {
 		"priority": 100,
 		"steps": [
 			{
@@ -41,52 +57,77 @@ const TUTORIALS: Dictionary = {
 				"wait_for_click": false
 			},
 			{
-				"header": "The Thought Stream",
-				"body": "Watch as thoughts generate automatically. Click 'DIVE' when you're ready to descend deeper into the abyss.",
-				"highlight": "DiveButton",
+				"header": "Depth Progress Multiplier",
+				"body": "Watch the Depth 1 bar fill from 0% to 100%. This is your progress multiplier - it boosts thought generation from 1x up to 5x! Higher progress = faster thoughts. Choose wisely when to Wake.",
+				"highlight": "DepthBar1",  # Check: is this the correct node name?
+				"wait_for_click": false
+			},
+			{
+				"header": "Run Upgrades",
+				"body": "Click on the Depth 1 bar to see the Run Upgrades panel. Spend Thoughts on 'Thoughts Flow' to generate more thoughts. 'Stability' reduces instability growth. These reset each run, so spend them before you Wake!",
+				"highlight": "DepthBar1",  # Highlights the depth bar to click
+				"wait_for_click": true     # Forces them to click it to see upgrades
+			}
+		]
+	},
+	
+	"wake_unlocked": {
+		"priority": 95,
+		"steps": [
+		{
+				"header": "Ready to Wake (Prestige)",
+				"body": "Your Depth 1 bar reached 5%! Click WAKE to end your run and PRESTIGE. You'll convert progress into Memories - permanent currency for meta-upgrades. Each Wake/Prestige makes you stronger for the next descent!",
+				"highlight": "WakeButton",
 				"wait_for_click": true
 			}
 		]
 	},
-	"first_wake": {
-		"condition": "first_wake",
+	
+	"post_wake_meta": {  # NEW - Replaces your current "first_wake" 
 		"priority": 90,
+		"auto_open_meta": true,  # You'll handle this in GameManager
 		"steps": [
 			{
-				"header": "You Have Returned",
-				"body": "The abyss released you... this time. Your dive ended, but you brought something back.",
+				"header": "The Meta Panel",
+				"body": "Welcome back! You've earned Memories. This panel contains PERMANENT upgrades that last forever, even after waking.",
 				"highlight": null,
 				"wait_for_click": false
 			},
 			{
-				"header": "Memories of the Deep",
-				"body": "Memories are earned by reaching depth thresholds. They persist between dives and unlock permanent upgrades.",
-				"highlight": "MetaButton",
-				"wait_for_click": true
+				"header": "Permanent Upgrades",
+				"body": "These upgrades boost your thought generation, reduce instability, and improve all future runs. 'Memory Engine' increases ALL thought generation by 5% per level!",
+				"highlight": "TabPerm",
+				"wait_for_click": false
 			},
 			{
-				"header": "The Meta Panel",
-				"body": "Open the Meta Panel to spend memories on permanent upgrades that persist forever.",
+				"header": "Depth Upgrades Tab",
+				"body": "Now click the 'Depth Upgrades' tab to see something important.",
+				"highlight": "TabDepth",  # Check: is this your Depth Upgrades tab name?
+				"wait_for_click": true  # Forces click on Depth tab
+			},
+			{
+				"header": "Unlocking New Depths",
+				"body": "Each depth has its own upgrades. Buy all 10 'Stabilize' upgrades here to permanently unlock the ability to dive to Depth 2!",
 				"highlight": null,
-				"navigate": ["MetaButton", "TabPerm"],
-				"wait_for_click": true
+				"wait_for_click": false
 			}
 		]
 	},
-	"depth_2_unlock": {
-		"condition": "depth_2_unlocked",
+	
+	"depth_2_first_time": {  # NEW - Your current "depth_2_unlock" modified
 		"priority": 80,
 		"steps": [
 			{
-				"header": "Deeper Waters",
-				"body": "You have unlocked Depth Tier 2! Deeper depths generate thoughts faster but instability grows more quickly.",
-				"highlight": "DepthBar2",
+				"header": "Depth 2 - The Descent",
+				"body": "You've unlocked Depth 2! Deeper depths generate thoughts much faster, but now you face INSTABILITY. As this rises, so does the risk of forced Wake.",
+				"highlight": "InstabilityBar",
 				"wait_for_click": false
 			}
 		]
 	},
-	"depth_3_unlock": {
-		"condition": "depth_3_unlocked",
+	
+	# KEEP your existing ones from here down:
+	"depth_3_unlock": {  # Keep existing
 		"priority": 80,
 		"steps": [
 			{
@@ -97,8 +138,8 @@ const TUTORIALS: Dictionary = {
 			}
 		]
 	},
-	"first_instability": {
-		"condition": "instability_50",
+	
+	"first_instability": {  # Keep existing
 		"priority": 85,
 		"steps": [
 			{
@@ -109,8 +150,8 @@ const TUTORIALS: Dictionary = {
 			}
 		]
 	},
-	"first_event": {
-		"condition": "first_event",
+	
+	"first_event": {  # Keep existing
 		"priority": 85,
 		"steps": [
 			{
@@ -121,8 +162,8 @@ const TUTORIALS: Dictionary = {
 			}
 		]
 	},
-	"overclock_unlock": {
-		"condition": "overclock_unlocked",
+	
+	"overclock_unlock": {  # Keep existing
 		"priority": 75,
 		"steps": [
 			{
@@ -133,8 +174,8 @@ const TUTORIALS: Dictionary = {
 			}
 		]
 	},
-	"first_crystal": {
-		"condition": "first_crystal",
+	
+	"first_crystal": {  # Keep existing
 		"priority": 80,
 		"steps": [
 			{
@@ -145,8 +186,8 @@ const TUTORIALS: Dictionary = {
 			}
 		]
 	},
-	"shop_unlock": {
-		"condition": "shop_unlocked",
+	
+	"shop_unlock": {  # Keep existing
 		"priority": 70,
 		"steps": [
 			{
@@ -157,8 +198,8 @@ const TUTORIALS: Dictionary = {
 			}
 		]
 	},
-	"auto_buy_unlock": {
-		"condition": "auto_buy_unlocked",
+	
+	"auto_buy_unlock": {  # Keep existing
 		"priority": 75,
 		"steps": [
 			{
@@ -169,8 +210,8 @@ const TUTORIALS: Dictionary = {
 			}
 		]
 	},
-	"pressure_explained": {
-		"condition": "pressure_10",
+	
+	"pressure_explained": {  # Keep existing
 		"priority": 70,
 		"steps": [
 			{
@@ -181,45 +222,94 @@ const TUTORIALS: Dictionary = {
 			}
 		]
 	},
-	"prestige_explained": {
-		"condition": "prestige_available",
-		"priority": 60,
-		"steps": [
-			{
-				"header": "The Cycle Continues",
-				"body": "You can now PRESTIGE! Reset your progress to gain powerful permanent bonuses. Each prestige makes future descents faster and deeper.",
-				"highlight": "PrestigeButton",
-				"wait_for_click": false
-			}
-		]
-	}
 }
+
+# ============================================
+# LIFECYCLE
+# ============================================
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
-	layer = 100  # Render on top of everything
+	layer = 100
 	_create_popup_ui()
 	_create_highlight_overlay()
+	_create_arrow()  # ADD
+	_create_block_overlay()  # ADD
 
+	# DEBUG: Clear history so tutorials always trigger
+	completed_tutorials.clear()
+	tutorial_history.clear()
+	print("TutorialManager ready on layer: ", layer)
+
+func _create_arrow() -> void:
+	arrow_label = Label.new()
+	arrow_label.name = "TutorialArrow"
+	arrow_label.text = "▼ CLICK HERE ▼"  # Or use "⬇" or "👇"
+	arrow_label.add_theme_font_size_override("font_size", 18)
+	arrow_label.add_theme_color_override("font_color", Color(1.0, 1.0, 0.0, 1.0))  # Yellow
+	arrow_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 1.0))
+	arrow_label.add_theme_constant_override("shadow_offset_x", 2)
+	arrow_label.add_theme_constant_override("shadow_offset_y", 2)
+	arrow_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	arrow_label.visible = false
+	arrow_label.z_index = 101  # Above highlight
+	add_child(arrow_label)
+	
+		# Make it flash
+	var tween = create_tween().set_loops()
+	tween.tween_property(arrow_label, "modulate:a", 0.3, 0.5)
+	tween.tween_property(arrow_label, "modulate:a", 1.0, 0.5)
+
+func _create_block_overlay() -> void:
+	block_overlay = ColorRect.new()
+	block_overlay.name = "BlockOverlay"
+	block_overlay.color = Color(0, 0, 0, 0.4)  # Semi-transparent black
+	block_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	block_overlay.visible = false
+	block_overlay.z_index = 49  # Below highlight (50) but above game
+	block_overlay.mouse_filter = Control.MOUSE_FILTER_STOP  # Block clicks
+	add_child(block_overlay)
+	
 func _process(_delta: float) -> void:
-	if current_state == TutorialState.IDLE and active_tutorial == "":
+	if current_state == TutorialState.IDLE:
 		_check_tutorial_triggers()
+	
+	# Auto-detect when waiting for TabDepth and it becomes visible/active
+	if current_state == TutorialState.WAITING_CLICK and expected_click_target == "TabDepth":
+		var tab_depth = _find_ui_element("TabDepth")
+		if tab_depth:
+			# Check if it's the active/selected tab
+			if tab_depth is Button and tab_depth.button_pressed:
+				on_ui_element_clicked("TabDepth")
+			# Or check if panel content changed to depth upgrades
+			elif tab_depth.has_method("is_active") and tab_depth.is_active():
+				on_ui_element_clicked("TabDepth")
+
+	# DEBUG: Clear history so tutorials always trigger
+	completed_tutorials.clear()
+	tutorial_history.clear()
+	print("TutorialManager ready on layer: ", layer)
 
 func start_tutorial(tutorial_key: String) -> bool:
+	print("Trying to start tutorial: ", tutorial_key)
+	
 	if not TUTORIALS.has(tutorial_key):
 		push_error("Tutorial not found: " + tutorial_key)
 		return false
 	
 	if tutorial_key in completed_tutorials:
+		print("Tutorial already completed: ", tutorial_key)
 		return false
 	
 	if active_tutorial != "":
+		print("Tutorial already active: ", active_tutorial)
 		return false
 	
 	active_tutorial = tutorial_key
 	current_step_idx = 0
 	current_state = TutorialState.WAITING_CLICK
 	
+	print("Starting tutorial: ", tutorial_key)
 	tutorial_started.emit(tutorial_key)
 	_show_current_step()
 	
@@ -238,15 +328,30 @@ func _complete_tutorial() -> void:
 	
 	tutorial_completed.emit(active_tutorial)
 	
-	_hide_popup()
-	_hide_highlight()
+	_hide_popup()      # This should work now
+	_hide_highlight()  # Make sure this exists too
 	
 	active_tutorial = ""
 	current_step_idx = 0
 	current_state = TutorialState.IDLE
 	navigation_queue.clear()
 	expected_click_target = ""
+	arrow_label.visible = false  # Hide arrow too
+	block_overlay.visible = false  # Hide blocker too
+	pending_continue = false
 
+func on_meta_opened() -> void:
+	if current_state == TutorialState.WAITING_CLICK and pending_continue:
+		var step_data = TUTORIALS[active_tutorial]["steps"][current_step_idx]
+		if step_data.get("highlight") == "MetaButton":
+			pending_continue = false
+			block_overlay.visible = false
+			arrow_label.visible = false
+			var vbox = popup_panel.get_node("MarginBox/ContentContainer")
+			var continue_btn: Button = vbox.get_node("ButtonRow/ContinueButton")
+			continue_btn.visible = true
+			current_state = TutorialState.HIGHLIGHTING
+			
 func advance_step() -> void:
 	if active_tutorial == "":
 		return
@@ -262,12 +367,17 @@ func advance_step() -> void:
 		tutorial_step_advanced.emit(current_step_idx)
 		_show_current_step()
 
+# ============================================
+# UI CREATION
+# ============================================
+
 func _create_popup_ui() -> void:
 	popup_panel = Panel.new()
 	popup_panel.name = "TutorialPopup"
-	popup_panel.custom_minimum_size = Vector2(400, 200)
-	popup_panel.size = Vector2(400, 200)
+	popup_panel.custom_minimum_size = Vector2(500, 250)
+	popup_panel.size = Vector2(500, 250)
 	popup_panel.visible = false
+	popup_panel.z_index = 200  # INCREASED from 100 to be above depth panels
 	
 	var popup_style = StyleBoxFlat.new()
 	popup_style.bg_color = Color(0.1, 0.1, 0.15, 0.95)
@@ -336,30 +446,33 @@ func _create_popup_ui() -> void:
 	add_child(popup_panel)
 
 func _create_highlight_overlay() -> void:
-	# Changed to Panel so we can have borders
-	highlight_overlay = Panel.new()
+	highlight_overlay = ColorRect.new()
 	highlight_overlay.name = "HighlightOverlay"
+	highlight_overlay.color = Color(1.0, 1.0, 0.3, 0.3)
 	highlight_overlay.visible = false
-	highlight_overlay.z_index = 50
+	highlight_overlay.z_index = 250  # INCREASED - above popup
 	highlight_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(highlight_overlay)
 	
 	var highlight_style = StyleBoxFlat.new()
-	highlight_style.bg_color = Color(1.0, 1.0, 0.3, 0.2)  # Yellow transparent fill
 	highlight_style.border_width_left = 3
 	highlight_style.border_width_right = 3
 	highlight_style.border_width_top = 3
 	highlight_style.border_width_bottom = 3
-	highlight_style.border_color = Color(1.0, 0.9, 0.3, 1.0)  # Solid yellow border
+	highlight_style.border_color = Color(1.0, 0.9, 0.3, 1.0)
 	highlight_style.corner_radius_top_left = 4
 	highlight_style.corner_radius_top_right = 4
 	highlight_style.corner_radius_bottom_left = 4
 	highlight_style.corner_radius_bottom_right = 4
-	highlight_overlay.add_theme_stylebox_override("panel", highlight_style)
 	
 	add_child(highlight_overlay)
 
+# ============================================
+# UI DISPLAY
+# ============================================
+
 func _show_current_step() -> void:
-	if active_tutorial == "" or popup_panel == null:
+	if active_tutorial == "":
 		return
 	
 	var tutorial_data: Dictionary = TUTORIALS[active_tutorial]
@@ -371,33 +484,40 @@ func _show_current_step() -> void:
 	
 	var step_data: Dictionary = steps[current_step_idx]
 	
-	# Update popup content with null checks
-	var margin = popup_panel.get_node_or_null("MarginBox")
-	if margin == null:
-		return
-	var vbox = margin.get_node_or_null("ContentContainer")
-	if vbox == null:
-		return
-		
-	var header_label: Label = vbox.get_node_or_null("PopupHeader")
-	var body_label: Label = vbox.get_node_or_null("PopupBody")
+	# Update popup content
+	var vbox = popup_panel.get_node("MarginBox/ContentContainer")
+	var header_label: Label = vbox.get_node("PopupHeader")
+	var body_label: Label = vbox.get_node("PopupBody")
+	var continue_btn: Button = vbox.get_node("ButtonRow/ContinueButton")
+	var skip_btn: Button = vbox.get_node("ButtonRow/SkipButton")
 	
-	if header_label:
-		header_label.text = step_data.get("header", "")
-	if body_label:
-		body_label.text = step_data.get("body", "")
+	header_label.text = step_data.get("header", "")
+	body_label.text = step_data.get("body", "")
 	
-	# Center popup in viewport
+	# Center popup
 	var viewport_size = get_viewport().get_visible_rect().size
 	popup_panel.position = (viewport_size - popup_panel.size) / 2
 	popup_panel.visible = true
 	
-	# Handle highlight
+	# Handle highlight and blocking
 	var highlight_target = step_data.get("highlight", "")
-	if highlight_target != "":
+	if highlight_target != null and highlight_target != "":
 		_highlight_element(highlight_target)
+		_position_arrow(highlight_target)
+		if step_data.get("wait_for_click", false):
+			expected_click_target = highlight_target  # ADD THIS LINE
+			continue_btn.visible = false
+			skip_btn.visible = false
+		else:
+			continue_btn.visible = true
+			arrow_label.visible = false
 	else:
 		_hide_highlight()
+		arrow_label.visible = false
+		expected_click_target = ""  # ADD THIS LINE
+		continue_btn.visible = true
+	
+	current_state = TutorialState.WAITING_CLICK if step_data.get("wait_for_click", false) else TutorialState.HIGHLIGHTING
 	
 	# Handle forced navigation
 	if step_data.has("navigate"):
@@ -407,23 +527,25 @@ func _show_current_step() -> void:
 			navigation_queue.append({"target": nav_item})
 		_start_forced_navigation()
 	
-	# Update button visibility based on wait state
-	var button_row = vbox.get_node_or_null("ButtonRow")
-	if button_row:
-		var skip_btn: Button = button_row.get_node_or_null("SkipButton")
-		if skip_btn:
-			skip_btn.visible = not step_data.get("wait_for_click", false)
+	current_state = TutorialState.WAITING_CLICK if step_data.get("wait_for_click", false) else TutorialState.HIGHLIGHTING
+
+func _position_arrow(element_key: String) -> void:
+	var target = _find_ui_element(element_key)
+	if target == null:
+		arrow_label.visible = false
+		return
 	
-	# Set state
-	if step_data.get("wait_for_click", false):
-		current_state = TutorialState.WAITING_CLICK
-	else:
-		current_state = TutorialState.HIGHLIGHTING
+	var pos = target.global_position
+	var size = target.size
+	
+	# Position arrow above the target
+	arrow_label.position = Vector2(
+		pos.x + size.x / 2 - arrow_label.size.x / 2,
+		pos.y - 40  # 40 pixels above
+	)
+	arrow_label.visible = true
 
 func _highlight_element(element_key: String) -> void:
-	if highlight_overlay == null:
-		return
-		
 	var target_element = _find_ui_element(element_key)
 	if target_element == null:
 		highlight_overlay.visible = false
@@ -435,34 +557,63 @@ func _highlight_element(element_key: String) -> void:
 	highlight_overlay.position = global_pos
 	highlight_overlay.size = element_size
 	highlight_overlay.visible = true
+	
+	# Also store current target for click detection
+	expected_click_target = element_key
 
 func _hide_highlight() -> void:
-	if highlight_overlay:
-		highlight_overlay.visible = false
+	highlight_overlay.visible = false
+	arrow_label.visible = false
+	block_overlay.visible = false
 
+func _on_continue_pressed() -> void:
+	if current_state == TutorialState.WAITING_CLICK and pending_continue:
+		# Check if we're on the Meta step and Meta panel is open
+		var step_data = TUTORIALS[active_tutorial]["steps"][current_step_idx]
+		if step_data.get("highlight") == "MetaButton":
+			var meta_panel = _find_ui_element("MetaPanel")
+			if meta_panel and meta_panel.visible:
+				pending_continue = false
+				block_overlay.visible = false
+				advance_step()
+				return
+		return
+	
+	advance_step()
+
+func _input(_event: InputEvent) -> void:  # Added underscore to _event
+	# Detect when Meta panel opens while waiting
+	if current_state == TutorialState.WAITING_CLICK and pending_continue:
+		var step_data = TUTORIALS[active_tutorial]["steps"][current_step_idx]
+		if step_data.get("highlight") == "MetaButton":
+			var meta_panel = _find_ui_element("MetaPanel")
+			if meta_panel and meta_panel.visible:
+				# Meta is open, show continue button
+				var vbox = popup_panel.get_node("MarginBox/ContentContainer")
+				var continue_btn: Button = vbox.get_node("ButtonRow/ContinueButton")
+				continue_btn.visible = true
+				block_overlay.visible = false
+				arrow_label.visible = false
+				current_state = TutorialState.HIGHLIGHTING
+	
+# ============================================
+# UI ELEMENT FINDING
+# ============================================
 func _hide_popup() -> void:
 	if popup_panel:
 		popup_panel.visible = false
 
-func _on_continue_pressed() -> void:
-	if current_state == TutorialState.WAITING_CLICK:
-		return
-	advance_step()
-
 func _find_ui_element(target_element_name: String) -> Control:
-	var tree = get_tree()
-	if tree == null:
-		return null
-		
-	var current_scene = tree.current_scene
+	var current_scene = get_tree().current_scene
 	if current_scene == null:
 		return null
 	
-	# Search recursively but only in the current scene
-	var found_element = current_scene.find_child(target_element_name, true, false)
-	if found_element is Control:
-		return found_element as Control
-	return null
+	var found_element = current_scene.find_child(target_element_name, true, false) as Control
+	return found_element
+
+# ============================================
+# FORCED NAVIGATION
+# ============================================
 
 func _start_forced_navigation() -> void:
 	if navigation_queue.is_empty():
@@ -473,90 +624,138 @@ func _start_forced_navigation() -> void:
 	var next_nav = navigation_queue.pop_front()
 	expected_click_target = next_nav["target"]
 	
+	# Highlight the expected target
 	_highlight_element(expected_click_target)
 
 func on_ui_element_clicked(clicked_element_name: String) -> bool:
-	if current_state != TutorialState.FORCED_NAVIGATION:
-		return false
+	# Handle forced navigation queue (existing logic)
+	if current_state == TutorialState.FORCED_NAVIGATION:
+		if clicked_element_name != expected_click_target:
+			return false
+		
+		if navigation_queue.is_empty():
+			current_state = TutorialState.WAITING_CLICK
+			expected_click_target = ""
+			_hide_highlight()
+			arrow_label.visible = false
+		else:
+			_start_forced_navigation()
+		return true
 	
-	if clicked_element_name != expected_click_target:
-		return false
-	
-	# Correct element clicked
-	if navigation_queue.is_empty():
-		current_state = TutorialState.WAITING_CLICK
+	# Handle simple wait-for-click on specific element (NEW)
+	elif current_state == TutorialState.WAITING_CLICK and expected_click_target != "":
+		if clicked_element_name != expected_click_target:
+			return false
+		
+		# Correct element clicked - advance tutorial
 		expected_click_target = ""
 		_hide_highlight()
-	else:
-		_start_forced_navigation()
+		arrow_label.visible = false
+		advance_step()
+		return true
 	
-	return true
+	return false
+
+# ============================================
+# TRIGGER CHECKING
+# ============================================
 
 func _check_tutorial_triggers() -> void:
-	# Only check if we have a valid game state
 	var game_mgr = get_node_or_null("/root/GameManager")
 	if game_mgr == null:
 		return
-		
-	for tutorial_key in TUTORIALS.keys():
-		if tutorial_key in completed_tutorials:
-			continue
-		if tutorial_key in tutorial_history:
+	
+	# Check depth 1 progress for wake tutorial (5%)
+	if not "wake_unlocked" in completed_tutorials and not "wake_unlocked" in tutorial_history:
+		if game_mgr.has_method("get_depth_progress"):
+			var progress = game_mgr.call("get_depth_progress", 1)
+			if progress >= 0.05:
+				start_tutorial("wake_unlocked")
+				return
+	
+	# Check post-wake meta tutorial (after wake with memories)
+	if not "post_wake_meta" in completed_tutorials and not "post_wake_meta" in tutorial_history:
+		if game_mgr.has("memories") and game_mgr.memories > 0 and not game_mgr.is_diving:
+			# Only trigger if wake_unlocked was completed
+			if "wake_unlocked" in completed_tutorials:
+				start_tutorial("post_wake_meta")
+				return
+	
+	# Check depth 2 entry
+	if not "depth_2_first_time" in completed_tutorials:
+		if game_mgr.has("current_depth") and game_mgr.current_depth == 2:
+			start_tutorial("depth_2_first_time")
+			return
+	
+	# Keep existing condition checks for other tutorials
+	for tutorial_key in ["depth_3_unlock", "first_instability", "first_event", "overclock_unlock", 
+						"first_crystal", "shop_unlock", "auto_buy_unlock", "pressure_explained"]:
+		if tutorial_key in completed_tutorials or tutorial_key in tutorial_history:
 			continue
 		
 		var tutorial_data: Dictionary = TUTORIALS[tutorial_key]
 		var condition_type = tutorial_data.get("condition", "")
 		
-		if _check_condition(condition_type, game_mgr):
+		if _check_condition(condition_type):
 			start_tutorial(tutorial_key)
 			return
 
-func _check_condition(condition_type: String, game_mgr: Node) -> bool:
+# Alias for GameManager compatibility
+func _check_trigger_tutorials() -> void:
+	_check_tutorial_triggers()
+
+func _check_condition(condition_type: String) -> bool:
+	var game_mgr = get_node_or_null("/root/GameManager")
+	if game_mgr == null:
+		return false
+	
 	match condition_type:
 		"first_run":
-			return game_mgr.get("total_runs") == 0 and not game_mgr.get("is_diving")
+			return game_mgr.total_runs == 0 and not game_mgr.is_diving
 		
 		"first_wake":
-			return game_mgr.get("total_runs") == 1 and not game_mgr.get("is_diving")
+			return game_mgr.total_runs == 1 and not game_mgr.is_diving
 		
 		"depth_2_unlocked":
-			return game_mgr.get("max_depth_tier_reached") >= 2
+			return game_mgr.max_depth_tier_reached >= 2
 		
 		"depth_3_unlocked":
-			return game_mgr.get("max_depth_tier_reached") >= 3
+			return game_mgr.max_depth_tier_reached >= 3
 		
 		"instability_50":
 			var drc = game_mgr.get_node_or_null("DepthRunController")
 			if drc:
-				return drc.get("instability") >= 50.0
+				return drc.instability >= 50.0
 			return false
 		
 		"first_event":
-			return false  # Implement via save flag
-		
-		"overclock_unlocked":
-			return game_mgr.get("crystals") > 0
-		
-		"first_crystal":
-			return game_mgr.get("crystals") > 0 and not "first_crystal" in completed_tutorials
-		
-		"shop_unlocked":
-			return game_mgr.get("total_runs") >= 2
-		
-		"auto_buy_unlocked":
-			var levels = game_mgr.get("depth_upgrade_levels")
-			if levels is Dictionary:
-				return levels.get("automated_mind_1", 0) > 0
+			# Track via separate flag in save
 			return false
 		
+		"overclock_unlocked":
+			return game_mgr.crystals > 0
+		
+		"first_crystal":
+			return game_mgr.crystals > 0 and not "first_crystal" in completed_tutorials
+		
+		"shop_unlocked":
+			return game_mgr.total_runs >= 2
+		
+		"auto_buy_unlocked":
+			return game_mgr.depth_upgrade_levels.get("automated_mind_1", 0) > 0
+		
 		"pressure_10":
-			return game_mgr.get("pressure") >= 10.0
+			return game_mgr.pressure >= 10.0
 		
 		"prestige_available":
-			return game_mgr.get("memories") >= 100
+			return game_mgr.memories >= 100
 		
 		_:
 			return false
+
+# ============================================
+# TUTORIAL MENU (REPLAY)
+# ============================================
 
 func show_tutorial_menu() -> void:
 	if tutorial_menu != null:
@@ -625,6 +824,7 @@ func _create_tutorial_menu() -> Control:
 	scroll_vbox.add_theme_constant_override("separation", 10)
 	scroll.add_child(scroll_vbox)
 	
+	# Add tutorial entries
 	for tutorial_key in TUTORIALS.keys():
 		var tutorial_data: Dictionary = TUTORIALS[tutorial_key]
 		var entry = _create_tutorial_menu_entry(tutorial_key, tutorial_data)
@@ -636,6 +836,9 @@ func _create_tutorial_menu() -> Control:
 	close_btn.pressed.connect(hide_tutorial_menu)
 	close_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	vbox.add_child(close_btn)
+	
+	arrow_label.z_index = 260  # INCREASED - above everything
+	add_child(arrow_label)
 	
 	return menu_panel
 
@@ -674,10 +877,15 @@ func _create_tutorial_menu_entry(tutorial_key: String, tutorial_data: Dictionary
 	return entry
 
 func _replay_tutorial(tutorial_key: String) -> void:
+	# Remove from completed to allow replay
 	completed_tutorials.erase(tutorial_key)
 	tutorial_history.erase(tutorial_key)
 	hide_tutorial_menu()
 	start_tutorial(tutorial_key)
+
+# ============================================
+# SAVE/LOAD
+# ============================================
 
 func get_save_data() -> Dictionary:
 	return {

@@ -102,6 +102,10 @@ var _fail_save_prompt_shown: bool = false
 var _fail_save_used: bool = false
 var tutorial_manager: TutorialManager = null
 
+var total_runs: int = 0  # Increment this when waking
+var is_diving: bool = false  # Set to true when diving, false when idle
+var max_depth_tier_reached: int = 1  # Track highest depth unlocked
+
 func get_dive_instability_gain(depth: int) -> float:
 	return 5.0 + (depth * 1.5)
 
@@ -238,9 +242,13 @@ func _ready() -> void:
 		_debug_visible = true
 	_update_debug_overlay()
 	
-		# Create tutorial manager
-	tutorial_manager = TutorialManager.new()
-	add_child(tutorial_manager)
+	# TEST: Force tutorial after 2 seconds
+	await get_tree().create_timer(2.0).timeout
+	var tm = get_node_or_null("/root/TutorialManage")  # Not TutorialManager
+	if tm:
+		tm.start_tutorial("wake_unlocked")
+	else:
+		print("ERROR: TutorialManager not found at /root/TutorialManager")
 
 	
 func _force_rate_sample() -> void:
@@ -420,6 +428,11 @@ func _on_meta_pressed() -> void:
 	meta_panel.toggle_open()
 	_force_rate_sample()
 	_refresh_top_ui()
+	
+	# Notify tutorial manager
+	var tm = get_node_or_null("/root/TutorialManage")
+	if tm and tm.has_method("on_meta_opened"):
+		tm.on_meta_opened()
 
 func _sync_meta_progress() -> void:
 	var current_depth = get_current_depth()
@@ -468,11 +481,11 @@ func _on_wake_pressed() -> void:
 	_last_wake_depth_for_meta = d
 	prestige_panel.open_with_depth(mem_gain, crystals_by_name, d)
 	
-	# Trigger first wake tutorial
-	set_meta("just_woke", true)
-	if tutorial_manager != null:
-		tutorial_manager._check_trigger_tutorials()
-		remove_meta("just_woke")
+	total_runs += 1
+	# Notify tutorial that wake was clicked
+	var tm = get_node_or_null("/root/TutorialManage")
+	if tm and tm.has_method("on_ui_element_clicked"):
+		tm.on_ui_element_clicked("WakeButton")
 
 # Connect button clicks to tutorial manager
 func _connect_tutorial_signals() -> void:
@@ -1963,6 +1976,15 @@ func _on_ad_timed_boost(seconds: float) -> void:
 func _on_ad_fail_save_reward() -> void:
 	pass
 
+func get_depth_progress(depth_idx: int) -> float:
+	var drc = get_node_or_null("/root/DepthRunController")
+	if not drc:
+		return 0.0
+	var run_data = drc.get("run")
+	if run_data and depth_idx <= run_data.size():
+		return float(run_data[depth_idx - 1].get("progress", 0.0))
+	return 0.0
+	
 func can_dive_to_next_depth() -> bool:
 	# Can only dive if current depth instability upgrade is maxed
 	var current_instab_upgrade_level: int = upgrade_manager.stability_level
@@ -2241,3 +2263,35 @@ func is_auto_buy_unlocked_for_depth(depth: int) -> bool:
 				return true
 	
 	return false
+
+func _update_run_upgrade_text_color(depth: int) -> void:
+	# Find all description labels in the run upgrades panel
+	var run_panel = get_tree().current_scene.find_child("RunUpgradesPanel", true, false)
+	if not run_panel:
+		return
+	
+	# Find all description labels (assuming they have "Desc" in the name or are Labels)
+	var labels = run_panel.find_children("*", "Label", true)
+	
+	for label in labels:
+		# Only change description labels, not headers or costs
+		if "desc" in label.name.to_lower() or "description" in label.name.to_lower():
+			if depth == 1:
+				# Dark text for light background (Depth 1)
+				label.add_theme_color_override("font_color", Color(0.1, 0.1, 0.1, 1.0))  # Near black
+			else:
+				# Light text for dark backgrounds (Depth 2+)
+				label.add_theme_color_override("font_color", Color(0.9, 0.9, 0.9, 1.0))  # Light gray/white
+
+func fix_depth1_text_color() -> void:
+	var current_depth = get_current_depth()
+	if current_depth != 1:
+		return
+	
+	# Find all description labels in upgrade rows
+	var rows = get_tree().current_scene.find_children("*", "UpgradeRow", true, false)
+	for row in rows:
+		var desc_label = row.find_child("DescLabel", false, false)  # Adjust name if different
+		if desc_label:
+			desc_label.add_theme_color_override("font_color", Color(0.1, 0.1, 0.15, 1.0))  # Dark blue-black
+			desc_label.add_theme_color_override("font_shadow_color", Color(1, 1, 1, 0.5))  # White shadow for contrast

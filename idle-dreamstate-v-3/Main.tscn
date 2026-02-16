@@ -310,6 +310,10 @@ visible = true
 text = "Meta
 "
 
+[node name="RightRail" parent="MainUI/Root" index="5"]
+settings_panel_path = NodePath("")
+shop_panel_path = NodePath("")
+
 [node name="MetaPanel" type="Control" parent="MainUI"]
 visible = false
 self_modulate = Color(0.1882353, 0.19215687, 0.34117648, 0.78431374)

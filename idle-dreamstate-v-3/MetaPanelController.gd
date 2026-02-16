@@ -563,7 +563,7 @@ func _ensure_depth_tab_spacer() -> void:
 
 func _on_depth_tab_pressed(depth_index: int) -> void:
 	_show_depth(depth_index)
-
+	
 func _show_depth(depth_index: int) -> void:
 	if depth_pages == null:
 		return
