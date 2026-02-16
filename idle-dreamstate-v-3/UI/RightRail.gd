@@ -26,7 +26,7 @@ func _ready() -> void:
 	anchor_top = 0.0
 	anchor_bottom = 0.0
 
-	var h := (button_size.y * 3.0) + (gap * 2)  # 3 buttons now
+	var h := (button_size.y * 3.0) + (gap * 2)
 	offset_left = -button_size.x - right_margin
 	offset_right = -right_margin
 	offset_top = top_margin
@@ -34,11 +34,22 @@ func _ready() -> void:
 
 	mouse_filter = Control.MOUSE_FILTER_PASS
 
-	# Panels
+	# Panels - try exported paths first, then find in tree
 	settings_panel = get_node_or_null(settings_panel_path) as Control
 	shop_panel = get_node_or_null(shop_panel_path) as Control
-	if settings_panel: settings_panel.visible = false
-	if shop_panel: shop_panel.visible = false
+	
+	# FALLBACK: Find by name if exports not set (fixes null panel issue)
+	if settings_panel == null:
+		settings_panel = get_tree().current_scene.find_child("SettingsPanel", true, false) as Control
+	if shop_panel == null:
+		shop_panel = get_tree().current_scene.find_child("ShopPanel", true, false) as Control
+		
+	print("RightRail panels found - Settings:", settings_panel != null, " Shop:", shop_panel != null)
+
+	if settings_panel: 
+		settings_panel.visible = false
+	if shop_panel: 
+		shop_panel.visible = false
 
 	# Setup buttons
 	_setup_button(settings_btn, "⚙")
@@ -50,11 +61,16 @@ func _ready() -> void:
 		_copy_button_theme(ref_btn, settings_btn)
 		_copy_button_theme(ref_btn, shop_btn)
 
-	# Connect clicks
-	if settings_btn and not settings_btn.pressed.is_connected(_on_settings_pressed):
-		settings_btn.pressed.connect(_on_settings_pressed)
-	if shop_btn and not shop_btn.pressed.is_connected(_on_shop_pressed):
-		shop_btn.pressed.connect(_on_shop_pressed)
+	# Connect clicks - AND FIX MOUSE FILTER
+	if settings_btn:
+		if not settings_btn.pressed.is_connected(_on_settings_pressed):
+			settings_btn.pressed.connect(_on_settings_pressed)
+		settings_btn.mouse_filter = Control.MOUSE_FILTER_PASS  # FIX: Was STOP, use PASS like tutorial button
+			
+	if shop_btn:
+		if not shop_btn.pressed.is_connected(_on_shop_pressed):
+			shop_btn.pressed.connect(_on_shop_pressed)
+		shop_btn.mouse_filter = Control.MOUSE_FILTER_PASS  # FIX: Was STOP, use PASS like tutorial button
 
 	# ADD TUTORIALS BUTTON
 	_add_tutorials_button(ref_btn)
@@ -65,24 +81,21 @@ func _add_tutorials_button(ref_btn: Button) -> void:
 	tutorials_btn.text = "📖"
 	tutorials_btn.custom_minimum_size = button_size
 	tutorials_btn.size_flags_horizontal = Control.SIZE_SHRINK_END
-	tutorials_btn.mouse_filter = Control.MOUSE_FILTER_PASS  # CHANGE to PASS, not STOP
+	tutorials_btn.mouse_filter = Control.MOUSE_FILTER_PASS
 	
 	if ref_btn != null:
 		_copy_button_theme(ref_btn, tutorials_btn)
 	
 	tutorials_btn.pressed.connect(_on_tutorials_pressed)
 	
-	# CRITICAL: Make sure we're adding to the VBoxContainer
-	var vbox = $VBoxContainer  # Direct reference instead of get_parent()
+	var vbox = $VBoxContainer
 	if vbox:
 		vbox.add_child(tutorials_btn)
 		print("Tutorial button added to VBoxContainer")
+		print("RightRail buttons - Settings:", settings_btn != null, " Shop:", shop_btn != null, " Tutorial:", tutorials_btn != null)
 	else:
 		push_error("VBoxContainer not found in RightRail")
-		
-		vbox.add_child(tutorials_btn)
-		print("RightRail buttons added - Settings:", settings_btn != null, " Shop:", shop_btn != null, " Tutorial:", tutorials_btn != null)
-
+	
 func _on_tutorials_pressed() -> void:
 	print("Tutorial button pressed!")
 	if settings_panel:

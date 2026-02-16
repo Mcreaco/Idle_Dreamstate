@@ -26,8 +26,8 @@ enum TutorialState {
 var current_state: TutorialState = TutorialState.IDLE
 var active_tutorial: String = ""
 var current_step_idx: int = 0
-var tutorial_history: Array[String] = []
-var completed_tutorials: Array[String] = []
+var completed_tutorials: Array = []
+var tutorial_history: Array = []
 
 # UI References
 var popup_panel: Panel = null
@@ -236,27 +236,22 @@ func _ready() -> void:
 	_create_arrow()  # ADD
 	_create_block_overlay()  # ADD
 
-	# DEBUG: Clear history so tutorials always trigger
-	completed_tutorials.clear()
-	tutorial_history.clear()
-	print("TutorialManager ready on layer: ", layer)
-
 func _create_arrow() -> void:
 	arrow_label = Label.new()
 	arrow_label.name = "TutorialArrow"
-	arrow_label.text = "▼ CLICK HERE ▼"  # Or use "⬇" or "👇"
+	arrow_label.text = "▼ CLICK HERE ▼"
 	arrow_label.add_theme_font_size_override("font_size", 18)
-	arrow_label.add_theme_color_override("font_color", Color(1.0, 1.0, 0.0, 1.0))  # Yellow
+	arrow_label.add_theme_color_override("font_color", Color(1.0, 1.0, 0.0, 1.0))
 	arrow_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 1.0))
 	arrow_label.add_theme_constant_override("shadow_offset_x", 2)
 	arrow_label.add_theme_constant_override("shadow_offset_y", 2)
 	arrow_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	arrow_label.visible = false
-	arrow_label.z_index = 101  # Above highlight
+	arrow_label.z_index = 101
 	add_child(arrow_label)
 	
-		# Make it flash
-	var tween = create_tween().set_loops()
+	# Make it flash - fix the tween creation
+	var tween = create_tween().set_loops().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	tween.tween_property(arrow_label, "modulate:a", 0.3, 0.5)
 	tween.tween_property(arrow_label, "modulate:a", 1.0, 0.5)
 
@@ -285,10 +280,6 @@ func _process(_delta: float) -> void:
 			elif tab_depth.has_method("is_active") and tab_depth.is_active():
 				on_ui_element_clicked("TabDepth")
 
-	# DEBUG: Clear history so tutorials always trigger
-	completed_tutorials.clear()
-	tutorial_history.clear()
-	print("TutorialManager ready on layer: ", layer)
 
 func start_tutorial(tutorial_key: String) -> bool:
 	print("Trying to start tutorial: ", tutorial_key)
@@ -464,8 +455,6 @@ func _create_highlight_overlay() -> void:
 	highlight_style.corner_radius_top_right = 4
 	highlight_style.corner_radius_bottom_left = 4
 	highlight_style.corner_radius_bottom_right = 4
-	
-	add_child(highlight_overlay)
 
 # ============================================
 # UI DISPLAY
@@ -837,9 +826,6 @@ func _create_tutorial_menu() -> Control:
 	close_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	vbox.add_child(close_btn)
 	
-	arrow_label.z_index = 260  # INCREASED - above everything
-	add_child(arrow_label)
-	
 	return menu_panel
 
 func _create_tutorial_menu_entry(tutorial_key: String, tutorial_data: Dictionary) -> Control:
@@ -895,6 +881,15 @@ func get_save_data() -> Dictionary:
 
 func load_save_data(data: Dictionary) -> void:
 	if data.has("completed_tutorials"):
-		completed_tutorials = data["completed_tutorials"].duplicate()
+		# Cast to Array[String] to fix type mismatch
+		var loaded_completed = data["completed_tutorials"] as Array
+		completed_tutorials.clear()
+		for item in loaded_completed:
+			completed_tutorials.append(str(item))
+			
 	if data.has("tutorial_history"):
-		tutorial_history = data["tutorial_history"].duplicate()
+		# Cast to Array[String] to fix type mismatch  
+		var loaded_history = data["tutorial_history"] as Array
+		tutorial_history.clear()
+		for item in loaded_history:
+			tutorial_history.append(str(item))

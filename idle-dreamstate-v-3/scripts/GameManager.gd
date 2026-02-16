@@ -50,7 +50,15 @@ var frozen_depth_multipliers: Dictionary
 var abyss_unlocked_flag: bool = false
 var run_start_depth: int = 0
 var abyss_target_depth: int = 15
-
+var lifetime_thoughts: float = 0.0
+var lifetime_control: float = 0.0
+var total_dives: int = 0
+var total_playtime: float = 0.0
+const LT_THOUGHTS := "lifetime_thoughts"
+const LT_CONTROL := "lifetime_control"
+const LT_DIVES := "total_dives"
+const LT_DEEPEST := "deepest_depth"
+const LT_PLAYTIME := "total_playtime"
 var memories: float = 0.0
 
 var idle_thoughts_rate: float = 0.8
@@ -249,8 +257,15 @@ func _ready() -> void:
 		tm.start_tutorial("wake_unlocked")
 	else:
 		print("ERROR: TutorialManager not found at /root/TutorialManager")
+		
+	load_game()
+	print("LOADED - Total dives: ", total_dives)  # Check if loading works
 
-	
+func _input(event):
+	if event is InputEventKey and event.pressed and event.keycode == KEY_F9:
+		print("Current total_dives: ", total_dives)
+		print("Lifetime thoughts: ", lifetime_thoughts)
+		
 func _force_rate_sample() -> void:
 	_last_thoughts_sample = thoughts
 	_last_control_sample = control
@@ -448,9 +463,6 @@ func force_unlock_depth_tab(new_depth: int) -> void:
 	max_depth_reached = maxi(max_depth_reached, new_depth)
 	_sync_meta_progress()
 
-func _on_dive_pressed() -> void:
-	do_dive()
-
 func _on_wake_pressed() -> void:
 	if prestige_panel == null:
 		prestige_panel = _ui_find("PrestigePanel") as PrestigePanel
@@ -507,6 +519,11 @@ func _on_prestige_confirm_wake() -> void:
 	var drc := get_node_or_null("/root/DepthRunController")
 	if drc == null:
 		return
+	
+	# ACCUMULATE LIFETIME STATS BEFORE RESET
+	lifetime_thoughts += total_thoughts_earned
+	lifetime_control += control  # or track control spent/gained
+	total_playtime += time_in_run
 	
 	# Get accumulated memories/crystals from depth_data
 	var accumulated_memories := 0.0
@@ -592,6 +609,11 @@ func do_fail() -> void:
 							depth_meta_system.currency[i] += amount
 						break
 	
+	# ACCUMULATE LIFETIME STATS (same as wake)
+	lifetime_thoughts += total_thoughts_earned
+	lifetime_control += control
+	total_playtime += time_in_run
+	
 	reset_run()
 	save_game()
 
@@ -605,6 +627,9 @@ func calc_depth_currency_gain(depth_i: int) -> float:
 	return sqrt(t) * (1.0 + float(depth_i) * 0.15) * 0.05
 	
 func do_dive() -> void:
+	print("DO_DIVE CALLED")  # Debug print to confirm it's being called
+	total_dives += 1  # MUST BE FIRST LINE
+	print("Total dives is now: ", total_dives)
 	# CRITICAL: Freeze the current depth's multiplier BEFORE diving
 	freeze_current_depth_multiplier()
 	
@@ -751,6 +776,10 @@ func reset_run() -> void:
 	max_instability = 0.0
 	# Reset frozen multipliers for new run
 	frozen_depth_multipliers = {}
+	
+	# DO NOT reset total_dives here! It's a lifetime stat.
+	# DO NOT reset lifetime_thoughts, lifetime_control, or total_playtime here!
+	
 	if perm_perk_system != null:
 		thoughts = perm_perk_system.get_starting_thoughts()
 		instability = maxf(0.0, instability - perm_perk_system.get_starting_instability_reduction())
@@ -1080,17 +1109,21 @@ func _update_depth_data_offline(mem_gained: float, cry_gained: float, progress_g
 func save_game() -> void:
 	var data: Dictionary = {}
 	
+	# Current run stats
 	data["memories"] = memories
 	data["thoughts"] = thoughts
 	data["control"] = control
-		# Only save instability if we're past Depth 1 (Shallows has no instability)
-	if get_current_depth() >= 2:
-		data["instability"] = instability
-	else:
-		data["instability"] = 0.0
+	data["instability"] = instability if get_current_depth() >= 2 else 0.0
 	data["time_in_run"] = time_in_run
 	data["total_thoughts_earned"] = total_thoughts_earned
 	data["max_instability"] = max_instability
+	
+	# LIFETIME STATS - Use the exact keys SettingsPanel expects
+	data["lifetime_thoughts"] = lifetime_thoughts + total_thoughts_earned
+	data["lifetime_control"] = lifetime_control + control  
+	data["total_dives"] = total_dives  # This is the key!
+	data["deepest_depth"] = max_depth_reached
+	data["total_playtime"] = total_playtime + time_in_run
 	
 	data["depth"] = get_current_depth()
 	data["max_depth_reached"] = max_depth_reached
@@ -1162,6 +1195,12 @@ func load_game() -> void:
 	if data.is_empty():
 		return
 	
+	# Load lifetime stats
+	lifetime_thoughts = float(data.get(LT_THOUGHTS, 0.0))
+	lifetime_control = float(data.get(LT_CONTROL, 0.0))
+	total_dives = int(data.get(LT_DIVES, 0))
+	total_playtime = float(data.get(LT_PLAYTIME, 0.0))
+	max_depth_reached = int(data.get(LT_DEEPEST, 1))
 	# Load basic stats first
 	memories = float(data.get("memories", 0.0))
 	thoughts = float(data.get("thoughts", 0.0))

@@ -1,4 +1,3 @@
-# SettingsPanel.gd
 extends PanelContainer
 class_name SettingsPanel
 
@@ -16,6 +15,7 @@ class_name SettingsPanel
 
 const SAVE_MUTE_KEY := "mute"
 const SAVE_VOL_KEY := "master_volume"
+const SAVE_TUTORIAL_DISABLED_KEY := "tutorials_disabled"
 
 # Lifetime keys (stored in save)
 const LT_THOUGHTS := "lifetime_thoughts"
@@ -35,6 +35,7 @@ var _stats_mode: int = StatsMode.RUN
 @onready var volume_label: Label = $"Root/VolumeLabel"
 @onready var volume_slider: HSlider = $"Root/Volume"
 @onready var close_button: Button = $"Root/CloseButton"
+@onready var tutorial_toggle: CheckButton = get_node_or_null("Root/TutorialToggle")
 
 @onready var save_btn: Button = $"Root/Actions/SaveButton"
 @onready var load_btn: Button = $"Root/Actions/LoadButton"
@@ -63,6 +64,12 @@ func _ready() -> void:
 	if is_instance_valid(run_tab): run_tab.text = "Run"
 	if is_instance_valid(lifetime_tab): lifetime_tab.text = "Lifetime"
 	if is_instance_valid(close_button): close_button.text = "Close"
+	
+	# Setup tutorial toggle
+	if is_instance_valid(tutorial_toggle):
+		tutorial_toggle.text = "Disable Tutorials"
+		_style_basebutton(tutorial_toggle)
+		_connect_once(tutorial_toggle.toggled, Callable(self, "_on_tutorial_toggled"))
 
 	# Slider setup
 	if is_instance_valid(volume_slider):
@@ -151,6 +158,18 @@ func _process(delta: float) -> void:
 	if _t_stats >= 0.5:
 		_t_stats = 0.0
 		_refresh_stats(false)
+
+# Number formatting helper (100, 1.00k, 1.00M, 1.00B, etc.)
+func _fmt_num(v: float) -> String:
+	if v >= 1e12:
+		return "%.2fT" % (v / 1e12)
+	if v >= 1e9:
+		return "%.2fB" % (v / 1e9)
+	if v >= 1e6:
+		return "%.2fM" % (v / 1e6)
+	if v >= 1e3:
+		return "%.2fk" % (v / 1e3)
+	return str(int(v))
 
 # -------------------------
 # CRITICAL: stop internal Backdrop painting white
@@ -263,12 +282,18 @@ func _load_settings_into_ui() -> void:
 	var data: Dictionary = SaveSystem.load_game()
 	var mute: bool = bool(data.get(SAVE_MUTE_KEY, false))
 	var vol: float = clampf(float(data.get(SAVE_VOL_KEY, 1.0)), 0.0, 1.0)
+	var tutorials_disabled: bool = bool(data.get(SAVE_TUTORIAL_DISABLED_KEY, false))
 
 	if is_instance_valid(mute_toggle):
 		mute_toggle.button_pressed = mute
 	if is_instance_valid(volume_slider):
 		volume_slider.value = vol
+	if is_instance_valid(tutorial_toggle):
+		tutorial_toggle.button_pressed = tutorials_disabled
 	_update_volume_text(vol)
+	
+	# Apply tutorial state immediately
+	_apply_tutorial_state(tutorials_disabled)
 
 func _save_settings_from_ui() -> void:
 	var data: Dictionary = SaveSystem.load_game()
@@ -276,6 +301,8 @@ func _save_settings_from_ui() -> void:
 		data[SAVE_MUTE_KEY] = bool(mute_toggle.button_pressed)
 	if is_instance_valid(volume_slider):
 		data[SAVE_VOL_KEY] = float(volume_slider.value)
+	if is_instance_valid(tutorial_toggle):
+		data[SAVE_TUTORIAL_DISABLED_KEY] = bool(tutorial_toggle.button_pressed)
 	SaveSystem.save_game(data)
 
 func _apply_audio() -> void:
@@ -296,6 +323,38 @@ func _on_volume_changed(v: float) -> void:
 	_update_volume_text(vol)
 	_apply_audio()
 	_save_settings_from_ui()
+
+func _on_tutorial_toggled(disabled: bool) -> void:
+	_save_settings_from_ui()
+	_apply_tutorial_state(disabled)
+
+func _apply_tutorial_state(disabled: bool) -> void:
+	var tm = get_node_or_null("/root/TutorialManage")
+	if tm == null:
+		return
+		
+	if disabled:
+		# Mark all tutorials as completed so they don't trigger
+		if tm.has_method("get_save_data"):
+			var save_data = tm.call("get_save_data")
+			if save_data.has("completed_tutorials"):
+				# Get all possible tutorial keys from the TUTORIALS dict
+				if tm.get("TUTORIALS") != null:
+					var all_tutorials = tm.get("TUTORIALS").keys()
+					for key in all_tutorials:
+						if not key in save_data["completed_tutorials"]:
+							save_data["completed_tutorials"].append(key)
+					if tm.has_method("load_save_data"):
+						tm.call("load_save_data", save_data)
+	else:
+		# Re-enable by clearing history (optional - you might want to keep completed ones)
+		# This will allow tutorials to trigger again on new runs
+		if tm.has_method("get_save_data"):
+			var save_data = tm.call("get_save_data")
+			if save_data.has("completed_tutorials"):
+				save_data["completed_tutorials"] = []
+				if tm.has_method("load_save_data"):
+					tm.call("load_save_data", save_data)
 
 func _update_volume_text(vol: float) -> void:
 	if is_instance_valid(volume_label):
@@ -339,19 +398,23 @@ func _refresh_stats(_force: bool) -> void:
 
 	if _stats_mode == StatsMode.RUN:
 		lines[0].text = "RUN"
-		lines[1].text = "Depth: %d" % _get_int_from_gm("depth")
-		lines[2].text = "Thoughts: %s" % str(_get_float_from_gm("thoughts"))
-		lines[3].text = "Thoughts/s: %s" % str(_get_float_from_gm("_thoughts_ps"))
-		lines[4].text = "Control: %s" % str(_get_float_from_gm("control"))
-		lines[5].text = "Instability: %s" % str(_get_float_from_gm("instability"))
+		# FIX: Get depth from method instead of property
+		var current_depth := 1
+		if _gm != null and _gm.has_method("get_current_depth"):
+			current_depth = _gm.call("get_current_depth")
+		lines[1].text = "Depth: %d" % current_depth
+		lines[2].text = "Thoughts: %s" % _fmt_num(_get_float_from_gm("thoughts"))
+		lines[3].text = "Thoughts/s: %s" % _fmt_num(_get_float_from_gm("_thoughts_ps"))
+		lines[4].text = "Control: %s" % _fmt_num(_get_float_from_gm("control"))
+		lines[5].text = "Instability: %s" % _fmt_num(_get_float_from_gm("instability"))
 	else:
 		var data: Dictionary = SaveSystem.load_game()
 		lines[0].text = "LIFETIME"
-		lines[1].text = "Total Thoughts: %s" % str(data.get(LT_THOUGHTS, 0))
-		lines[2].text = "Total Control: %s" % str(data.get(LT_CONTROL, 0))
-		lines[3].text = "Total Dives: %s" % str(data.get(LT_DIVES, 0))
-		lines[4].text = "Deepest Depth: %s" % str(data.get(LT_DEEPEST, 0))
-		lines[5].text = "Playtime (s): %s" % str(data.get(LT_PLAYTIME, 0))
+		lines[1].text = "Total Thoughts: %s" % _fmt_num(float(data.get(LT_THOUGHTS, 0)))
+		lines[2].text = "Total Control: %s" % _fmt_num(float(data.get(LT_CONTROL, 0)))
+		lines[3].text = "Total Dives: %s" % _fmt_num(float(data.get(LT_DIVES, 0)))
+		lines[4].text = "Deepest Depth: %d" % int(data.get(LT_DEEPEST, 1))
+		lines[5].text = "Playtime (s): %s" % _fmt_num(float(data.get(LT_PLAYTIME, 0)))
 
 func _get_int_from_gm(prop: String) -> int:
 	if _gm == null:

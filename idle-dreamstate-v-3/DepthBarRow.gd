@@ -3,7 +3,6 @@ extends PanelContainer
 class_name DepthBarRow
 
 signal clicked_depth(depth_index: int)
-signal request_dive(depth_index: int)
 signal request_close(depth_index: int)
 
 const COLOR_BLUE: Color = Color(0.24, 0.67, 0.94)
@@ -758,8 +757,12 @@ func _apply_blue_button_style(b: Button) -> void:
 # Button callbacks
 # -----------------------
 func _on_dive_pressed() -> void:
-	request_dive.emit(depth_index)
-
+	set_details_open(false)
+	request_close.emit(depth_index)  # ADD THIS LINE
+	var gm = get_tree().current_scene.find_child("GameManager", true, false)
+	if gm != null and gm.has_method("do_dive"):
+		gm.call("do_dive")
+		
 func _on_close_pressed() -> void:
 	request_close.emit(depth_index)
 
@@ -806,7 +809,13 @@ func _add_upgrade_row_dynamic(id: String, data: Dictionary) -> void:
 	var desc_label := Label.new()
 	desc_label.text = data.get("description", "")
 	desc_label.add_theme_font_size_override("font_size", 15)
-	desc_label.add_theme_color_override("font_color", Color(0.75, 0.85, 0.95))
+	
+	# FIX: Darker text for Depth 1 (light background), lighter for others
+	if depth_index == 1:
+		desc_label.add_theme_color_override("font_color", Color(0.1, 0.12, 0.18, 1.0))  # Dark blue-black
+	else:
+		desc_label.add_theme_color_override("font_color", Color(0.75, 0.85, 0.95, 1.0))  # Light blue-white
+	
 	desc_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	desc_label.max_lines_visible = 1
 	desc_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
