@@ -78,12 +78,27 @@ func _pick_costs(d: int, tier: int) -> Dictionary:
 		4: return _cost_4(d)
 	return _cost_1(d)
 
-# ---------------------------------------------------
-# DEFINITIONS (Depth 1..15)
-# Each entry can include:
-#  - id, name, desc, max, kind
-#  - costs: { depthIndex: multiplier } (multi-currency)
-# ---------------------------------------------------
+func get_depth_upgrade_cost(depth: int, upgrade_id: String, level: int) -> float:
+	var base_costs := {
+		"progress_speed": 50.0,
+		"memories_gain": 75.0,
+		"crystals_gain": 100.0,
+		"stabilize": 30.0,
+		"inner_eye": 200.0,
+		"idle_soft": 150.0,
+		"wake_yield": 250.0,
+		"dive_start": 500.0,
+		"unlock": 1000.0,
+		"t_gain": 60.0,
+		"c_gain": 80.0,
+	}
+	
+	var base: float = base_costs.get(upgrade_id, 100.0)
+	var depth_mult: float = pow(1.3, depth - 1)
+	var level_mult: float = pow(1.5, level)
+	
+	return base * depth_mult * level_mult
+	
 func get_depth_upgrade_defs(depth_i: int) -> Array:
 	var d := clampi(depth_i, 1, MAX_DEPTH)
 
@@ -110,7 +125,7 @@ func get_depth_upgrade_defs(depth_i: int) -> Array:
 		"id":"t_gain",
 		"name":"Thoughts Weaving",
 		"desc":"+5% Thoughts gain per level (global).",
-		"max":10,
+		"max":50,
 		"kind":"thoughts_mult",
 		"costs": _pick_costs(d, 1)
 	}
@@ -118,7 +133,7 @@ func get_depth_upgrade_defs(depth_i: int) -> Array:
 		"id":"c_gain",
 		"name":"Control Tempering",
 		"desc":"+4% Control gain per level (global).",
-		"max":10,
+		"max":50,
 		"kind":"control_mult",
 		"costs": _pick_costs(d, 1)
 	}
@@ -126,7 +141,7 @@ func get_depth_upgrade_defs(depth_i: int) -> Array:
 		"id":"idle_soft",
 		"name":"Idle Instability Dampener",
 		"desc":"-5% Idle Instability per level (global).",
-		"max":10,
+		"max":50,
 		"kind":"idle_instab_down",
 		"costs": _pick_costs(d, 2)
 	}

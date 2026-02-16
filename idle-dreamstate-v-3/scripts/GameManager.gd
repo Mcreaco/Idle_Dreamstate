@@ -33,7 +33,6 @@ var overclock_button: Button
 var dive_button: Button
 var wake_button: Button
 var meta_button: Button
-
 var auto_dive_toggle: BaseButton
 var auto_overclock_toggle: BaseButton
 
@@ -47,20 +46,19 @@ var time_in_run: float = 0.0
 var total_thoughts_earned: float = 0.0
 var max_instability: float = 0.0
 var max_depth_reached: int = 1
-
+var frozen_depth_multipliers: Dictionary
 var abyss_unlocked_flag: bool = false
 var run_start_depth: int = 0
 var abyss_target_depth: int = 15
 
 var memories: float = 0.0
 
-var idle_thoughts_rate: float = 2.5
-var idle_control_rate: float = 1.0
-var idle_instability_rate: float = 0.45
+var idle_thoughts_rate: float = 0.8
+var idle_control_rate: float = 0.5
+var idle_instability_rate: float = 0.12
 
 var dive_thoughts_gain: float = 18.0
 var dive_control_gain: float = 6.0
-var dive_instability_gain: float = 9.0
 
 var wake_bonus_mult: float = 1.35
 var fail_penalty_mult: float = 0.60
@@ -102,6 +100,9 @@ var timed_boost_timer: float = 0.0
 var timed_boost_active: bool = false
 var _fail_save_prompt_shown: bool = false
 var _fail_save_used: bool = false
+
+func get_dive_instability_gain(depth: int) -> float:
+	return 5.0 + (depth * 1.5)
 
 func _fmt_num(v: float) -> String:
 	if v >= 1000000.0:
@@ -475,7 +476,6 @@ func _on_prestige_confirm_wake() -> void:
 		var depth_data: Dictionary = run_data[active_d - 1]
 		accumulated_memories = float(depth_data.get("memories", 0.0))
 		accumulated_crystals = float(depth_data.get("crystals", 0.0))
-		print("Cashing out: ", accumulated_memories, " memories, ", accumulated_crystals, " crystals from depth data")
 	
 	var result = drc.call("wake_cashout", 1.0, false)
 	
@@ -484,8 +484,6 @@ func _on_prestige_confirm_wake() -> void:
 		# ADD accumulated memories from depth_data
 		gained_memories += accumulated_memories
 		memories += gained_memories
-		print("Total memories added: ", gained_memories, " (wake: ", result.get("memories", 0.0), " + depth: ", accumulated_memories, ")")
-		
 		var crystals = result.get("crystals_by_name", {})
 		
 		# ADD accumulated crystals from depth_data
@@ -499,7 +497,6 @@ func _on_prestige_confirm_wake() -> void:
 				if DepthMetaSystem.get_depth_currency_name(i) == currency_name:
 					if depth_meta_system != null:
 						depth_meta_system.currency[i] += amount
-						print("Added ", amount, " ", currency_name, " to depth ", i)
 					break
 	
 	reset_run()
@@ -537,7 +534,7 @@ func do_fail() -> void:
 			# CRITICAL FIX: Add accumulated memories from offline progress
 			gained_memories += accumulated_memories
 			memories += gained_memories
-			print("Fail: Added ", gained_memories, " memories (including ", accumulated_memories, " from offline). Total now: ", memories)
+			
 			
 			var crystals = result.get("crystals_by_name", {})
 			
@@ -557,85 +554,25 @@ func do_fail() -> void:
 	reset_run()
 	save_game()
 
+func freeze_current_depth_multiplier() -> void:
+	var current_depth = get_current_depth()
+	var current_multiplier = _get_current_depth_progress_multiplier(current_depth)
+	frozen_depth_multipliers[current_depth] = current_multiplier
 	
 func calc_depth_currency_gain(depth_i: int) -> float:
 	var t := maxf(total_thoughts_earned, 0.0)
 	return sqrt(t) * (1.0 + float(depth_i) * 0.15) * 0.05
 	
 func do_dive() -> void:
-	var current_depth = get_current_depth()
-	var next_depth = current_depth + 1
+	# CRITICAL: Freeze the current depth's multiplier BEFORE diving
+	freeze_current_depth_multiplier()
 	
-	# CRITICAL: Reset to 0% when entering Depth 2 (offline calc may have been wrong)
-	if next_depth == 2:
-		instability = 0.0
-		_sync_cracks()
+	var current_depth := get_current_depth()
+	var next_depth := current_depth + 1
 	
-	var drc := get_node_or_null("/root/DepthRunController")
-	if drc == null:
-		print("DO_DIVE: ERROR - DepthRunController not found!")
-		return
-	
-	# Check current run data before any changes
-	var run_before: Array = drc.get("run") as Array
-	if run_before != null and current_depth >= 1 and current_depth <= run_before.size():
-		print("DO_DIVE: Depth ", current_depth, " progress before: ", run_before[current_depth - 1].get("progress"))
-	
-	# Apply dive start progress from meta upgrade (only if > 0)
-	if depth_meta_system != null:
-		var start_progress: float = depth_meta_system.get_dive_start_progress(current_depth + 1)
-		print("DO_DIVE: Start progress for next depth: ", start_progress)
-		if start_progress > 0.0:
-			var run_data: Array = drc.get("run") as Array
-			if run_data != null and current_depth + 1 >= 1 and current_depth + 1 <= run_data.size():
-				var next_depth_data: Dictionary = run_data[current_depth]
-				next_depth_data["progress"] = start_progress
-				run_data[current_depth] = next_depth_data
-				drc.set("run", run_data)
-				print("DO_DIVE: Set depth ", current_depth + 1, " start progress to ", start_progress)
-	
-	# Actually change the active depth in the controller
-	print("DO_DIVE: Calling drc.dive()...")
-	if drc.has_method("dive"):
-		drc.call("dive")
-	else:
-		print("DO_DIVE: WARNING - dive method not found, setting manually")
-		drc.set("active_depth", current_depth + 1)
-		if drc.has_signal("active_depth_changed"):
-			drc.emit_signal("active_depth_changed", current_depth + 1)
-	
-	# Check data after dive
-	var run_after: Array = drc.get("run") as Array
-	if run_after != null and current_depth >= 1 and current_depth <= run_after.size():
-		print("DO_DIVE: Depth ", current_depth, " progress after: ", run_after[current_depth - 1].get("progress"))
-	
-	# Sync the panel
-	if drc.has_method("_sync_all_to_panel"):
-		drc.call("_sync_all_to_panel")
-		print("DO_DIVE: Panel synced")
-	
-	SaveSystem.set_max_stat("deepest_depth", current_depth + 1)
-	max_depth_reached = maxi(max_depth_reached, current_depth + 1)
-	
-	if pillar_stack != null and pillar_stack.has_method("set_depth"):
-		pillar_stack.call("set_depth", current_depth + 1)
-	
-	var cam := get_tree().current_scene.find_child("Camera3D", true, false)
-	if cam and cam.has_method("snap_to_depth"):
-		cam.call("snap_to_depth", current_depth + 1)
-	
-	if upgrade_manager.mental_buffer_level > 0:
-		var bonus_control: float = float(current_depth + 1) * upgrade_manager.get_mental_buffer_per_depth()
-		control += bonus_control
-	
-	_check_abyss_unlock()
-	
-	if sound_system != null:
-		sound_system.play_dive()
-	
-	# ... rest of calculations (thoughts_mult, etc.) ...
+	# Dive calculations - do these BEFORE changing depth
 	var thoughts_mult: float = _safe_mult(upgrade_manager.get_thoughts_mult()) * _safe_mult(perk_system.get_thoughts_mult()) * _safe_mult(nightmare_system.get_thoughts_mult()) * _get_run_upgrades_thoughts_mult()
-	var instability_mult: float = _safe_mult(upgrade_manager.get_instability_mult()) * _safe_mult(perk_system.get_instability_mult()) * _safe_mult(nightmare_system.get_instability_mult())
+	var instability_mult: float = _safe_mult(upgrade_manager.get_instability_mult()) * _safe_mult(perk_system.get_instability_mult()) * _safe_mult(nightmare_system.get_thoughts_mult())
 	var control_mult: float = _safe_mult(perk_system.get_control_mult()) * _safe_mult(nightmare_system.get_control_mult())
 	
 	if depth_meta_system != null:
@@ -661,6 +598,7 @@ func do_dive() -> void:
 		thoughts_mult *= _safe_mult(overclock_system.thoughts_mult)
 		instability_mult *= _safe_mult(overclock_system.instability_mult)
 	
+	# Apply dive gains
 	thoughts += dive_thoughts_gain * thoughts_mult * depth_thoughts_mult
 	control += dive_control_gain * control_mult
 	
@@ -672,15 +610,77 @@ func do_dive() -> void:
 	if depth_meta_system != null:
 		depth_meta_instab_mult = _safe_mult(depth_meta_system.get_global_instability_mult())
 	
+	# Apply dive instability (using current_depth for the calculation)
 	instability = risk_system.add_risk(
 		instability,
-		(dive_instability_gain * instability_mult * depth_instab_mult) * abyss_instab_mult * depth_meta_instab_mult
+		((5.0 + (current_depth * 1.5)) * instability_mult * depth_instab_mult) * abyss_instab_mult * depth_meta_instab_mult
 	)
+	
+	# CRITICAL: Reset to 0% when entering Depth 2
+	if next_depth == 2:
+		instability = 0.0
+		_sync_cracks()
+	
+	var drc := get_node_or_null("/root/DepthRunController")
+	if drc == null:
+		return
+	
+	# Check current run data before any changes
+	var run_before: Array = drc.get("run") as Array
+	if run_before != null and current_depth >= 1 and current_depth <= run_before.size():
+		print("DO_DIVE: Depth ", current_depth, " progress before: ", run_before[current_depth - 1].get("progress"))
+	
+	# Apply dive start progress from meta upgrade (only if > 0)
+	if depth_meta_system != null:
+		var start_progress: float = depth_meta_system.get_dive_start_progress(next_depth)
+		if start_progress > 0.0:
+			var run_data: Array = drc.get("run") as Array
+			if run_data != null and next_depth >= 1 and next_depth <= run_data.size():
+				var next_depth_data: Dictionary = run_data[current_depth]
+				next_depth_data["progress"] = start_progress
+				run_data[current_depth] = next_depth_data
+				drc.set("run", run_data)
+	
+	# Actually change the active depth in the controller
+	if drc.has_method("dive"):
+		drc.call("dive")
+	else:
+		print("DO_DIVE: WARNING - dive method not found, setting manually")
+		drc.set("active_depth", next_depth)
+		if drc.has_signal("active_depth_changed"):
+			drc.emit_signal("active_depth_changed", next_depth)
+	
+	# Check data after dive
+	var run_after: Array = drc.get("run") as Array
+	if run_after != null and current_depth >= 1 and current_depth <= run_after.size():
+		print("DO_DIVE: Depth ", current_depth, " progress after: ", run_after[current_depth - 1].get("progress"))
+	
+	# Sync the panel
+	if drc.has_method("_sync_all_to_panel"):
+		drc.call("_sync_all_to_panel")
+	
+	SaveSystem.set_max_stat("deepest_depth", next_depth)
+	max_depth_reached = maxi(max_depth_reached, next_depth)
+	
+	if pillar_stack != null and pillar_stack.has_method("set_depth"):
+		pillar_stack.call("set_depth", next_depth)
+	
+	var cam := get_tree().current_scene.find_child("Camera3D", true, false)
+	if cam and cam.has_method("snap_to_depth"):
+		cam.call("snap_to_depth", next_depth)
+	
+	if upgrade_manager.mental_buffer_level > 0:
+		var bonus_control: float = float(next_depth) * upgrade_manager.get_mental_buffer_per_depth()
+		control += bonus_control
+	
+	_check_abyss_unlock()
+	
+	if sound_system != null:
+		sound_system.play_dive()
 	
 	_sync_cracks()
 	_sync_meta_progress()
 	save_game()
-	print("DO_DIVE: Complete")
 	
 func do_overclock() -> void:
 	var cost_mul: float = upgrade_manager.get_overclock_cost_mult()
@@ -708,7 +708,8 @@ func reset_run() -> void:
 	time_in_run = 0.0
 	total_thoughts_earned = 0.0
 	max_instability = 0.0
-	
+	# Reset frozen multipliers for new run
+	frozen_depth_multipliers = {}
 	if perm_perk_system != null:
 		thoughts = perm_perk_system.get_starting_thoughts()
 		instability = maxf(0.0, instability - perm_perk_system.get_starting_instability_reduction())
@@ -801,30 +802,13 @@ func calc_memories_gain() -> float:
 	return sqrt(t) * (1.0 + r) * time_mult * depth_mult
 
 func get_idle_instability_gain_per_sec() -> float:
-	var corruption = {"extra_instability": 0.0, "instability_mult": 1.0}
-	var instability_mult: float = _safe_mult(upgrade_manager.get_instability_mult()) * _safe_mult(perk_system.get_instability_mult()) * _safe_mult(nightmare_system.get_instability_mult())
+	var drc := get_node_or_null("/root/DepthRunController")
+	if drc != null:
+		# Get the ACTUAL rate from DepthRunController
+		return float(drc.get("instability_per_sec"))
 	
-	if perm_perk_system != null:
-		instability_mult *= _safe_mult(perm_perk_system.get_instability_mult())
-	
-	instability_mult *= _safe_mult(corruption.instability_mult)
-	
-	var deep_risk_per_depth: float = upgrade_manager.get_deep_dives_instab_bonus_per_depth()
-	var current_depth = get_current_depth()
-	var depth_instab_mult: float = 1.0 + (float(current_depth) * (depth_instab_step + deep_risk_per_depth))
-	
-	var abyss_instab_mult: float = 1.0
-	if abyss_perk_system != null:
-		abyss_instab_mult = abyss_perk_system.get_instability_reduction_mult(current_depth)
-	
-	var depth_meta_instab_mult: float = 1.0
-	var depth_meta_idle_instab_mult: float = 1.0
-	if depth_meta_system != null:
-		depth_meta_instab_mult = _safe_mult(depth_meta_system.get_global_instability_mult())
-		depth_meta_idle_instab_mult = _safe_mult(depth_meta_system.get_global_idle_instability_mult())
-	
-	var gain_per_sec := (idle_instability_rate * instability_mult * depth_instab_mult * abyss_instab_mult * depth_meta_instab_mult * depth_meta_idle_instab_mult) + float(corruption.extra_instability)
-	return gain_per_sec
+	# Fallback if DRC not found
+	return 0.0
 
 func get_seconds_until_fail() -> float:
 	if instability >= 100.0:
@@ -835,7 +819,6 @@ func get_seconds_until_fail() -> float:
 	return (100.0 - instability) / gain_per_sec
 
 func _apply_offline_progress() -> void:
-	print("=== OFFLINE PROGRESS START ===")
 	
 	var data: Dictionary = SaveSystem.load_game()
 	var now: float = float(Time.get_unix_time_from_system())
@@ -851,32 +834,8 @@ func _apply_offline_progress() -> void:
 		offline_seconds = 0.0
 		return
 	
-	print("Offline for ", offline_seconds, " seconds")
 	
-	# DEBUG: Show what's in the save file
-	print("Save data depth: ", data.get("depth", "NOT SET"))
-	print("Save data active_depth: ", data.get("active_depth", "NOT SET"))
-	if data.has("depth_run_data") and data["depth_run_data"] is Array:
-		var drd = data["depth_run_data"]
-		for i in range(min(drd.size(), 3)):
-			print("Save D", i+1, " progress: ", drd[i].get("progress", "N/A") if drd[i] is Dictionary else "INVALID")
-	
-	# Get depth from save (try multiple sources)
-	var current_depth = int(data.get("depth", 1))
-	if data.has("active_depth"):
-		current_depth = int(data["active_depth"])
-	
-	# CRITICAL FIX: If Depth 1 is 100% complete, treat as Depth 2 for gains
-	var effective_depth = current_depth
-	if current_depth == 1 and data.has("depth_run_data"):
-		var drd = data["depth_run_data"]
-		if drd is Array and drd.size() > 0 and drd[0] is Dictionary:
-			var d1_progress = float(drd[0].get("progress", 0.0))
-			if d1_progress >= 1.0:
-				effective_depth = 2
-				print("Depth 1 is complete (", d1_progress, "), using effective_depth=2")
-	
-	print("Saved depth: ", current_depth, " Effective depth for gains: ", effective_depth)
+	var current_depth = get_current_depth()
 	
 	# Calculate multipliers
 	var thoughts_mult: float = _safe_mult(upgrade_manager.get_thoughts_mult()) * _safe_mult(perk_system.get_thoughts_mult()) * _safe_mult(nightmare_system.get_thoughts_mult()) * _get_run_upgrades_thoughts_mult()
@@ -897,12 +856,12 @@ func _apply_offline_progress() -> void:
 	var deep_bonus_per_depth: float = upgrade_manager.get_deep_dives_thoughts_bonus_per_depth()
 	var depth_thoughts_mult: float = 1.0 + (float(current_depth) * (depth_thoughts_step + deep_bonus_per_depth))
 	
-	# Calculate gains
+	# Apply thoughts/control gain
 	var thoughts_gained := idle_thoughts_rate * thoughts_mult * depth_thoughts_mult * offline_seconds
 	var control_gained := idle_control_rate * control_mult * offline_seconds
-	
 	thoughts += thoughts_gained
 	control += control_gained
+	
 	
 	# Instability (Depth 2+ only)
 	if current_depth >= 2:
@@ -923,53 +882,74 @@ func _apply_offline_progress() -> void:
 		)
 		instability = minf(instability, 99.9)
 	
-	# MEMORIES & CRYSTALS - Use effective_depth
-	var mem_gained := 0.0
-	var cry_gained := 0.0
-	var progress_gained := 0.0
-	
-	if effective_depth >= 2:
-		# Base rates scaled by effective depth
-		var base_mem_rate: float = 2.0 * float(effective_depth)
-		var base_cry_rate: float = 0.5 * float(effective_depth)
+	# DEPTH PROGRESS - Match online calculation exactly
+	var drc := get_node_or_null("/root/DepthRunController")
+	if drc != null and current_depth >= 1:
+		var run_data: Array = drc.get("run") as Array
+		var active_d: int = drc.get("active_depth") as int
 		
-		# Apply offline echo multiplier
-		var offline_mult: float = 1.0
-		if perm_perk_system != null and perm_perk_system.has_method("get_offline_mult"):
-			offline_mult = perm_perk_system.call("get_offline_mult")
-		
-		mem_gained = base_mem_rate * offline_mult * offline_seconds
-		cry_gained = base_cry_rate * offline_mult * offline_seconds
-		progress_gained = (0.01 * float(effective_depth)) * offline_seconds
-		
-		print("GAINS: mem=", mem_gained, " cry=", cry_gained, " progress=", progress_gained)
-		
-						# ========== ADD CRYSTALS - FIXED ==========
-		print("Attempting to add crystals...")
-		if depth_meta_system != null:
-			print("  depth_meta_system exists")
-			var curr_array = depth_meta_system.get("currency")
-			print("  got currency: ", curr_array != null)
-			if curr_array != null and curr_array is Array:
-				print("  array size: ", curr_array.size())
-				# CRITICAL FIX: Use current_depth (where you actually are), not effective_depth
-				if current_depth >= 1 and current_depth < curr_array.size():
-					var old_amount = float(curr_array[current_depth])
-					var new_amount = old_amount + cry_gained
-					curr_array[current_depth] = new_amount
-					print("  ADDED: depth ", current_depth, " (", DepthMetaSystem.get_depth_currency_name(current_depth), ") was ", old_amount, " now ", new_amount)
-				else:
-					print("  ERROR: depth ", current_depth, " out of bounds (size ", curr_array.size(), ")")
-			else:
-				print("  ERROR: currency is not array, type: ", typeof(curr_array))
-		else:
-			print("  ERROR: depth_meta_system is null")
-		# ========== END CRYSTAL ADD ==========
-		
-		# Update depth_data for display
-		_safe_update_depth_data(current_depth, mem_gained, cry_gained, progress_gained)
-	else:
-		print("At Depth 1 (not complete), no memories/crystals gained")
+		if run_data != null and active_d >= 1 and active_d <= run_data.size():
+			var depth_data: Dictionary = run_data[active_d - 1]
+			
+			# Get base values from DRC
+			var base_progress: float = float(drc.get("base_progress_per_sec"))
+			var base_mem: float = float(drc.get("base_memories_per_sec"))
+			var base_cry: float = float(drc.get("base_crystals_per_sec"))
+			
+			# Get depth length
+			var depth_length: float = 1.0
+			if drc.has_method("get_depth_length"):
+				depth_length = drc.call("get_depth_length", active_d)
+			
+			# Get local upgrades
+			var local_upgrades: Dictionary = drc.get("local_upgrades") as Dictionary
+			var depth_upgs: Dictionary = local_upgrades.get(active_d, {})
+			
+			# Get upgrade levels
+			var speed_lvl: int = int(depth_upgs.get("progress_speed", 0))
+			var mem_lvl: int = int(depth_upgs.get("memories_gain", 0))
+			var cry_lvl: int = int(depth_upgs.get("crystals_gain", 0))
+			
+			# Get frozen effects
+			var frozen_speed: float = 0.0
+			var frozen_mem: float = 0.0
+			var frozen_cry: float = 0.0
+			if drc.has_method("_frozen_effect"):
+				frozen_speed = drc.call("_frozen_effect", active_d, "progress_speed", 0.15)
+				frozen_mem = drc.call("_frozen_effect", active_d, "memories_gain", 0.15)
+				frozen_cry = drc.call("_frozen_effect", active_d, "crystals_gain", 0.12)
+			
+			# Calculate multipliers (SAME AS ONLINE)
+			var speed_mul: float = 1.0 + 0.25 * float(speed_lvl) + frozen_speed
+			var mem_mul: float = 1.0 + 0.15 * float(mem_lvl) + frozen_mem
+			var cry_mul: float = 1.0 + 0.12 * float(cry_lvl) + frozen_cry
+			
+			# Get depth rules multiplier
+			var depth_prog_mul: float = 1.0
+			if drc.has_method("get_depth_def"):
+				var depth_def: Dictionary = drc.call("get_depth_def", active_d)
+				var rules: Dictionary = depth_def.get("rules", {})
+				depth_prog_mul = float(rules.get("progress_mul", 1.0))
+			
+			# Calculate per-second rates (SAME AS ONLINE)
+			var per_sec: float = (base_progress * speed_mul * depth_prog_mul) / maxf(depth_length, 0.0001)
+			
+			# Calculate gains over offline time
+			var progress_gained: float = per_sec * offline_seconds
+			var mem_gained: float = base_mem * mem_mul * offline_seconds
+			var cry_gained: float = base_cry * cry_mul * offline_seconds
+			
+			# Apply gains
+			var current_progress: float = float(depth_data.get("progress", 0.0))
+			var new_progress: float = minf(1.0, current_progress + progress_gained)
+			
+			depth_data["progress"] = new_progress
+			depth_data["memories"] = float(depth_data.get("memories", 0.0)) + mem_gained
+			depth_data["crystals"] = float(depth_data.get("crystals", 0.0)) + cry_gained
+			
+			run_data[active_d - 1] = depth_data
+			drc.set("run", run_data)
+			
 	
 	time_in_run += offline_seconds
 	total_thoughts_earned = maxf(total_thoughts_earned, thoughts)
@@ -982,10 +962,10 @@ func _apply_offline_progress() -> void:
 	_force_rate_sample()
 	
 	if offline_seconds >= 5.0:
-		_show_offline_progress_popup(thoughts_gained, control_gained, progress_gained, mem_gained, cry_gained, current_depth)
+		_show_offline_progress_popup(thoughts_gained, control_gained, 0.0, 0.0, 0.0, current_depth)
 	
 	save_game()
-	print("=== OFFLINE PROGRESS END ===")
+
 
 # Safe helper function - add this to your GameManager class too
 func _safe_update_depth_data(depth: int, mem: float, cry: float, prog: float) -> void:
@@ -1025,28 +1005,22 @@ func _update_depth_data_offline(mem_gained: float, cry_gained: float, progress_g
 	
 	var active_d = drc.get("active_depth")
 	if active_d == null:
-		print("active_depth null")
 		return
 	
 	var run_data = drc.get("run")
 	if run_data == null:
-		print("run_data null")
 		return
 	if not (run_data is Array):
-		print("run_data not array")
 		return
 	
 	var idx = int(active_d) - 1
 	if idx < 0 or idx >= run_data.size():
-		print("idx out of bounds: ", idx, " size: ", run_data.size())
 		return
 	
 	var depth_data = run_data[idx]
 	if depth_data == null:
-		print("depth_data null at idx ", idx)
 		return
 	if not (depth_data is Dictionary):
-		print("depth_data not dict")
 		return
 	
 	# Update values
@@ -1061,7 +1035,6 @@ func _update_depth_data_offline(mem_gained: float, cry_gained: float, progress_g
 	run_data[idx] = depth_data
 	drc.set("run", run_data)
 	
-	print("Updated depth ", active_d, ": mem ", old_mem, "->", depth_data["memories"], " cry ", old_cry, "->", depth_data["crystals"])
 
 func save_game() -> void:
 	var data: Dictionary = {}
@@ -1082,6 +1055,7 @@ func save_game() -> void:
 	data["max_depth_reached"] = max_depth_reached
 	data["abyss_unlocked"] = abyss_unlocked_flag
 	data["run_start_depth"] = run_start_depth
+	data["frozen_depth_multipliers"] = frozen_depth_multipliers
 	
 	# SAVE DepthRunController data (fixes the "not saving" bug)
 	var drc := get_node_or_null("/root/DepthRunController")
@@ -1143,9 +1117,6 @@ func save_game() -> void:
 
 func load_game() -> void:
 	var data: Dictionary = SaveSystem.load_game()
-
-	print("=== LOAD GAME ===")
-	print("Has depth_run_data: ", data.has("depth_run_data"))
 	
 	if data.is_empty():
 		return
@@ -1158,7 +1129,10 @@ func load_game() -> void:
 	time_in_run = float(data.get("time_in_run", 0.0))
 	total_thoughts_earned = float(data.get("total_thoughts_earned", 0.0))
 	max_instability = float(data.get("max_instability", 0.0))
-	
+		# Load frozen multipliers
+	frozen_depth_multipliers = data.get("frozen_depth_multipliers", {})
+	if not (frozen_depth_multipliers is Dictionary):
+		frozen_depth_multipliers = {}
 	var loaded_depth = int(data.get("depth", 1))
 	max_depth_reached = int(data.get("max_depth_reached", 1))
 	abyss_unlocked_flag = bool(data.get("abyss_unlocked", false))
@@ -1182,9 +1156,6 @@ func load_game() -> void:
 				})
 			
 			drc.set("run", typed_run)
-			print("After restore - D1 progress: ", typed_run[0].get("progress") if typed_run.size() > 0 else "N/A")
-			print("After restore - D2 progress: ", typed_run[1].get("progress") if typed_run.size() > 1 else "N/A")
-		
 		# Set other values
 		if data.has("max_unlocked_depth"):
 			drc.set("max_unlocked_depth", int(data["max_unlocked_depth"]))
@@ -1647,27 +1618,22 @@ func _process(delta: float) -> void:
 	
 	var _corruption = corruption_system.update(delta, instability)
 	
+	# Calculate multipliers
 	var thoughts_mult: float = _safe_mult(upgrade_manager.get_thoughts_mult()) * _safe_mult(perk_system.get_thoughts_mult()) * _safe_mult(nightmare_system.get_thoughts_mult()) * _get_run_upgrades_thoughts_mult()
-	var instability_mult: float = _safe_mult(upgrade_manager.get_instability_mult()) * _safe_mult(perk_system.get_instability_mult()) * _safe_mult(nightmare_system.get_instability_mult())
 	var control_mult: float = _safe_mult(perk_system.get_control_mult()) * _safe_mult(nightmare_system.get_control_mult())
 	
 	var depth_meta_thoughts_mult: float = 1.0
 	var depth_meta_control_mult: float = 1.0
-	var depth_meta_instab_mult: float = 1.0
-	var depth_meta_idle_instab_mult: float = 1.0
 	
 	if depth_meta_system != null:
 		depth_meta_thoughts_mult = _safe_mult(depth_meta_system.get_global_thoughts_mult())
 		depth_meta_control_mult = _safe_mult(depth_meta_system.get_global_control_mult())
-		depth_meta_instab_mult = _safe_mult(depth_meta_system.get_global_instability_mult())
-		depth_meta_idle_instab_mult = _safe_mult(depth_meta_system.get_global_idle_instability_mult())
 	
 	thoughts_mult *= depth_meta_thoughts_mult
 	control_mult *= depth_meta_control_mult
 	
 	if perm_perk_system != null:
 		thoughts_mult *= _safe_mult(perm_perk_system.get_thoughts_mult())
-		instability_mult *= _safe_mult(perm_perk_system.get_instability_mult())
 		control_mult *= _safe_mult(perm_perk_system.get_control_mult())
 	
 	if abyss_perk_system != null:
@@ -1675,38 +1641,33 @@ func _process(delta: float) -> void:
 		control_mult *= _safe_mult(abyss_perk_system.get_control_mult())
 	
 	var deep_bonus_per_depth: float = upgrade_manager.get_deep_dives_thoughts_bonus_per_depth()
-	var deep_risk_per_depth: float = upgrade_manager.get_deep_dives_instab_bonus_per_depth()
 	
 	var current_depth = get_current_depth()
 	var depth_thoughts_mult: float = 1.0 + (float(current_depth) * (depth_thoughts_step + deep_bonus_per_depth))
-	var depth_instab_mult: float = 1.0 + (float(current_depth) * (depth_instab_step + deep_risk_per_depth))
 	
 	if overclock_system.active:
 		thoughts_mult *= _safe_mult(overclock_system.thoughts_mult)
-		instability_mult *= _safe_mult(overclock_system.instability_mult)
 	
 	thoughts_mult *= _safe_mult(_corruption.thoughts_mult)
-	instability_mult *= _safe_mult(_corruption.instability_mult)
-	
-	var abyss_instab_mult: float = 1.0
-	if abyss_perk_system != null:
-		abyss_instab_mult = abyss_perk_system.get_instability_reduction_mult(current_depth)
 	
 	# AD_TIMED_BOOST: Apply 2x multiplier
 	var boost_mult := 2.0 if timed_boost_active else 1.0
 	thoughts_mult *= boost_mult
 	control_mult *= boost_mult
 	
-	thoughts += idle_thoughts_rate * thoughts_mult * depth_thoughts_mult * delta
+	# PROGRESS BAR MULTIPLIERS: Stack all frozen depths + current
+	var progress_mult := _get_total_progress_multiplier()
+	thoughts_mult *= progress_mult
+	control_mult *= progress_mult
+	
+	# Generate thoughts and control
+	thoughts += idle_thoughts_rate * thoughts_mult * depth_thoughts_mult * _get_shop_boost() * delta
 	control += idle_control_rate * control_mult * delta
 	
-	# Only gain instability at depth 2+
-	if current_depth >= 2:
-		var idle_risk_gain: float = (idle_instability_rate * instability_mult * depth_instab_mult * delta) + float(_corruption.extra_instability)
-		instability = risk_system.add_risk(
-			instability,
-			idle_risk_gain * abyss_instab_mult * depth_meta_instab_mult * depth_meta_idle_instab_mult
-		)
+	# SYNC instability FROM DepthRunController (source of truth)
+	var drc := get_node_or_null("/root/DepthRunController")
+	if drc != null:
+		instability = drc.get("instability")
 	
 	_crack_sync_timer += delta
 	if _crack_sync_timer >= 0.1:
@@ -1737,7 +1698,79 @@ func _process(delta: float) -> void:
 	
 	if instability >= 100.0:
 		do_fail()
+	
+	# Auto-buy run upgrades every 5 seconds
+	_auto_buy_timer += delta
+	if _auto_buy_timer >= 5.0:
+		_auto_buy_timer = 0.0
+		_try_auto_buy_upgrades()
+
+var _auto_buy_timer: float = 0.0
+
+func _try_auto_buy_upgrades() -> void:
+	var shop = get_tree().current_scene.find_child("ShopPanel", true, false)
+	if not shop or not shop.has_method("has_auto_buy"):
+		return
+	if not shop.has_auto_buy():
+		return
+	
+	var drc = get_node_or_null("/root/DepthRunController")
+	if not drc:
+		return
+	
+	var current_depth = get_current_depth()
+	var upgrades = drc.get_run_upgrade_ids(current_depth) if drc.has_method("get_run_upgrade_ids") else []
+	
+	for upg_id in upgrades:
+		var upg_data = {}
+		if drc.has_method("get_run_upgrade_data"):
+			upg_data = drc.call("get_run_upgrade_data", current_depth, upg_id)
 		
+		var lvl = int(drc.local_upgrades.get(upg_id, 0)) if drc.has_method("get_local_upgrades") else 0
+		var max_lvl = upg_data.get("max_level", 1)
+		
+		if lvl >= max_lvl:
+			continue
+		
+		var base_cost = upg_data.get("base_cost", 100.0)
+		var growth = upg_data.get("cost_growth", 1.5)
+		var cost = base_cost * pow(growth, lvl)
+		
+		if thoughts >= cost:
+			thoughts -= cost
+			drc.call("add_local_upgrade", current_depth, upg_id, 1)
+
+func _get_shop_boost() -> float:
+	var shop_panel = get_tree().current_scene.find_child("ShopPanel", true, false)
+	if shop_panel:
+		return shop_panel.get_active_thoughts_multiplier()
+	return 1.0
+	
+func _get_depth_progress_multiplier() -> float:
+	var drc := get_node_or_null("/root/DepthRunController")
+	if drc == null:
+		return 1.0
+	
+	var active_d = drc.get("active_depth")
+	if active_d == null:
+		return 1.0
+	
+	var run_data = drc.get("run")
+	if run_data == null or not (run_data is Array):
+		return 1.0
+	
+	var idx = int(active_d) - 1
+	if idx < 0 or idx >= run_data.size():
+		return 1.0
+	
+	var depth_data = run_data[idx]
+	if depth_data == null or not (depth_data is Dictionary):
+		return 1.0
+	
+	var progress = float(depth_data.get("progress", 0.0))
+	# 0% progress = 1x, 100% progress = 5x
+	return 1.0 + (4.0 * progress)
+	
 func _show_fail_save_prompt() -> void:
 	_fail_save_prompt_shown = true
 	
@@ -2051,3 +2084,56 @@ func _get_run_upgrades_thoughts_mult() -> float:
 	if drc != null and drc.has_method("get_run_thoughts_mult"):
 		return drc.call("get_run_thoughts_mult")
 	return 1.0
+
+func _get_total_progress_multiplier() -> float:
+	var drc := get_node_or_null("/root/DepthRunController")
+	if drc == null:
+		return 1.0
+	
+	var active_d = drc.get("active_depth")
+	if active_d == null:
+		return 1.0
+	
+	var current_depth_idx = int(active_d)
+	
+	# Start with 1.0, multiply all frozen depths + current
+	var total_mult := 1.0
+	
+	# Multiply all frozen multipliers from previous depths
+	for depth_idx in frozen_depth_multipliers.keys():
+		total_mult *= frozen_depth_multipliers[depth_idx]
+	
+	# Multiply current depth's progress multiplier (0% = 1x, 100% = 5x)
+	var current_mult := _get_current_depth_progress_multiplier(current_depth_idx)
+	total_mult *= current_mult
+	
+	
+	return total_mult
+
+func _get_current_depth_progress_multiplier(depth_idx: int) -> float:
+	var drc := get_node_or_null("/root/DepthRunController")
+	if drc == null:
+		
+		return 1.0
+	
+	var run_data = drc.get("run")
+	if run_data == null or not (run_data is Array):
+		
+		return 1.0
+	
+	var array_idx = depth_idx - 1
+	if array_idx < 0 or array_idx >= run_data.size():
+		
+		return 1.0
+	
+	var depth_data = run_data[array_idx]
+	if depth_data == null or not (depth_data is Dictionary):
+		
+		return 1.0
+	
+	var progress = float(depth_data.get("progress", 0.0))
+	var multiplier = 1.0 + (4.0 * progress)
+	
+	
+	
+	return multiplier

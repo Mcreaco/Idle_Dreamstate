@@ -277,10 +277,14 @@ func _on_row_request_close(_depth_index: int) -> void:
 	_close_overlay()
 
 func _on_row_request_dive(_depth_index: int) -> void:
+	# Freeze multiplier before diving
+	var gm := get_tree().current_scene.find_child("GameManager", true, false)
+	if gm != null and gm.has_method("freeze_current_depth_multiplier"):
+		gm.call("freeze_current_depth_multiplier")
+	
 	if _depth_run != null and _depth_run.has_method("dive"):
 		_depth_run.call("dive")
 	_close_overlay()
-
 # -------------------------
 # Center overlay logic
 # -------------------------

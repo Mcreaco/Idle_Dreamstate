@@ -824,7 +824,10 @@ func _add_upgrade_row_dynamic(id: String, data: Dictionary) -> void:
 	# LEVEL LABEL
 	var lvl_label := Label.new()
 	lvl_label.name = "LevelLabel"
-	lvl_label.text = "Lv %d/%d" % [lvl, max_lvl]
+	if max_lvl >= 999999:
+		lvl_label.text = "Lv %d" % lvl
+	else:
+		lvl_label.text = "Lv %d/%d" % [lvl, max_lvl]
 	lvl_label.add_theme_font_size_override("font_size", 18)
 	lvl_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	lvl_label.custom_minimum_size.x = 90
@@ -903,7 +906,10 @@ func _update_upgrade_row_ui(id: String) -> void:
 		current_thoughts = gm.thoughts
 	
 	var lvl := int(_local_upgrades.get(id, 0))
-	lvl_label.text = "Lv %d/%d" % [lvl, max_lvl]
+	if max_lvl >= 999999:
+		lvl_label.text = "Lv %d" % lvl
+	else:
+		lvl_label.text = "Lv %d/%d" % [lvl, max_lvl]
 	
 	if lvl >= max_lvl:
 		btn.text = "MAX"

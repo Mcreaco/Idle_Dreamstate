@@ -7,8 +7,6 @@
 
 A cosmic horror-themed idle/incremental game built in Godot 4. Descend through 15 layers of dreams and consciousness, manage your mind's resources, and battle rising instability to reach The Abyss.
 
-![Game Screenshot](docs/screenshot.png)
-
 ---
 
 ## Table of Contents
@@ -30,6 +28,7 @@ A cosmic horror-themed idle/incremental game built in Godot 4. Descend through 1
 
 - **15 Unique Depths** - Each with distinct mechanics, challenges, and atmosphere
 - **Dual Resource System** - Manage Thoughts (production) and Control (boosts) while fighting Instability
+- **Progress Multiplier System** - Fill progress bars for up to 5x production bonus
 - **Deep Meta Progression** - 16 permanent upgrades, 15 depth-specific upgrade trees, and late-game Abyssal Perks
 - **Offline Progress** - Earn resources while away (up to 1 hour)
 - **Risk/Reward Gameplay** - Push your luck for bigger rewards or play it safe
@@ -73,17 +72,18 @@ To export for your platform:
 
 1. **Generate** - Thoughts and Control generate automatically every second
 2. **Upgrade** - Spend Thoughts on run upgrades (speed, stability, memory gain)
-3. **Monitor** - Watch your Instability (starts at Depth 2, rises constantly)
-4. **Dive** - Fill the progress bar to unlock the next depth
-5. **Wake** - Prestige to convert progress into permanent Memories and Crystals
-6. **Repeat** - Descend deeper with permanent bonuses
+3. **Fill Progress** - Each depth's progress bar fills over time, giving up to 5x production bonus
+4. **Unlock Dive** - Max out the "Stabilize" upgrade (10/10) in the Meta Panel to unlock the Dive button
+5. **Dive** - Descend to the next depth
+6. **Wake** - Prestige to convert progress into permanent Memories and Crystals
+7. **Repeat** - Descend deeper with permanent bonuses
 
 ### Controls
 
 | Action | Description |
 |--------|-------------|
 | **Overclock** | Spend Control for temporary production boost |
-| **Dive** | Descend to next depth (when progress bar full) |
+| **Dive** | Descend to next depth (unlocked via Stabilize upgrade) |
 | **Wake** | End run and collect Memories/Crystals |
 | **Meta** | Open permanent upgrade panel |
 
@@ -108,6 +108,23 @@ To export for your platform:
 | **Memories** | Wake bonus based on Thoughts + Time + Depth | Buy permanent upgrades |
 | **Crystals** | Earned per depth reached (15 types) | Buy depth-specific upgrades |
 
+### Progress Bar System
+
+- **Each depth has a progress bar** that fills over time
+- **Multiplier Effect**: 0% progress = 1x production, 100% progress = 5x production
+- **NOT for unlocking Dive** - The bar only affects your production multiplier
+- **Dive is unlocked separately** via the Stabilize upgrade in the Meta Panel
+
+### Unlocking Dive
+
+To unlock the Dive button for the next depth:
+
+1. Open the **Meta Panel** (Meta button)
+2. Go to the **Depth Upgrades** tab
+3. Find the **Stabilize** upgrade for your current depth
+4. Upgrade it to **Level 10/10** using Crystals
+5. The Dive button will unlock
+
 ### Instability System
 
 - **Hidden at Depth 1** - Safe tutorial zone
@@ -128,23 +145,33 @@ To export for your platform:
 
 ## The 15 Depths
 
-| # | Depth Name | Mechanic | Unlock Requirement |
-|---|------------|----------|-------------------|
-| 1 | **The Shallows** | Tutorial. No instability. | Starting depth |
-| 2 | **Descent** | First instability (0.4/sec). | Max "Stabilize" upgrade |
-| 3 | **Pressure** | High instability slows progress. | Complete Depth 2 |
-| 4 | **Murk** | Hidden rewards until Wake. | Complete Depth 3 |
-| 5 | **Rift** | Choice events every 30s. | Complete Depth 4 |
-| 6 | **Hollow** | Frozen depth bonuses stack. | Complete Depth 5 |
-| 7 | **Dread** | Fake threat events. | Complete Depth 6 |
-| 8 | **Chasm** | +10% speed per frozen depth. | Complete Depth 7 |
-| 9 | **Silence** | Blind mode (numbers hidden). Buy "Inner Eye" to see. | Complete Depth 8 |
-| 10 | **Veil** | Random outcomes on choices. | Complete Depth 9 |
-| 11 | **Ruin** | Can lose frozen bonuses. | Complete Depth 10 |
-| 12 | **Eclipse** | Shadow clone mirrors actions. | Complete Depth 11 |
-| 13 | **Voidline** | 1% chance/sec to lose progress. | Complete Depth 12 |
-| 14 | **Blackwater** | Crystal carryover mechanic. | Complete Depth 13 |
-| 15 | **The Abyss** | Final test. All mechanics combined. | Complete Depth 14 |
+| # | Depth Name | Mechanic | Dive Unlock |
+|---|------------|----------|-------------|
+| 1 | **The Shallows** | Tutorial. No instability. | Max Stabilize (10/10) with Amethyst |
+| 2 | **Descent** | First instability (0.4/sec). | Max Stabilize (10/10) with Ruby |
+| 3 | **Pressure** | High instability slows progress. | Max Stabilize (10/10) with Emerald |
+| 4 | **Murk** | Hidden rewards until Wake. | Max Stabilize (10/10) with Sapphire |
+| 5 | **Rift** | Choice events every 30s. | Max Stabilize (10/10) with Diamond |
+| 6 | **Hollow** | Frozen depth bonuses stack. | Max Stabilize (10/10) with Topaz |
+| 7 | **Dread** | Fake threat events. | Max Stabilize (10/10) with Garnet |
+| 8 | **Chasm** | +10% speed per frozen depth. | Max Stabilize (10/10) with Opal |
+| 9 | **Silence** | Blind mode (numbers hidden). Buy "Inner Eye" to see. | Max Stabilize (10/10) with Aquamarine |
+| 10 | **Veil** | Random outcomes on choices. | Max Stabilize (10/10) with Onyx |
+| 11 | **Ruin** | Can lose frozen bonuses. | Max Stabilize (10/10) with Jade |
+| 12 | **Eclipse** | Shadow clone mirrors actions. | Max Stabilize (10/10) with Moonstone |
+| 13 | **Voidline** | 1% chance/sec to lose progress. | Max Stabilize (10/10) with Obsidian |
+| 14 | **Blackwater** | Crystal carryover mechanic. | Max Stabilize (10/10) with Citrine |
+| 15 | **The Abyss** | Final test. All mechanics combined. | N/A (Final Depth) |
+
+### Progress Bar Multiplier
+
+| Progress | Production Multiplier |
+|----------|----------------------|
+| 0% | 1.0x |
+| 25% | 2.0x |
+| 50% | 3.0x |
+| 75% | 4.0x |
+| 100% | 5.0x |
 
 ### Depth Currencies
 
@@ -169,6 +196,12 @@ To export for your platform:
 ---
 
 ## Meta Progression
+
+### Meta Panel Tabs
+
+1. **Perm** - Permanent upgrades (purchased with Memories)
+2. **Depth** - Depth-specific upgrades (purchased with Crystals)
+3. **Abyss** - Late-game perks (unlocked at Depth 15)
 
 ### Permanent Upgrades (Memories)
 
@@ -197,11 +230,14 @@ Spend Memories on permanent bonuses for ALL future runs:
 
 Each depth has unique upgrades purchased with its specific crystal:
 
-- **Progress Speed** - Fill dive bar faster (all depths)
-- **Memories Gain** - More memories from this depth (all depths)
-- **Crystals Gain** - More crystals from this depth (all depths)
-- **Stabilize** - Reduce Instability (Depth 2 only)
-- **Inner Eye** - See numbers in Silence (Depth 9 only)
+#### Universal Upgrades (All Depths)
+- **Progress Speed** - Fill progress bar faster (increases multiplier gain rate)
+- **Memories Gain** - More memories from this depth on Wake
+- **Crystals Gain** - More crystals from this depth on Wake
+
+#### Depth-Specific Upgrades
+- **Stabilize** (All Depths) - **REQUIRED** to unlock Dive. Max 10/10.
+- **Inner Eye** (Depth 9) - See numbers in Silence
 - And more depth-specific upgrades...
 
 ### Abyssal Perks (Late Game)
@@ -222,10 +258,11 @@ Unlocked after reaching Depth 15:
 ### Early Game (Depths 1-3)
 
 1. **Prioritize Thoughts Speed** - Generate currency faster
-2. **Max Stabilize at Depth 2** - Required to unlock Dive
-3. **Keep Instability < 50%** - Don't risk failing early
-4. **Wake Early & Often** - Build up Memories for permanent upgrades
-5. **Buy Calm Mind ASAP** - Reduces Instability permanently
+2. **Fill Progress Bar** - Get that 5x multiplier before major purchases
+3. **Save Crystals for Stabilize** - You NEED level 10 to unlock Dive
+4. **Keep Instability < 50%** - Don't risk failing early
+5. **Wake Early & Often** - Build up Memories for permanent upgrades
+6. **Buy Calm Mind ASAP** - Reduces Instability permanently
 
 ### Mid Game (Depths 4-9)
 
@@ -248,6 +285,7 @@ Unlocked after reaching Depth 15:
 - **Memories on Wake**: √(Total Thoughts) × (1 + Max Instability/100) × Time Mult × Depth Mult × 1.35 (voluntary)
 - **Crystals on Wake**: √(Total Thoughts) × (1 + Depth × 0.15) × 0.05 × Depth Mult
 - **Instability Gain**: Base Rate × Depth Mult × Upgrade Reductions
+- **Progress Multiplier**: 1x + (4x × Progress%) = 1x to 5x
 
 ---
 
@@ -263,9 +301,11 @@ Unlocked after reaching Depth 15:
 
 ```
 GameManager.gd           - Main game loop, save/load coordinator
-DepthRunController.gd    - 15-depth run system (progress, depth switching)
+DepthRunController.gd    - 15-depth run system (progress bars, depth switching)
 DepthMetaSystem.gd       - Permanent progression (currencies, upgrades)
-MetaPanelController.gd   - UI for meta upgrades (3 tabs)
+MetaPanelController.gd   - UI for meta upgrades (3 tabs: Perm/Depth/Abyss)
+PermPerkRow.gd           - Permanent upgrade purchase UI rows
+DepthUpgradeRow.gd       - Depth upgrade purchase UI rows
 RiskSystem.gd            - Instability calculation
 OverclockSystem.gd       - Temporary boost mechanic
 SaveSystem.gd            - JSON save/load

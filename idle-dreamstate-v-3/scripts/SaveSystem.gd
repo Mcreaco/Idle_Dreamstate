@@ -50,3 +50,17 @@ func set_max_stat(key: String, value: int) -> void:
 	if value > cur:
 		data[key] = value
 		save_game(data)
+
+var owned_items: Array[String] = []
+var active_boost: Dictionary = {"mult": 1.0, "expires": 0}
+
+func _save_shop_data() -> void:
+	var data: Dictionary = SaveSystem.load_game()
+	data["shop_owned_items"] = owned_items
+	data["shop_active_boost"] = active_boost
+	SaveSystem.save_game(data)
+
+func _load_shop_data() -> void:
+	var data: Dictionary = SaveSystem.load_game()
+	owned_items = data.get("shop_owned_items", [])
+	active_boost = data.get("shop_active_boost", {"mult": 1.0, "expires": 0})

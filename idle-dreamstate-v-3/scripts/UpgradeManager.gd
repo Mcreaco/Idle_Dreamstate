@@ -58,15 +58,13 @@ var overclock_safety_level: int = 0
 # =========================
 
 func get_thoughts_mult() -> float:
-	return 1.0 + float(thoughts_level) * thoughts_step
+	return 1.0 + (thoughts_level * 0.08)
 
 func get_instability_mult() -> float:
-	# lower is better; multiplicative reduction
-	return pow(1.0 - stability_step, float(stability_level))
+	return maxf(0.1, 1.0 - (stability_level * 0.05))
 
-# Depth-based helpers
 func get_deep_dives_thoughts_bonus_per_depth() -> float:
-	return float(deep_dives_level) * deep_dives_thoughts_per_depth
+	return deep_dives_level * 0.03
 
 func get_deep_dives_instab_bonus_per_depth() -> float:
 	return float(deep_dives_level) * deep_dives_instab_per_depth
@@ -98,23 +96,23 @@ func get_overclock_thoughts_mult_penalty() -> float:
 # Costs
 # =========================
 
-func get_thoughts_cost() -> float:
-	return thoughts_base_cost * pow(run_cost_growth, float(thoughts_level))
+func get_thoughts_upgrade_cost() -> float:
+	return 50.0 * pow(1.35, thoughts_level)
 
-func get_stability_cost() -> float:
-	return stability_base_cost * pow(run_cost_growth, float(stability_level))
+func get_stability_upgrade_cost() -> float:
+	return 75.0 * pow(1.35, stability_level)
 
-func get_deep_dives_cost() -> float:
-	return deep_dives_base_cost * pow(run_cost_growth, float(deep_dives_level))
+func get_deep_dives_upgrade_cost() -> float:
+	return 100.0 * pow(1.35, deep_dives_level)
 
-func get_mental_buffer_cost() -> float:
-	return mental_buffer_base_cost * pow(run_cost_growth, float(mental_buffer_level))
+func get_mental_buffer_upgrade_cost() -> float:
+	return 150.0 * pow(1.35, mental_buffer_level)
 
-func get_overclock_mastery_cost() -> float:
-	return overclock_mastery_base_cost * pow(run_cost_growth, float(overclock_mastery_level))
+func get_overclock_mastery_upgrade_cost() -> float:
+	return 200.0 * pow(1.35, overclock_mastery_level)
 
-func get_overclock_safety_cost() -> float:
-	return overclock_safety_base_cost * pow(run_cost_growth, float(overclock_safety_level))
+func get_overclock_safety_upgrade_cost() -> float:
+	return 250.0 * pow(1.35, overclock_safety_level)
 
 
 # =========================
@@ -122,42 +120,42 @@ func get_overclock_safety_cost() -> float:
 # =========================
 
 func try_buy_thoughts_upgrade(thoughts: float) -> Dictionary:
-	var cost := get_thoughts_cost()
+	var cost := get_thoughts_upgrade_cost()
 	if thoughts < cost:
 		return {"bought": false, "cost": cost}
 	thoughts_level += 1
 	return {"bought": true, "cost": cost}
 
 func try_buy_stability_upgrade(thoughts: float) -> Dictionary:
-	var cost := get_stability_cost()
+	var cost := get_stability_upgrade_cost()
 	if thoughts < cost:
 		return {"bought": false, "cost": cost}
 	stability_level += 1
 	return {"bought": true, "cost": cost}
 
 func try_buy_deep_dives_upgrade(thoughts: float) -> Dictionary:
-	var cost := get_deep_dives_cost()
+	var cost := get_deep_dives_upgrade_cost()
 	if thoughts < cost:
 		return {"bought": false, "cost": cost}
 	deep_dives_level += 1
 	return {"bought": true, "cost": cost}
 
 func try_buy_mental_buffer_upgrade(thoughts: float) -> Dictionary:
-	var cost := get_mental_buffer_cost()
+	var cost := get_mental_buffer_upgrade_cost()
 	if thoughts < cost:
 		return {"bought": false, "cost": cost}
 	mental_buffer_level += 1
 	return {"bought": true, "cost": cost}
 
 func try_buy_overclock_mastery_upgrade(thoughts: float) -> Dictionary:
-	var cost := get_overclock_mastery_cost()
+	var cost := get_overclock_mastery_upgrade_cost()
 	if thoughts < cost:
 		return {"bought": false, "cost": cost}
 	overclock_mastery_level += 1
 	return {"bought": true, "cost": cost}
 
 func try_buy_overclock_safety_upgrade(thoughts: float) -> Dictionary:
-	var cost := get_overclock_safety_cost()
+	var cost := get_overclock_safety_upgrade_cost()
 	if thoughts < cost:
 		return {"bought": false, "cost": cost}
 	overclock_safety_level += 1

@@ -214,13 +214,12 @@ func _get_level() -> int:
 
 func _get_cost() -> float:
 	match mode.to_lower():
-		"thoughts": return _up.get_thoughts_cost()
-		"stability": return _up.get_stability_cost()
-		"deepdives": return _up.get_deep_dives_cost()
-		"mentalbuffer": return _up.get_mental_buffer_cost()
-		"overclockmastery": return _up.get_overclock_mastery_cost()
-		"overclocksafety":
-			return _up.get_overclocksafety_cost() if _up.has_method("get_overclocksafety_cost") else _up.get_overclock_safety_cost()
+		"thoughts": return _up.get_thoughts_upgrade_cost()
+		"stability": return _up.get_stability_upgrade_cost()
+		"deepdives": return _up.get_deep_dives_upgrade_cost()
+		"mentalbuffer": return _up.get_mental_buffer_upgrade_cost()
+		"overclockmastery": return _up.get_overclock_mastery_upgrade_cost()
+		"overclocksafety": return _up.get_overclock_safety_upgrade_cost()
 	return 999999.0
 
 func _get_mini_text() -> String:

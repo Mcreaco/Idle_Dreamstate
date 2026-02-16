@@ -23,7 +23,7 @@ var sleep_paralysis_level: int = 0       # +Instability freezes temporarily on w
 var oneiromancy_level: int = 0           # +See next depth preview/bonuses
 
 # ---- max ----
-@export var max_level := 25
+@export var max_level := 50
 
 # ---- base costs ----
 @export var base_cost := 50.0
@@ -108,8 +108,7 @@ func get_starting_instability_reduction() -> float:
 	return float(stability_buffer_level) * 2.0       # -2 per lvl (cap in GM)
 
 func get_offline_mult() -> float:
-	# Return 1.0 for 100% efficiency, or higher with upgrades
-	return 1.0 + (offline_echo_level * 0.25)  # Example: 1.0, 1.25, 1.5, etc.
+	return 0.75 + (float(offline_echo_level) * 0.08)
 	
 # NEW GETTER METHODS
 func get_recursive_memory_mult() -> float:
@@ -144,29 +143,29 @@ func get_oneiromancy_preview_depths() -> int:
 
 func get_perm_upgrade_cost(upgrade_index: int, current_level: int) -> float:
 	var base_costs := [
-		10.0,   # Memory Engine
-		15.0,   # Calm Mind
-		20.0,   # Focused Will
-		25.0,   # Starting Insight
-		30.0,   # Stability Buffer
-		50.0,   # Offline Echo
-		100.0,  # Recursive Memory
-		150.0,  # Lucid Dreaming
-		250.0,  # Deep Sleeper
-		400.0,  # Night Owl
-		650.0,  # Dream Catcher
-		1000.0, # Subconscious Miner
-		1500.0, # Void Walker
-		2500.0, # Rapid Eye
-		4000.0, # Sleep Paralysis
-		6500.0, # Oneiromancy
+		100.0,     # Memory Engine
+		150.0,     # Calm Mind
+		200.0,     # Focused Will
+		300.0,     # Starting Insight
+		400.0,     # Stability Buffer
+		800.0,     # Offline Echo
+		1500.0,    # Recursive Memory
+		2500.0,    # Lucid Dreaming
+		4000.0,    # Deep Sleeper
+		6500.0,    # Night Owl
+		10000.0,   # Dream Catcher
+		15000.0,   # Subconscious Miner
+		25000.0,   # Void Walker
+		40000.0,   # Rapid Eye
+		65000.0,   # Sleep Paralysis
+		100000.0,  # Oneiromancy
 	]
 	
 	if upgrade_index >= base_costs.size():
 		return 99999.0
 	
 	var base: float = base_costs[upgrade_index]
-	return base * pow(1.4, float(current_level))
+	return base * pow(1.45, float(current_level))  # Was 1.4
 
 func get_cost_by_id(perk_id: String) -> float:
 	var index := get_perk_index(perk_id)
@@ -174,13 +173,16 @@ func get_cost_by_id(perk_id: String) -> float:
 	return get_perm_upgrade_cost(index, level)
 
 func get_perk_index(perk_id: String) -> int:
-	var ids := [
+	var ids: Array = [
 		"memory_engine", "calm_mind", "focused_will", "starting_insight", 
 		"stability_buffer", "offline_echo", "recursive_memory", "lucid_dreaming",
 		"deep_sleeper", "night_owl", "dream_catcher", "subconscious_miner",
 		"void_walker", "rapid_eye", "sleep_paralysis", "oneiromancy"
 	]
-	return ids.find(perk_id)
+	for i in range(ids.size()):
+		if ids[i] == perk_id:
+			return i
+	return -1
 
 func get_level_by_id(perk_id: String) -> int:
 	match perk_id:
