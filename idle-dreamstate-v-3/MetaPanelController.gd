@@ -33,7 +33,21 @@ var depth_upgrade_rows: Array = []  # Store row references
 func _ready() -> void:
 	visible = false
 	call_deferred("_late_bind")
+	
+	# Connect close button
+	close_btn = find_child("CloseButton", true, false)
+	if close_btn and not close_btn.pressed.is_connected(_on_close_button_pressed):
+		close_btn.pressed.connect(_on_close_button_pressed)
 
+func _on_close_button_pressed() -> void:
+	# Notify tutorial that close button was clicked
+	var tm = get_node_or_null("/root/TutorialManage")
+	if tm and tm.has_method("on_ui_element_clicked"):
+		tm.on_ui_element_clicked("CloseButton")
+	
+	# ... your existing close panel code ...
+	visible = false  # or however you normally close it
+	
 func _late_bind() -> void:
 	depth_meta_system = get_tree().current_scene.find_child("DepthMetaSystem", true, false) as DepthMetaSystem
 

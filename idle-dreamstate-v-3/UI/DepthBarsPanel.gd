@@ -239,6 +239,17 @@ func _wire_row(row: Node, depth_index: int) -> void:
 	if row.has_signal("request_close") and not row.request_close.is_connected(_on_row_request_close):
 		row.request_close.connect(_on_row_request_close)
 
+func close_all_expanded() -> void:
+	# Close any expanded depth bar
+	for child in get_children():
+		if child.has_method("set_details_open"):
+			child.call("set_details_open", false)
+	
+	# Also hide overlay if exists
+	var overlay = find_child("ExpandOverlay", true, false)
+	if overlay:
+		overlay.visible = false
+		
 func _apply_row_states() -> void:
 	for depth_index in range(1, 16):
 		var row: Node = _rows.get(depth_index, null)

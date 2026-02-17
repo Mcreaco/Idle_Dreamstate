@@ -54,6 +54,9 @@ var _block_click_until_msec: int = 0
 var partial_memories: float = 0.0
 var partial_crystals: float = 0.0
 
+func is_details_open() -> bool:
+	return _details_open
+
 func block_row_clicks(ms: int = 200) -> void:
 	_block_click_until_msec = Time.get_ticks_msec() + ms
 
@@ -238,6 +241,12 @@ func set_details_open(open: bool) -> void:
 	_apply_visuals()
 	_apply_bar_style()
 	_apply_row_background_texture()
+	
+	# Notify tutorial manager when expanded/closed
+	if open:
+		var tm = get_node_or_null("/root/TutorialManage")
+		if tm and tm.has_method("on_depth_bar_expanded"):
+			tm.on_depth_bar_expanded(depth_index)
 
 # -----------------------
 # Layout

@@ -174,6 +174,18 @@ func _warn_missing_nodes_once() -> void:
 		_warned_missing_sound = true
 
 func _ready() -> void:
+	# Temporary debug - remove after fixing
+	var wake_btn = find_child("WakeButton", true, false)
+	if wake_btn:
+		print("WakeButton found: ", wake_btn.get_path())
+	else:
+		print("ERROR: WakeButton not found!")
+
+	var prestige_wake = find_child("PrestigeWakeButton", true, false) 
+	if prestige_wake:
+		print("PrestigeWakeButton found: ", prestige_wake.get_path())
+	else:
+		print("ERROR: PrestigeWakeButton not found!")
 	_warn_missing_nodes_once()
 	set_process_priority(1000)
 	
@@ -249,17 +261,6 @@ func _ready() -> void:
 		_toggle_debug_overlay()
 		_debug_visible = true
 	_update_debug_overlay()
-	
-	# TEST: Force tutorial after 2 seconds
-	await get_tree().create_timer(2.0).timeout
-	var tm = get_node_or_null("/root/TutorialManage")  # Not TutorialManager
-	if tm:
-		tm.start_tutorial("wake_unlocked")
-	else:
-		print("ERROR: TutorialManager not found at /root/TutorialManager")
-		
-	load_game()
-	print("LOADED - Total dives: ", total_dives)  # Check if loading works
 
 func _input(event):
 	if event is InputEventKey and event.pressed and event.keycode == KEY_F9:
@@ -352,17 +353,23 @@ func _set_button_dim(btn: Button, enabled: bool) -> void:
 
 func _update_buttons_ui() -> void:
 	if overclock_button != null:
-		var cost_mul: float = upgrade_manager.get_overclock_cost_mult()
-		var effective_overclock_cost: float = overclock_system.base_control_cost * cost_mul
-		var disabled_reason := ""
-		if overclock_system.active:
-			disabled_reason = "Overclock already active."
-		elif control < effective_overclock_cost:
-			disabled_reason = "Need %d Control." % int(round(effective_overclock_cost))
-		overclock_button.disabled = overclock_system.active or (control < effective_overclock_cost)
-		if overclock_button.disabled and disabled_reason != "":
-			overclock_button.tooltip_text = disabled_reason + "\n" + overclock_button.tooltip_text
-		_set_button_dim(overclock_button, not overclock_button.disabled)
+		var current_depth = get_current_depth()
+		var can_overclock = current_depth >= 2  # Only unlock at depth 2
+		
+		overclock_button.disabled = not can_overclock
+		
+		if can_overclock:
+			var cost_mul: float = upgrade_manager.get_overclock_cost_mult()
+			var effective_cost: float = overclock_system.base_control_cost * cost_mul
+			
+			if overclock_system.active:
+				var sec_left_o: int = int(ceil(maxf(overclock_system.timer, 0.0)))
+				overclock_button.text = "Overclock (%ds)" % sec_left_o
+			else:
+				overclock_button.text = "Overclock (-%d Control)" % int(round(effective_cost))
+		else:
+			overclock_button.text = "🔒 Depth 2"  # Locked icon + requirement
+			overclock_button.tooltip_text = "Unlocks at Depth 2"
 
 	if dive_button != null:
 		var drc := get_node_or_null("/root/DepthRunController")
@@ -464,6 +471,12 @@ func force_unlock_depth_tab(new_depth: int) -> void:
 	_sync_meta_progress()
 
 func _on_wake_pressed() -> void:
+	# Notify tutorial
+	var tm = get_node_or_null("/root/TutorialManage")
+	if tm and tm.has_method("on_ui_element_clicked"):
+		tm.on_ui_element_clicked("WakeButton")
+		# Close expanded bars first so wake button isn't blocked
+	_close_expanded_depth_bars()
 	if prestige_panel == null:
 		prestige_panel = _ui_find("PrestigePanel") as PrestigePanel
 	if prestige_panel == null:
@@ -495,7 +508,7 @@ func _on_wake_pressed() -> void:
 	
 	total_runs += 1
 	# Notify tutorial that wake was clicked
-	var tm = get_node_or_null("/root/TutorialManage")
+	tm = get_node_or_null("/root/TutorialManage")  # Remove 'var' here
 	if tm and tm.has_method("on_ui_element_clicked"):
 		tm.on_ui_element_clicked("WakeButton")
 
@@ -516,18 +529,19 @@ func _connect_tutorial_signals() -> void:
 			close_btn.pressed.connect(func(): tutorial_manager.on_button_clicked("CloseButton"))
 		
 func _on_prestige_confirm_wake() -> void:
+	# Add these two declarations:
+	var tm = get_node_or_null("/root/TutorialManage")
 	var drc := get_node_or_null("/root/DepthRunController")
-	if drc == null:
-		return
 	
-	# ACCUMULATE LIFETIME STATS BEFORE RESET
-	lifetime_thoughts += total_thoughts_earned
-	lifetime_control += control  # or track control spent/gained
-	total_playtime += time_in_run
+	# Notify tutorial that prestige wake was clicked
+	if tm and tm.has_method("on_ui_element_clicked"):
+		tm.on_ui_element_clicked("ConfirmWakeB")
 	
 	# Get accumulated memories/crystals from depth_data
 	var accumulated_memories := 0.0
 	var accumulated_crystals := 0.0
+	
+	# Now drc is declared and can be used:
 	var active_d: int = drc.get("active_depth") as int
 	var run_data: Array = drc.get("run") as Array
 	if run_data != null and active_d >= 1 and active_d <= run_data.size():
@@ -539,12 +553,10 @@ func _on_prestige_confirm_wake() -> void:
 	
 	if result is Dictionary:
 		var gained_memories = float(result.get("memories", 0.0))
-		# ADD accumulated memories from depth_data
 		gained_memories += accumulated_memories
 		memories += gained_memories
 		var crystals = result.get("crystals_by_name", {})
 		
-		# ADD accumulated crystals from depth_data
 		var active_currency_name := DepthMetaSystem.get_depth_currency_name(active_d)
 		if accumulated_crystals > 0:
 			crystals[active_currency_name] = float(crystals.get(active_currency_name, 0.0)) + accumulated_crystals
@@ -563,9 +575,40 @@ func _on_prestige_confirm_wake() -> void:
 	if prestige_panel != null:
 		prestige_panel.close()
 	
+	# REMOVE the second declaration - reuse 'tm' instead
+	# var tutorial_mgr = get_node_or_null("/root/TutorialManage")  # DELETE THIS LINE
+	
+	# Use 'tm' not 'tutorial_mgr'
+	if tm and tm.has_method("on_ui_element_clicked"):
+		tm.on_ui_element_clicked("PrestigeWakeButton")
+	
 	_force_rate_sample()
 	_refresh_top_ui()
+	
+	_on_meta_pressed()
+	
+	# Use 'tm' here too
+	if tm and tm.has_method("start_tutorial"):
+		await get_tree().process_frame
+		if tm.active_tutorial == "":
+			tm.start_tutorial("post_wake_meta")
 
+func _close_expanded_depth_bars() -> void:
+	var panel = get_tree().current_scene.find_child("DepthBarsPanel", true, false)
+	if panel != null:
+		# Try different method names depending on your setup
+		if panel.has_method("close_all_expanded"):
+			panel.call("close_all_expanded")
+		elif panel.has_method("set_expanded_depth"):
+			panel.call("set_expanded_depth", -1)
+		elif panel.has_method("close_expand_overlay"):
+			panel.call("close_expand_overlay")
+	
+	# Also close via overlay if exists
+	var overlay = get_tree().current_scene.find_child("ExpandOverlay", true, false)
+	if overlay:
+		overlay.visible = false
+		
 func do_fail() -> void:
 	if ad_service != null and ad_service.can_show(AdService.AD_FAIL_SAVE) and not _fail_save_prompt_shown:
 		_show_fail_save_prompt()
@@ -746,6 +789,24 @@ func do_dive() -> void:
 	
 	_sync_cracks()
 	_sync_meta_progress()
+	# Trigger depth 2 tutorial if we just arrived at depth 2
+	if next_depth == 2:
+		print("ARRIVED AT DEPTH 2 - Triggering tutorial")
+		var tm = get_node_or_null("/root/TutorialManage")
+		if tm != null and tm.has_method("start_tutorial"):
+			if tm.get("active_tutorial") == "":
+				await get_tree().create_timer(0.1).timeout
+				tm.start_tutorial("depth_2_first_time")
+	
+	# NEW: Trigger depth 3 tutorial if we just arrived at depth 3
+	if next_depth == 3:
+		print("ARRIVED AT DEPTH 3 - Triggering tutorial")
+		var tm = get_node_or_null("/root/TutorialManage")
+		if tm != null and tm.has_method("start_tutorial"):
+			if tm.get("active_tutorial") == "":
+				await get_tree().create_timer(0.1).timeout
+				tm.start_tutorial("depth_3_unlock")
+	
 	save_game()
 	
 func do_overclock() -> void:
