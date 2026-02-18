@@ -118,11 +118,17 @@ func get_dive_instability_gain(depth: int) -> float:
 	return 5.0 + (depth * 1.5)
 
 func _fmt_num(v: float) -> String:
-	if v >= 1000000.0:
-		return "%.2fM" % (v / 1000000.0)
-	if v >= 1000.0:
-		return "%.2fK" % (v / 1000.0)
-	return str(int(floor(v)))
+	if v >= 1e15:
+		return "%.2e" % v
+	if v >= 1_000_000_000_000.0:
+		return "%.2fT" % (v / 1_000_000_000_000.0)
+	if v >= 1_000_000_000.0:
+		return "%.2fB" % (v / 1_000_000_000.0)
+	if v >= 1_000_000.0:
+		return "%.2fM" % (v / 1_000_000.0)
+	if v >= 1_000.0:
+		return "%.2fk" % (v / 1_000.0)
+	return str(int(v))
 
 func _fmt_time_ui(sec: float) -> String:
 	if sec >= 999900.0:
@@ -174,6 +180,8 @@ func _warn_missing_nodes_once() -> void:
 		_warned_missing_sound = true
 
 func _ready() -> void:
+	auto_buy_unlocked_depths.append(1)  # Unlock depth 1
+	auto_buy_unlocked_depths.append(2)  # Unlock depth 2
 	# Temporary debug - remove after fixing
 	var wake_btn = find_child("WakeButton", true, false)
 	if wake_btn:
@@ -261,6 +269,21 @@ func _ready() -> void:
 		_toggle_debug_overlay()
 		_debug_visible = true
 	_update_debug_overlay()
+	
+	# After loading game, verify perm perks
+	if perm_perk_system != null:
+		print("PERK LOAD CHECK:")
+		print("  Memory Engine: ", perm_perk_system.memory_engine_level)
+		print("  Calm Mind: ", perm_perk_system.calm_mind_level)
+		print("  Thoughts Mult: ", perm_perk_system.get_thoughts_mult())
+		
+		# Verify they match saved data
+		var data = SaveSystem.load_game()
+		if data.has("perm_memory_engine_level"):
+			var saved = data["perm_memory_engine_level"]
+			var current = perm_perk_system.memory_engine_level
+			if saved != current:
+				push_error("MISMATCH: Saved ME=", saved, " but loaded ME=", current)
 
 func _input(event):
 	if event is InputEventKey and event.pressed and event.keycode == KEY_F9:
@@ -670,14 +693,18 @@ func calc_depth_currency_gain(depth_i: int) -> float:
 	return sqrt(t) * (1.0 + float(depth_i) * 0.15) * 0.05
 	
 func do_dive() -> void:
-	print("DO_DIVE CALLED")  # Debug print to confirm it's being called
+	print("DO_DIVE CALLED")
 	var drc := get_node_or_null("/root/DepthRunController")
-	if drc != null and drc.has_method("dive"):
-		drc.call("dive")
-	else:
-		push_warning("DepthRunController not found for dive")
-	total_dives += 1  # MUST BE FIRST LINE
+	
+	# CRITICAL FIX: Check if we can actually dive first
+	if drc != null and drc.has_method("can_dive"):
+		if not drc.call("can_dive"):
+			print("DO_DIVE: Cannot dive - requirements not met")
+			return  # Exit early if can't dive
+	
+	total_dives += 1
 	print("Total dives is now: ", total_dives)
+	
 	# CRITICAL: Freeze the current depth's multiplier BEFORE diving
 	freeze_current_depth_multiplier()
 	
@@ -752,13 +779,20 @@ func do_dive() -> void:
 				drc.set("run", run_data)
 	
 	# Actually change the active depth in the controller
+	var dive_succeeded := false
 	if drc.has_method("dive"):
-		drc.call("dive")
+		dive_succeeded = drc.call("dive")  # Will return false if can_dive failed
 	else:
-		print("DO_DIVE: WARNING - dive method not found, setting manually")
+		# Manual fallback
 		drc.set("active_depth", next_depth)
 		if drc.has_signal("active_depth_changed"):
 			drc.emit_signal("active_depth_changed", next_depth)
+		dive_succeeded = true
+	
+	# CRITICAL FIX: Only proceed if dive actually succeeded
+	if not dive_succeeded:
+		print("DO_DIVE: Dive failed in controller")
+		return
 	
 	# Check data after dive
 	var run_after: Array = drc.get("run") as Array
@@ -1218,7 +1252,17 @@ func save_game() -> void:
 		data["perm_starting_insight_level"] = perm_perk_system.starting_insight_level
 		data["perm_stability_buffer_level"] = perm_perk_system.stability_buffer_level
 		data["perm_offline_echo_level"] = perm_perk_system.offline_echo_level
-	
+		data["perm_recursive_memory_level"] = perm_perk_system.recursive_memory_level
+		data["perm_lucid_dreaming_level"] = perm_perk_system.lucid_dreaming_level
+		data["perm_deep_sleeper_level"] = perm_perk_system.deep_sleeper_level
+		data["perm_night_owl_level"] = perm_perk_system.night_owl_level
+		data["perm_dream_catcher_level"] = perm_perk_system.dream_catcher_level
+		data["perm_subconscious_miner_level"] = perm_perk_system.subconscious_miner_level
+		data["perm_void_walker_level"] = perm_perk_system.void_walker_level
+		data["perm_rapid_eye_level"] = perm_perk_system.rapid_eye_level
+		data["perm_sleep_paralysis_level"] = perm_perk_system.sleep_paralysis_level
+		data["perm_oneiromancy_level"] = perm_perk_system.oneiromancy_level
+		
 	if depth_meta_system != null:
 		print("SAVING currencies:")
 		for i in range(1, DepthMetaSystem.MAX_DEPTH + 1):
@@ -1343,6 +1387,16 @@ func load_game() -> void:
 		perm_perk_system.starting_insight_level = int(data.get("perm_starting_insight_level", 0))
 		perm_perk_system.stability_buffer_level = int(data.get("perm_stability_buffer_level", 0))
 		perm_perk_system.offline_echo_level = int(data.get("perm_offline_echo_level", 0))
+		perm_perk_system.recursive_memory_level = int(data.get("perm_recursive_memory_level", 0))
+		perm_perk_system.lucid_dreaming_level = int(data.get("perm_lucid_dreaming_level", 0))
+		perm_perk_system.deep_sleeper_level = int(data.get("perm_deep_sleeper_level", 0))
+		perm_perk_system.night_owl_level = int(data.get("perm_night_owl_level", 0))
+		perm_perk_system.dream_catcher_level = int(data.get("perm_dream_catcher_level", 0))
+		perm_perk_system.subconscious_miner_level = int(data.get("perm_subconscious_miner_level", 0))
+		perm_perk_system.void_walker_level = int(data.get("perm_void_walker_level", 0))
+		perm_perk_system.rapid_eye_level = int(data.get("perm_rapid_eye_level", 0))
+		perm_perk_system.sleep_paralysis_level = int(data.get("perm_sleep_paralysis_level", 0))
+		perm_perk_system.oneiromancy_level = int(data.get("perm_oneiromancy_level", 0))
 	
 	if depth_meta_system != null:
 		depth_meta_system.ensure_ready()
@@ -1760,7 +1814,7 @@ func _process(delta: float) -> void:
 	
 	var _corruption = corruption_system.update(delta, instability)
 	
-	# Calculate multipliers
+	 # Calculate multipliers - ADD DEBUG PRINTS HERE
 	var thoughts_mult: float = _safe_mult(upgrade_manager.get_thoughts_mult()) * _safe_mult(perk_system.get_thoughts_mult()) * _safe_mult(nightmare_system.get_thoughts_mult()) * _get_run_upgrades_thoughts_mult()
 	var control_mult: float = _safe_mult(perk_system.get_control_mult()) * _safe_mult(nightmare_system.get_control_mult())
 	
@@ -1774,10 +1828,28 @@ func _process(delta: float) -> void:
 	thoughts_mult *= depth_meta_thoughts_mult
 	control_mult *= depth_meta_control_mult
 	
+	 # APPLY PERM PERKS - Debug these
 	if perm_perk_system != null:
-		thoughts_mult *= _safe_mult(perm_perk_system.get_thoughts_mult())
-		control_mult *= _safe_mult(perm_perk_system.get_control_mult())
+		var perm_thoughts_mult = perm_perk_system.get_thoughts_mult()
+		var perm_control_mult = perm_perk_system.get_control_mult()
+		
+		# DEBUG: Print every few seconds to verify
+		if Engine.get_process_frames() % 300 == 0:  # Every ~5 seconds
+			print("PermPerk Debug: memory_engine_level=", perm_perk_system.memory_engine_level, 
+				  " thoughts_mult=", perm_thoughts_mult,
+				  " control_mult=", perm_control_mult)
+		
+		thoughts_mult *= perm_thoughts_mult
+		control_mult *= perm_control_mult
+	else:
+		push_warning("PermPerkSystem is NULL in _process!")
 	
+	perm_perk_system = get_tree().current_scene.find_child("PermPerkSystem", true, false)
+	if perm_perk_system == null:
+		push_error("CRITICAL: PermPerkSystem not found! Check node path.")
+	else:
+		print("PermPerkSystem found: ", perm_perk_system.get_path())
+		
 	if abyss_perk_system != null:
 		thoughts_mult *= _safe_mult(abyss_perk_system.get_thoughts_mult())
 		control_mult *= _safe_mult(abyss_perk_system.get_control_mult())
@@ -2343,6 +2415,10 @@ func _get_current_depth_progress_multiplier(depth_idx: int) -> float:
 	return multiplier
 	
 func is_auto_buy_unlocked_for_depth(depth: int) -> bool:
+	# CHECK THE ARRAY FIRST (Fixes immediate issue)
+	if depth in auto_buy_unlocked_depths:
+		return true
+	
 	# Check shop early unlock
 	var shop = get_tree().current_scene.find_child("ShopPanel", true, false)
 	if shop and shop.has_method("has_early_auto_buy"):
@@ -2355,13 +2431,15 @@ func is_auto_buy_unlocked_for_depth(depth: int) -> bool:
 		return false
 	
 	# Check if any unlocked upgrade grants auto-buy for this depth
-	for upgrade_id in meta.auto_buy_unlocks.keys():
-		var unlocks_depth: int = meta.auto_buy_unlocks[upgrade_id]
-		if unlocks_depth == depth:
-			# Check if player has this upgrade
-			var level = meta.get_level(depth, upgrade_id)  # or however you check upgrade levels
-			if level > 0:
-				return true
+	if meta.has_method("get_auto_buy_unlocks"):
+		var unlocks = meta.call("get_auto_buy_unlocks")
+		for upgrade_id in unlocks.keys():
+			var unlocks_depth: int = unlocks[upgrade_id]
+			if unlocks_depth == depth:
+				if meta.has_method("get_level"):
+					var level = meta.call("get_level", depth, upgrade_id)
+					if level > 0:
+						return true
 	
 	return false
 
@@ -2396,3 +2474,37 @@ func fix_depth1_text_color() -> void:
 		if desc_label:
 			desc_label.add_theme_color_override("font_color", Color(0.1, 0.1, 0.15, 1.0))  # Dark blue-black
 			desc_label.add_theme_color_override("font_shadow_color", Color(1, 1, 1, 0.5))  # White shadow for contrast
+
+func on_manual_focus_clicked() -> void:
+	var meta := get_tree().current_scene.find_child("DepthMetaSystem", true, false)
+	var click_level := 0
+	if meta != null and meta.has_method("get_level"):
+		click_level = meta.call("get_level", 1, "manual_click")
+	
+	# Calculate seconds worth: Base 1.0 + (level * 0.5)
+	var seconds_per_click := 1.0 + (float(click_level) * 0.5)
+	
+	# CRITICAL FIX: Calculate IDLE rate only, not current total rate
+	# This is the base idle rate without manual click contribution
+	var idle_tps := idle_thoughts_rate * _get_total_idle_multiplier()
+	
+	# Give the thoughts instantly
+	var thoughts_gained := idle_tps * seconds_per_click
+	thoughts += thoughts_gained
+	
+	# Visual feedback
+	_show_click_feedback(thoughts_gained)
+
+func _get_total_idle_multiplier() -> float:
+	# Calculate just the multipliers that apply to idle generation
+	# (Copy the relevant parts from your _process calculations, but exclude click-based gains)
+	var mult := _safe_mult(upgrade_manager.get_thoughts_mult()) * _safe_mult(perk_system.get_thoughts_mult()) * _safe_mult(nightmare_system.get_thoughts_mult())
+	
+	if depth_meta_system != null:
+		mult *= _safe_mult(depth_meta_system.get_global_thoughts_mult())
+	
+	return mult
+
+func _show_click_feedback(amount: float) -> void:
+	# Spawn floating text or flash effect
+	print("Focus! +", _fmt_num(amount), " thoughts")

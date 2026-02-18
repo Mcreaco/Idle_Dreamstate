@@ -243,6 +243,8 @@ func _find_first_button(n: Node) -> Button:
 	return null
 
 func _fmt_num(v: float) -> String:
+	if v >= 1e15:
+		return "%.2e" % v
 	if v >= 1_000_000_000_000.0:
 		return "%.2fT" % (v / 1_000_000_000_000.0)
 	if v >= 1_000_000_000.0:

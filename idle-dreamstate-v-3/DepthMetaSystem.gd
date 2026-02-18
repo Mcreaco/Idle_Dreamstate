@@ -192,11 +192,14 @@ func get_depth_upgrade_defs(depth_i: int) -> Array:
 			# NEW: Manual click upgrade for Depth 1
 			var manual_click := {
 				"id": "manual_click",
-				"name": "Focused Intention",
-				"desc": "+1% Progress per manual click per level.",
+				"name": "Focused Intention", 
+				"desc": "Manual Focus button grants +0.5s of Thoughts per level.",
 				"max": 10,
 				"kind": "click_power",
-				"costs": _pick_costs(d, 1)
+				"base_cost": 50.0,
+				"cost_growth": 1.5,
+				"cost_currency": "thoughts",
+				"effect_per_level": 0.5  # +0.5 seconds per click per level
 			}
 			
 			# Custom unlock for depth 1 - requires click upgrade instead of stabilize

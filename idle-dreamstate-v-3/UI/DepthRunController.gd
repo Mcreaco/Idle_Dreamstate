@@ -131,13 +131,41 @@ func _tick_active_depth(delta: float) -> void:
 	var depth_cry_mul := float(applied.get("cry_mul", 1.0))
 	var rules: Dictionary = applied.get("rules", {})
 
-	# Depth events (can spike instability etc.)
-	_tick_depth_events(d, delta, rules)
-
-	# multipliers from upgrades (unchanged)
-	var speed_mul: float = 1.0 + 0.25 * _get_local_level(d, "progress_speed") + _frozen_effect(d, "progress_speed", 0.15)
-	var mem_mul: float   = 1.0 + 0.15 * _get_local_level(d, "memories_gain")  + _frozen_effect(d, "memories_gain",  0.15)
-	var cry_mul: float   = 1.0 + 0.12 * _get_local_level(d, "crystals_gain")  + _frozen_effect(d, "crystals_gain",  0.12)
+	# multipliers from upgrades (RUN UPGRADES)
+	 # Calculate multipliers with DEBUG output
+	var speed_lvl := _get_local_level(d, "progress_speed")
+	var mem_lvl := _get_local_level(d, "memories_gain")
+	var cry_lvl := _get_local_level(d, "crystals_gain")
+	
+	var speed_mul: float = 1.0 + 0.25 * speed_lvl + _frozen_effect(d, "progress_speed", 0.15)
+	var mem_mul: float   = 1.0 + 0.15 * mem_lvl + _frozen_effect(d, "memories_gain", 0.15)
+	var cry_mul: float   = 1.0 + 0.12 * cry_lvl + _frozen_effect(d, "crystals_gain", 0.12)
+	
+	# DEBUG: Print every 2 seconds for active depth
+	if Engine.get_process_frames() % 120 == 0 and d == active_depth:
+		print("Depth ", d, " upgrades - Speed:", speed_lvl, "(x", speed_mul, 
+			  ") Mem:", mem_lvl, "(x", mem_mul, 
+			  ") Cry:", cry_lvl, "(x", cry_mul, ")")
+		print("  Base inst/sec: ", instability_per_sec, 
+			  " Progress/sec: ", (base_progress_per_sec * speed_mul) / get_depth_length(d))
+	# Apply specific depth upgrade bonuses
+	
+	# Depth 2: Controlled Fall (+10% progress per level)
+	if d == 2:
+		var controlled_fall_level := _get_local_level(d, "controlled_fall")
+		if controlled_fall_level > 0:
+			var fall_def: Dictionary = get_depth_def(d).get("upgrades", {}).get("controlled_fall", {})
+			var fall_effect: float = fall_def.get("effect_per_level", 0.10)
+			speed_mul += (fall_effect * controlled_fall_level)
+	
+	# Depth 2: Ruby Focus (+12% rubies per level)
+	if d == 2:
+		var ruby_level := _get_local_level(d, "ruby_focus")
+		if ruby_level > 0:
+			# This affects crystal gain specifically for depth 2
+			var ruby_def: Dictionary = get_depth_def(d).get("upgrades", {}).get("ruby_focus", {})
+			var ruby_effect: float = ruby_def.get("effect_per_level", 0.12)
+			cry_mul += (ruby_effect * ruby_level)
 
 	# LENGTH / DIFFICULTY
 	var length: float = get_depth_length(d)
@@ -151,7 +179,6 @@ func _tick_active_depth(delta: float) -> void:
 	data["crystals"] = float(data.get("crystals", 0.0)) + base_crystals_per_sec * cry_mul * depth_cry_mul * delta
 
 	run[d - 1] = data
-
 	_panel.set_row_data(d, data)
 	_panel.set_active_depth(active_depth)
 
@@ -193,8 +220,11 @@ func _sync_hud() -> void:
 
 
 func can_dive() -> bool:
+	print("can_dive() called, active_depth=", active_depth, " max_depth=", max_depth)
+	
 	# Can't dive past max depth
 	if active_depth < 1 or active_depth >= max_depth:
+		print("can_dive: FALSE - depth out of range")
 		return false
 	
 	# Check if next depth is unlocked in meta progression
@@ -205,7 +235,10 @@ func can_dive() -> bool:
 	else:
 		meta_unlocked = active_depth < max_unlocked_depth
 	
+	print("can_dive: meta_unlocked=", meta_unlocked)
+	
 	if not meta_unlocked:
+		print("can_dive: FALSE - not meta unlocked")
 		return false
 	
 	# Check depth-specific META upgrade requirements (permanent, not run upgrades)
@@ -223,9 +256,13 @@ func can_dive() -> bool:
 			if meta != null and meta.has_method("get_level"):
 				current_level = meta.call("get_level", active_depth, req_upgrade)
 				
+			print("can_dive: upgrade=", req_upgrade, " req=", req_level, " have=", current_level)
+			
 			if current_level < req_level:
+				print("can_dive: FALSE - upgrade level too low")
 				return false
 	
+	print("can_dive: TRUE")
 	return true
 
 func get_perk_index(perk_id: String) -> int:
@@ -262,9 +299,9 @@ func get_run_upgrade_info(depth_index: int, upgrade_id: String) -> Dictionary:
 		"current_level": _get_local_level(depth_index, upgrade_id)
 	}
 	
-func dive() -> void:
+func dive() -> bool:
 	if not can_dive():
-		return
+		return false
 
 	var d := active_depth
 	var local: Dictionary = local_upgrades.get(d, {}) as Dictionary
@@ -277,9 +314,11 @@ func dive() -> void:
 	if not local_upgrades.has(active_depth):
 		local_upgrades[active_depth] = {}
 
-	# CRITICAL: Only sync if panel exists
+	# Only sync if panel exists
 	if _panel != null:
 		_sync_all_to_panel()
+	
+	return true  # Return success
 
 
 func dive_next_depth() -> void:
@@ -526,7 +565,7 @@ func _build_depth_defs() -> void:
 			"cry_mul": 1.0,
 			"forced_wake_at_100": false,
 			"event_enabled": false,
-			"dive_unlock_requirement": {"upgrade": "progress_speed", "level": 10}
+			"dive_unlock_requirement": {"upgrade": "manual_click", "level": 10}
 		},
 		"upgrades": {
 			"progress_speed": {
@@ -1741,12 +1780,39 @@ func _apply_depth_rules(d: int) -> Dictionary:
 		13, 14, 15: base_inst_ps = 0.45
 		_: base_inst_ps = 0.0
 	
+	# APPLY STABILIZER UPGRADE (Depth 2)
+	if d == 2:
+		var stabilizer_level := _get_local_level(d, "stabilize")
+		if stabilizer_level > 0:
+			var def_data: Dictionary = def.get("upgrades", {}).get("stabilize", {})
+			var effect_per_level: float = def_data.get("effect_per_level", -0.05)
+			base_inst_ps += (effect_per_level * stabilizer_level)  # effect is negative
+			base_inst_ps = maxf(0.01, base_inst_ps)  # Floor at 0.01 so it never goes negative
+	
+	# APPLY PRESSURE HARDENING (Depth 3) - reduces slowdown from pressure
 	var prog_mul := float(rules.get("progress_mul", 1.0))
+	if rules.has("pressure_threshold") and float(instability) >= float(rules.get("pressure_threshold")):
+		var pressure_slow: float = float(rules.get("pressure_slow_mul", 0.6))
+		# Pressure Hardening reduces the penalty
+		var hardening_level := _get_local_level(d, "pressure_hardening")
+		if hardening_level > 0:
+			var hardening_def: Dictionary = def.get("upgrades", {}).get("pressure_hardening", {})
+			var hardening_effect: float = hardening_def.get("effect_per_level", 0.10)
+			# Restore progress speed: 0.6 + (0.1 * level), capped at 1.0
+			pressure_slow = minf(1.0, pressure_slow + (hardening_effect * hardening_level))
+		prog_mul *= pressure_slow
+
 	var mem_mul := float(rules.get("mem_mul", 1.0))
 	var cry_mul := float(rules.get("cry_mul", 1.0))
-
-	if rules.has("pressure_threshold") and float(instability) >= float(rules.get("pressure_threshold")):
-		prog_mul *= float(rules.get("pressure_slow_mul", 0.6))
+	
+	# APPLY CRUSH RESISTANCE (Depth 3) - reduces instability gain
+	if d == 3:
+		var crush_level := _get_local_level(d, "crush_resistance")
+		if crush_level > 0:
+			var crush_def: Dictionary = def.get("upgrades", {}).get("crush_resistance", {})
+			var crush_effect: float = crush_def.get("effect_per_level", -0.04)
+			base_inst_ps += (crush_effect * crush_level)
+			base_inst_ps = maxf(0.01, base_inst_ps)
 
 	instability_per_sec = base_inst_ps if inst_enabled else 0.0
 	

@@ -47,11 +47,14 @@ func update(delta: float) -> int:
 
 	return 0
 
-
-func should_wake(instability: float) -> bool:
+func should_wake(instability: float, depth_index: int = 1) -> bool:
 	if not auto_wake:
 		return false
-
+	
+	# Check if automation is unlocked for this depth
+	if not is_automation_unlocked_for_depth(depth_index):
+		return false
+		
 	var threshold := lerpf(wake_instability_max, wake_instability_min, wake_strength)
 	return instability >= threshold
 
@@ -70,3 +73,18 @@ func should_overclock(_control: float, instability: float, can_overclock: bool) 
 	)
 
 	return instability <= safe_limit
+
+func is_automation_unlocked_for_depth(depth_index: int) -> bool:
+	# Automation for depth 1 unlocks at depth 3
+	# Automation for depth 2 unlocks at depth 4, etc.
+	var required_depth := depth_index + 2
+	
+	var drc := get_node_or_null("/root/DepthRunController")
+	if drc == null:
+		return false
+	
+	var current_depth := drc.get("active_depth") as int
+	var max_unlocked := drc.get("max_unlocked_depth") as int
+	
+	# Must have reached the depth that unlocks this automation
+	return current_depth >= required_depth or max_unlocked >= required_depth
