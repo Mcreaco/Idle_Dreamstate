@@ -109,11 +109,12 @@ func _refresh() -> void:
 	var lvl: int = _get_level()
 	var cost: float = _get_cost()
 
-	_button.text = "%s (Lv %d) - %d" % [_get_title(), lvl, int(round(cost))]
+	# Use _fmt_num for condensed display
+	_button.text = "%s (Lv %d) - %s" % [_get_title(), lvl, _fmt_num(cost)]
 	_button.disabled = (_gm.thoughts < cost)
 
 	if _mini != null:
-		_mini.text = "" # keep row clean
+		_mini.text = ""
 
 	if _bar != null:
 		var bm: String = bar_mode.to_lower()
@@ -161,13 +162,13 @@ func _refresh() -> void:
 			_bar.max_value = float(cap2)
 			_bar.value = float(clampi(lvl, 0, cap2))
 		
+		# Update tooltip with formatted numbers too
 		var tooltip := ""
 		tooltip += "%s\n" % _get_title()
 		tooltip += "Level: %d\n" % lvl
-		tooltip += "Cost: %d Thoughts\n" % int(round(cost))
+		tooltip += "Cost: %s Thoughts\n" % _fmt_num(cost)  # Formatted cost
 		tooltip += "\n%s\n" % _get_mini_text()
 
-		# Optional: include tier info if you’re using tier bars
 		if bar_mode.to_lower() == "tier":
 			var info := _tier_info(lvl)
 			tooltip += "\nTier %d/4  (%d–%d)\n" % [int(info["tier"]), int(info["start"]), int(info["end"])]
@@ -240,3 +241,14 @@ func _find_first_button(n: Node) -> Button:
 		if b != null:
 			return b
 	return null
+
+func _fmt_num(v: float) -> String:
+	if v >= 1_000_000_000_000.0:
+		return "%.2fT" % (v / 1_000_000_000_000.0)
+	if v >= 1_000_000_000.0:
+		return "%.2fB" % (v / 1_000_000_000.0)
+	if v >= 1_000_000.0:
+		return "%.2fM" % (v / 1_000_000.0)
+	if v >= 1_000.0:
+		return "%.2fk" % (v / 1_000.0)
+	return str(int(v))

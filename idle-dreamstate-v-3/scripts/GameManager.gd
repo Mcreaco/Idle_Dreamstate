@@ -671,6 +671,11 @@ func calc_depth_currency_gain(depth_i: int) -> float:
 	
 func do_dive() -> void:
 	print("DO_DIVE CALLED")  # Debug print to confirm it's being called
+	var drc := get_node_or_null("/root/DepthRunController")
+	if drc != null and drc.has_method("dive"):
+		drc.call("dive")
+	else:
+		push_warning("DepthRunController not found for dive")
 	total_dives += 1  # MUST BE FIRST LINE
 	print("Total dives is now: ", total_dives)
 	# CRITICAL: Freeze the current depth's multiplier BEFORE diving
@@ -729,10 +734,6 @@ func do_dive() -> void:
 	if next_depth == 2:
 		instability = 0.0
 		_sync_cracks()
-	
-	var drc := get_node_or_null("/root/DepthRunController")
-	if drc == null:
-		return
 	
 	# Check current run data before any changes
 	var run_before: Array = drc.get("run") as Array

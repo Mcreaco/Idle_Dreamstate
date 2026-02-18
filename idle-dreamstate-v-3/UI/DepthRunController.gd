@@ -25,7 +25,6 @@ var _control_per_sec_cached: float = 0.0
 
 var active_depth: int = 1
 var max_unlocked_depth: int = 1
-
 var run: Array[Dictionary] = []
 
 # depth_index -> { upgrade_id: level } that are now frozen
@@ -527,6 +526,7 @@ func _build_depth_defs() -> void:
 			"cry_mul": 1.0,
 			"forced_wake_at_100": false,
 			"event_enabled": false,
+			"dive_unlock_requirement": {"upgrade": "progress_speed", "level": 10}
 		},
 		"upgrades": {
 			"progress_speed": {

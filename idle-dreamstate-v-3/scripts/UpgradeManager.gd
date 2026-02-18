@@ -97,22 +97,22 @@ func get_overclock_thoughts_mult_penalty() -> float:
 # =========================
 
 func get_thoughts_upgrade_cost() -> float:
-	return 50.0 * pow(1.35, thoughts_level)
+	return thoughts_base_cost * pow(run_cost_growth, thoughts_level)
 
 func get_stability_upgrade_cost() -> float:
-	return 75.0 * pow(1.35, stability_level)
+	return stability_base_cost * pow(run_cost_growth, stability_level)
 
 func get_deep_dives_upgrade_cost() -> float:
-	return 100.0 * pow(1.35, deep_dives_level)
+	return deep_dives_base_cost * pow(run_cost_growth, deep_dives_level)
 
 func get_mental_buffer_upgrade_cost() -> float:
-	return 150.0 * pow(1.35, mental_buffer_level)
+	return mental_buffer_base_cost * pow(run_cost_growth, mental_buffer_level)
 
 func get_overclock_mastery_upgrade_cost() -> float:
-	return 200.0 * pow(1.35, overclock_mastery_level)
+	return overclock_mastery_base_cost * pow(run_cost_growth, overclock_mastery_level)
 
 func get_overclock_safety_upgrade_cost() -> float:
-	return 250.0 * pow(1.35, overclock_safety_level)
+	return overclock_safety_base_cost * pow(run_cost_growth, overclock_safety_level)
 
 
 # =========================

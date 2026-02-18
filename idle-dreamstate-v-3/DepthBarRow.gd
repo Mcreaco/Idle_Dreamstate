@@ -19,7 +19,8 @@ const COLOR_BLUE: Color = Color(0.24, 0.67, 0.94)
 # Row background images
 const BG_DIR := "res://UI/DepthBarBG/"
 const ROW_BORDER_INSET := 2 # must match border width below
-
+var _auto_buy_enabled: Dictionary = {}  # id -> bool
+const AUTO_BUY_SAVE_KEY := "auto_buy_enabled"
 var depth_index: int = 1
 var _active: bool = false
 var _frozen: bool = false
@@ -54,6 +55,8 @@ var _block_click_until_msec: int = 0
 var partial_memories: float = 0.0
 var partial_crystals: float = 0.0
 
+var _dive_confirm_popup: Node = null
+
 func is_details_open() -> bool:
 	return _details_open
 
@@ -64,6 +67,17 @@ func block_row_clicks(ms: int = 200) -> void:
 # basename_lower -> full_path (keeps actual case)
 var _bg_map: Dictionary = {}
 
+func _fmt_num(v: float) -> String:
+	if v >= 1_000_000_000_000.0:
+		return "%.2fT" % (v / 1_000_000_000_000.0)
+	if v >= 1_000_000_000.0:
+		return "%.2fB" % (v / 1_000_000_000.0)
+	if v >= 1_000_000.0:
+		return "%.2fM" % (v / 1_000_000.0)
+	if v >= 1_000.0:
+		return "%.2fk" % (v / 1_000.0)
+	return str(int(v))
+	
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	custom_minimum_size.y = row_height
@@ -339,6 +353,75 @@ func _build_layout_bar_then_bottom_text() -> void:
 		_layout_root.add_child(c)
 
 	_apply_row_background_texture()
+	
+		
+func _on_manual_click() -> void:
+	if not _active or _locked:
+		return
+	
+	# Get current progress rate from controller (1 second worth)
+	var drc := get_node_or_null("/root/DepthRunController")
+	var progress_per_second := 0.000833  # Default base rate
+	
+	if drc != null:
+		# Calculate actual per-second progress like the controller does
+		var base_progress: float = float(drc.get("base_progress_per_sec"))
+		var length: float = 1.0
+		if drc.has_method("get_depth_length"):
+			length = drc.call("get_depth_length", depth_index)
+		
+		# Get speed multipliers from local upgrades
+		var speed_mul: float = 1.0
+		var local_upgs: Dictionary = _local_upgrades
+		var speed_lvl: int = int(local_upgs.get("progress_speed", 0))
+		speed_mul += 0.25 * float(speed_lvl)
+		
+		# Get depth rules multiplier
+		var def: Dictionary = {}
+		if drc.has_method("get_depth_def"):
+			def = drc.call("get_depth_def", depth_index)
+		var rules: Dictionary = def.get("rules", {})
+		var depth_prog_mul: float = float(rules.get("progress_mul", 1.0))
+		
+		progress_per_second = (base_progress * speed_mul * depth_prog_mul) / maxf(length, 0.0001)
+	
+	# Get click power from meta upgrade (adds extra seconds per click)
+	var click_seconds := 1.0  # Base 1 second
+	var meta := _depth_meta()
+	if meta != null:
+		var click_level := int(meta.get_level(1, "manual_click"))
+		click_seconds = 1.0 + float(click_level)  # +1 second per level
+	
+	var total_progress_add := progress_per_second * click_seconds
+	
+	# Add progress
+	var data: Dictionary = _data.duplicate(true)
+	var current_progress: float = float(data.get("progress", 0.0))
+	data["progress"] = minf(1.0, current_progress + total_progress_add)
+	
+	# Update display
+	set_data(data)
+	
+	# Visual feedback
+	if progress_bar != null:
+		var tween := create_tween()
+		tween.tween_property(progress_bar, "modulate", Color(1.3, 1.3, 1.3, 1.0), 0.05)
+		tween.tween_property(progress_bar, "modulate", Color(1.0, 1.0, 1.0, 1.0), 0.1)
+	
+	# Update button text to show seconds
+	if _details_open and upgrades_box != null:
+		var click_btn := upgrades_box.get_node_or_null("ClickButton")
+		if click_btn != null:
+			var new_level := int(meta.get_level(1, "manual_click")) if meta != null else 0
+			var seconds := 1 + new_level
+			click_btn.text = "Focus (+%ds)" % seconds
+	
+	# Save progress
+	if drc != null:
+		var run_data: Array = drc.get("run") as Array
+		if run_data != null and depth_index >= 1 and depth_index <= run_data.size():
+			run_data[depth_index - 1] = data
+			drc.set("run", run_data)
 # -----------------------
 # Visuals
 # -----------------------
@@ -399,7 +482,14 @@ func _apply_visuals() -> void:
 		if _run != null and _run.has_method("can_dive"):
 			can = bool(_run.call("can_dive"))
 		
-		dive_button.disabled = not (_active and can)
+		# Force enable if we're at depth 1 and unlock is bought (special case)
+		if depth_index == 1 and _active:
+			var meta := _depth_meta()
+			if meta != null and meta.has_method("is_next_depth_unlocked"):
+				if meta.call("is_next_depth_unlocked", 1):
+					can = true
+		
+		dive_button.disabled = not can
 		dive_button.visible = _active
 
 	if _row_bg != null:
@@ -671,13 +761,75 @@ func _apply_row_background_texture() -> void:
 func _build_upgrades_ui() -> void:
 	if upgrades_box == null:
 		return
+		
+	# Clear existing children
 	for c in upgrades_box.get_children():
 		c.queue_free()
-
+	
+	# --- CLICK BUTTON SECTION (DEPTH 1 ONLY) ---
+	if depth_index == 1:
+		var click_section := HBoxContainer.new()  # Changed from VBoxContainer
+		click_section.name = "ClickSection"
+		click_section.alignment = BoxContainer.ALIGNMENT_BEGIN  # Left align
+		click_section.add_theme_constant_override("separation", 12)
+		upgrades_box.add_child(click_section)
+		
+		var click_title := Label.new()
+		click_title.text = "Manual Focus"
+		click_title.add_theme_font_size_override("font_size", 22)
+		click_title.add_theme_color_override("font_color", Color(0.35, 0.8, 0.95))
+		click_section.add_child(click_title)
+		
+		var click_btn := Button.new()
+		click_btn.name = "ClickButton"
+		click_btn.custom_minimum_size = Vector2(180, 50)
+		click_btn.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN  # Left align
+		
+		# Style the button
+		var click_style := StyleBoxFlat.new()
+		click_style.bg_color = Color(0.2, 0.6, 0.9, 0.85)
+		click_style.border_color = Color(0.4, 0.8, 1.0, 1.0)
+		click_style.border_width_left = 2
+		click_style.border_width_top = 2
+		click_style.border_width_right = 2
+		click_style.border_width_bottom = 2
+		click_style.corner_radius_top_left = 10
+		click_style.corner_radius_top_right = 10
+		click_style.corner_radius_bottom_left = 10
+		click_style.corner_radius_bottom_right = 10
+		click_btn.add_theme_stylebox_override("normal", click_style)
+		
+		var hover_style := click_style.duplicate()
+		hover_style.bg_color = Color(0.35, 0.75, 1.0, 0.95)
+		click_btn.add_theme_stylebox_override("hover", hover_style)
+		
+		var pressed_style := click_style.duplicate()
+		pressed_style.bg_color = Color(0.15, 0.5, 0.8, 1.0)
+		click_btn.add_theme_stylebox_override("pressed", pressed_style)
+		
+		# Set text based on current level
+		var meta := _depth_meta()
+		var click_level := 0
+		if meta != null:
+			click_level = int(meta.get_level(1, "manual_click"))
+		var click_pct := (1 + click_level)
+		click_btn.text = "Focus (+%d%%)" % click_pct
+		
+		click_btn.pressed.connect(_on_manual_click)
+		click_section.add_child(click_btn)
+		
+		# Add separator
+		var sep := HSeparator.new()
+		sep.add_theme_constant_override("separation", 20)
+		upgrades_box.add_child(sep)
+		
+		click_section.add_child(click_btn)
+	
+	# --- RUN UPGRADES SECTION ---
 	var title := Label.new()
 	title.text = "Run Upgrades (Depth %d)" % depth_index
-	title.add_theme_font_size_override("font_size", 24)  # Bigger title
-	title.add_theme_color_override("font_color", Color(0.35, 0.8, 0.95))  # Blue color
+	title.add_theme_font_size_override("font_size", 24)
+	title.add_theme_color_override("font_color", Color(0.35, 0.8, 0.95))
 	upgrades_box.add_child(title)
 	
 	# Add spacing
@@ -687,7 +839,6 @@ func _build_upgrades_ui() -> void:
 	var drc := get_node_or_null("/root/DepthRunController")
 	if drc == null:
 		push_warning("DepthBarRow: DepthRunController not found, using fallback upgrades")
-		# Fallback to generic if controller missing
 		_add_upgrade_row("progress_speed", "Progress Speed")
 		_add_upgrade_row("memories_gain", "Memories Gain")
 		_add_upgrade_row("crystals_gain", "Crystals Gain")
@@ -698,7 +849,6 @@ func _build_upgrades_ui() -> void:
 	if drc.has_method("get_run_upgrade_ids"):
 		upgrade_ids = drc.call("get_run_upgrade_ids", depth_index)
 	else:
-		# Fallback: use the old hardcoded ones
 		upgrade_ids = ["progress_speed", "memories_gain", "crystals_gain"]
 	
 	# Build UI for each upgrade
@@ -766,11 +916,164 @@ func _apply_blue_button_style(b: Button) -> void:
 # Button callbacks
 # -----------------------
 func _on_dive_pressed() -> void:
+	_show_dive_confirmation()
+
+func _show_dive_confirmation() -> void:
+	# Remove existing popup if any
+	if _dive_confirm_popup != null and is_instance_valid(_dive_confirm_popup):
+		_dive_confirm_popup.queue_free()
+	
+	# Create CanvasLayer to ensure we're above EVERYTHING (including overlay at layer 200)
+	var canvas_layer := CanvasLayer.new()
+	canvas_layer.name = "DiveConfirmLayer"
+	canvas_layer.layer = 300  # Above overlay (200) and everything else
+	_dive_confirm_popup = canvas_layer
+	
+	get_tree().current_scene.add_child(canvas_layer)
+	
+	# Dimmer background that blocks clicks
+	var dimmer := ColorRect.new()
+	dimmer.name = "Dimmer"
+	dimmer.color = Color(0, 0, 0, 0.6)
+	dimmer.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dimmer.mouse_filter = Control.MOUSE_FILTER_STOP
+	canvas_layer.add_child(dimmer)
+	
+	# Click outside to cancel
+	dimmer.gui_input.connect(func(ev: InputEvent):
+		if ev is InputEventMouseButton and (ev as InputEventMouseButton).pressed:
+			_close_dive_confirmation()
+	)
+	
+	# Center container
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	canvas_layer.add_child(center)
+	
+	# The actual popup panel
+	var panel := Panel.new()
+	panel.name = "DiveConfirmPanel"
+	panel.custom_minimum_size = Vector2(450, 220)
+	center.add_child(panel)
+	
+	# Style
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.08, 0.10, 0.14, 0.98)
+	sb.border_color = Color(0.24, 0.67, 0.94, 1.0)
+	sb.border_width_left = 3
+	sb.border_width_top = 3
+	sb.border_width_right = 3
+	sb.border_width_bottom = 3
+	sb.corner_radius_top_left = 12
+	sb.corner_radius_top_right = 12
+	sb.corner_radius_bottom_left = 12
+	sb.corner_radius_bottom_right = 12
+	panel.add_theme_stylebox_override("panel", sb)
+	
+	# Content container
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 25)
+	margin.add_theme_constant_override("margin_right", 25)
+	margin.add_theme_constant_override("margin_top", 20)
+	margin.add_theme_constant_override("margin_bottom", 20)
+	panel.add_child(margin)
+	
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 15)
+	margin.add_child(vbox)
+	
+	# Title
+	var title := Label.new()
+	title.text = "Prepare to Dive?"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 24)
+	title.add_theme_color_override("font_color", Color(0.35, 0.8, 0.95))
+	vbox.add_child(title)
+	
+	# Warning text
+	var warning := Label.new()
+	warning.text = "You are about to dive to Depth %d.\nInstability will increase and current progress will be converted." % (depth_index + 1)
+	warning.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	warning.autowrap_mode = TextServer.AUTOWRAP_WORD
+	warning.add_theme_font_size_override("font_size", 15)
+	vbox.add_child(warning)
+	
+	# Spacer
+	vbox.add_child(Control.new())
+	
+	# Buttons
+	var hbox := HBoxContainer.new()
+	hbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	hbox.add_theme_constant_override("separation", 25)
+	vbox.add_child(hbox)
+	
+	# DIVE BUTTON - Fixed connection
+	var dive_btn := Button.new()
+	dive_btn.name = "DiveConfirmButton"
+	dive_btn.text = "Dive"
+	dive_btn.custom_minimum_size = Vector2(130, 45)
+	_apply_blue_button_style(dive_btn)
+
+	# Connect directly - no lambda wrapper issues
+	dive_btn.pressed.connect(func():
+	print("DIVE BUTTON CLICKED")  # Debug
+	_dive_confirm_popup.queue_free()
+	_dive_confirm_popup = null
+	_proceed_with_dive()
+)
+	
+	# CANCEL BUTTON
+	var cancel_btn := Button.new()
+	cancel_btn.text = "Cancel"
+	cancel_btn.custom_minimum_size = Vector2(130, 45)
+	_apply_blue_button_style(cancel_btn)
+	cancel_btn.pressed.connect(_close_dive_confirmation)
+	hbox.add_child(cancel_btn)
+	
+	# Block all input behind this popup
+	canvas_layer.visible = true
+
+func _on_dive_confirmed() -> void:
+	print("Dive confirmed button pressed")
+	_proceed_with_dive()
+	
+func _close_dive_confirmation() -> void:
+	if _dive_confirm_popup != null and is_instance_valid(_dive_confirm_popup):
+		_dive_confirm_popup.queue_free()
+	_dive_confirm_popup = null
+		
+# New function to actually perform dive
+func _proceed_with_dive() -> void:
+	print("Proceeding with dive from depth: ", depth_index)
+	
+	# Close the popup first
+	_close_dive_confirmation()
+	
+	# Close the expanded view
 	set_details_open(false)
-	request_close.emit(depth_index)  # ADD THIS LINE
+	
+	# Emit close request to parent panel
+	request_close.emit(depth_index)
+	
+	# Small delay to let UI settle, then dive
+	await get_tree().create_timer(0.05).timeout
+	
+	# Try GameManager first
 	var gm = get_tree().current_scene.find_child("GameManager", true, false)
 	if gm != null and gm.has_method("do_dive"):
+		print("Calling GameManager.do_dive()")
 		gm.call("do_dive")
+		return
+	
+	# Fallback: try DepthRunController directly
+	var drc := get_node_or_null("/root/DepthRunController")
+	if drc != null and drc.has_method("dive"):
+		print("Calling DepthRunController.dive()")
+		drc.call("dive")
+		return
+		
+	push_error("Could not find dive method on GameManager or DepthRunController")
 		
 func _on_close_pressed() -> void:
 	request_close.emit(depth_index)
@@ -801,13 +1104,26 @@ func _hide_extra_progress_bars() -> void:
 func _add_upgrade_row_dynamic(id: String, data: Dictionary) -> void:
 	var row := HBoxContainer.new()
 	row.name = "UpgradeRow_%s" % id
-	row.add_theme_constant_override("separation", 16)
+	row.add_theme_constant_override("separation", 12)
 	
 	# NAME + DESCRIPTION
 	var name_desc_hbox := HBoxContainer.new()
 	name_desc_hbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	name_desc_hbox.add_theme_constant_override("separation", 12)
 	name_desc_hbox.custom_minimum_size.x = 450
+	
+	# AUTO-BUY CHECKBOX (NEW)
+	var auto_check := CheckBox.new()
+	auto_check.name = "AutoCheck"
+	auto_check.tooltip_text = "Auto-buy this upgrade when affordable"
+	auto_check.button_pressed = _auto_buy_enabled.get(id, false)
+	auto_check.pressed.connect(func():
+		_auto_buy_enabled[id] = auto_check.button_pressed
+		# Save preference to local upgrades so it persists for this run
+		if _run != null and _run.has_method("set_upgrade_auto_buy"):
+			_run.call("set_upgrade_auto_buy", depth_index, id, auto_check.button_pressed)
+	)
+	row.add_child(auto_check)
 	
 	var name_label := Label.new()
 	name_label.text = data.get("name", id.capitalize())
@@ -879,25 +1195,7 @@ func _add_upgrade_row_dynamic(id: String, data: Dictionary) -> void:
 	
 	# Button pressed logic
 	btn.pressed.connect(func():
-		var game_mgr := get_tree().current_scene.find_child("GameManager", true, false) as GameManager
-		if game_mgr == null:
-			return
-		
-		var current_lvl := int(_local_upgrades.get(id, 0))
-		var current_cost := base_cost * pow(growth, current_lvl)
-		
-		if current_lvl < max_lvl and game_mgr.thoughts >= current_cost:
-			game_mgr.thoughts -= current_cost
-			
-			# REMOVE THIS LINE (it was causing double increment):
-			# _local_upgrades[id] = current_lvl + 1
-			
-			# Just call the controller - it will update and signal back
-			if _run != null and _run.has_method("add_local_upgrade"):
-				_run.call("add_local_upgrade", depth_index, id, 1)
-			
-			if game_mgr.has_method("_refresh_top_ui"):
-				game_mgr._refresh_top_ui()
+		_attempt_purchase(id, data)
 	)
 	
 	row.add_child(name_desc_hbox)
@@ -906,6 +1204,34 @@ func _add_upgrade_row_dynamic(id: String, data: Dictionary) -> void:
 	row.add_child(btn)
 	upgrades_box.add_child(row)
 
+func _attempt_purchase(id: String, data: Dictionary) -> bool:
+	var game_mgr := get_tree().current_scene.find_child("GameManager", true, false) as GameManager
+	if game_mgr == null:
+		return false
+	
+	var current_lvl := int(_local_upgrades.get(id, 0))
+	var max_lvl: int = data.get("max_level", 1)
+	
+	if current_lvl >= max_lvl:
+		return false
+	
+	var base_cost: float = data.get("base_cost", 100.0)
+	var growth: float = data.get("cost_growth", 1.5)
+	var depth_multiplier := pow(float(depth_index), 2.5) * 3.0
+	var effective_base := base_cost * depth_multiplier
+	var current_cost := effective_base * pow(growth, current_lvl)
+	
+	if game_mgr.thoughts >= current_cost:
+		game_mgr.thoughts -= current_cost
+		
+		if _run != null and _run.has_method("add_local_upgrade"):
+			_run.call("add_local_upgrade", depth_index, id, 1)
+		
+		if game_mgr.has_method("_refresh_top_ui"):
+			game_mgr._refresh_top_ui()
+		return true
+	return false
+	
 func _update_upgrade_row_ui(id: String) -> void:
 	if not _upgrade_ui_refs.has(id):
 		return
@@ -942,17 +1268,33 @@ func _update_upgrade_row_ui(id: String) -> void:
 		
 		btn.text = "+"
 		btn.disabled = not can_afford
-		cost_label.text = "%d Thoughts" % int(cost)
+		cost_label.text = "%s Thoughts" % _fmt_num(cost)
 		cost_label.modulate = Color(0.6, 0.6, 0.6) if not can_afford else Color(1, 1, 1)
 
 # Update all upgrade buttons every frame while details are open
 func _process(_delta: float) -> void:
 	_apply_visuals()
 	
-	# Real-time update of upgrade button states
 	if _details_open and upgrades_box != null and upgrades_box.visible:
+		# Update UI states
 		for id in _upgrade_ui_refs.keys():
 			_update_upgrade_row_ui(id)
+		
+		# AUTO-BUY LOGIC (NEW)
+		var game_mgr := get_tree().current_scene.find_child("GameManager", true, false) as GameManager
+		if game_mgr != null:
+			for id in _auto_buy_enabled.keys():
+				if _auto_buy_enabled[id]:  # If auto-buy enabled for this upgrade
+					var current_lvl := int(_local_upgrades.get(id, 0))
+					# Get upgrade data
+					var drc := get_node_or_null("/root/DepthRunController")
+					if drc != null and drc.has_method("get_run_upgrade_data"):
+						var upg_data: Dictionary = drc.call("get_run_upgrade_data", depth_index, id)
+						var max_lvl: int = upg_data.get("max_level", 1)
+						
+						# Try to buy if not maxed and can afford
+						if current_lvl < max_lvl:
+							_attempt_purchase(id, upg_data)
 
 func _refresh_upgrade_row(id: String, lvl_label: Label, btn: Button, max_lvl: int) -> void:
 	var current_lvl := int(_local_upgrades.get(id, 0))

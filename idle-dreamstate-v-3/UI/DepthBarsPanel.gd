@@ -356,6 +356,10 @@ func _open_overlay(depth_index: int) -> void:
 		overlay_row.request_close.connect(_on_row_request_close)
 	if overlay_row.has_signal("request_dive") and not overlay_row.request_dive.is_connected(_on_row_request_dive):
 		overlay_row.request_dive.connect(_on_row_request_dive)
+	
+	# Force refresh the dive button state
+	if overlay_row.has_method("_apply_visuals"):
+		overlay_row.call("_apply_visuals")
 
 	_overlay.visible = true
 

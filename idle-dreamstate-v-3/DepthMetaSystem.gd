@@ -189,14 +189,34 @@ func get_depth_upgrade_defs(depth_i: int) -> Array:
 			wake_yield.name = "Amethyst Echo"
 			dive_start.name = "Shallow Start"
 			
+			# NEW: Manual click upgrade for Depth 1
+			var manual_click := {
+				"id": "manual_click",
+				"name": "Focused Intention",
+				"desc": "+1% Progress per manual click per level.",
+				"max": 10,
+				"kind": "click_power",
+				"costs": _pick_costs(d, 1)
+			}
+			
+			# Custom unlock for depth 1 - requires click upgrade instead of stabilize
+			var core_unlock_d1 := {
+				"id":"unlock",
+				"name":"Unlock Next Depth",
+				"desc":"Unlocks the next Depth tab (requires Focused Intention level 10).",
+				"max":1,
+				"kind":"unlock",
+				"costs": { d: 1.0 }
+			}
+			
 			return [
-				core_stab,
+				manual_click,  # Click upgrade first
 				t_gain,
 				c_gain,
 				idle_soft,
 				wake_yield,
 				dive_start,
-				core_unlock,
+				core_unlock_d1,
 			]
 			
 		2:
@@ -673,6 +693,9 @@ func is_instab_fully_reduced(depth_i: int) -> bool:
 	return instab_reduce_level[d] >= max_lvl
 
 func can_show_unlock_upgrade(depth_i: int) -> bool:
+	if depth_i == 1:
+		# Depth 1 requires Focused Intention (manual_click) level 10
+		return get_level(1, "manual_click") >= 10
 	return is_instab_fully_reduced(depth_i)
 
 func is_next_unlocked(depth_i: int) -> bool:
