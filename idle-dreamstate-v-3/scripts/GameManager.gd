@@ -180,8 +180,6 @@ func _warn_missing_nodes_once() -> void:
 		_warned_missing_sound = true
 
 func _ready() -> void:
-	auto_buy_unlocked_depths.append(1)  # Unlock depth 1
-	auto_buy_unlocked_depths.append(2)  # Unlock depth 2
 	# Temporary debug - remove after fixing
 	var wake_btn = find_child("WakeButton", true, false)
 	if wake_btn:
@@ -284,6 +282,25 @@ func _ready() -> void:
 			var current = perm_perk_system.memory_engine_level
 			if saved != current:
 				push_error("MISMATCH: Saved ME=", saved, " but loaded ME=", current)
+		
+	# Sync auto-buy unlocks from meta system
+	var meta = get_tree().current_scene.find_child("DepthMetaSystem", true, false)
+	if meta != null and meta.has_method("get_level"):
+		# Automated Mind I unlocks depth 1 auto-buy
+		if meta.call("get_level", 3, "automated_mind") >= 1:
+			if not 1 in auto_buy_unlocked_depths:
+				auto_buy_unlocked_depths.append(1)
+				print("Unlocked auto-buy for depth 1 via Automated Mind I")
+		
+		# Add other automated mind checks here...
+	
+	# Load game after this so save can override
+	load_game()
+	
+		# TEMPORARY TEST: Force unlock depth 1 auto-buy
+	if not 1 in auto_buy_unlocked_depths:
+		auto_buy_unlocked_depths.append(1)
+		print("FORCED: Unlocked auto-buy for depth 1")
 
 func _input(event):
 	if event is InputEventKey and event.pressed and event.keycode == KEY_F9:
@@ -773,11 +790,12 @@ func do_dive() -> void:
 		if start_progress > 0.0:
 			var run_data: Array = drc.get("run") as Array
 			if run_data != null and next_depth >= 1 and next_depth <= run_data.size():
-				var next_depth_data: Dictionary = run_data[current_depth]
+				var next_depth_data: Dictionary = run_data[next_depth - 1]  # FIXED: Use next_depth - 1
 				next_depth_data["progress"] = start_progress
-				run_data[current_depth] = next_depth_data
+				run_data[next_depth - 1] = next_depth_data  # FIXED: Use next_depth - 1
 				drc.set("run", run_data)
-	
+				print("Applied Shallow Start: Depth ", next_depth, " starts at ", start_progress * 100, "% progress")
+		
 	# Actually change the active depth in the controller
 	var dive_succeeded := false
 	if drc.has_method("dive"):
@@ -1833,22 +1851,12 @@ func _process(delta: float) -> void:
 		var perm_thoughts_mult = perm_perk_system.get_thoughts_mult()
 		var perm_control_mult = perm_perk_system.get_control_mult()
 		
-		# DEBUG: Print every few seconds to verify
-		if Engine.get_process_frames() % 300 == 0:  # Every ~5 seconds
-			print("PermPerk Debug: memory_engine_level=", perm_perk_system.memory_engine_level, 
-				  " thoughts_mult=", perm_thoughts_mult,
-				  " control_mult=", perm_control_mult)
-		
 		thoughts_mult *= perm_thoughts_mult
 		control_mult *= perm_control_mult
 	else:
 		push_warning("PermPerkSystem is NULL in _process!")
 	
 	perm_perk_system = get_tree().current_scene.find_child("PermPerkSystem", true, false)
-	if perm_perk_system == null:
-		push_error("CRITICAL: PermPerkSystem not found! Check node path.")
-	else:
-		print("PermPerkSystem found: ", perm_perk_system.get_path())
 		
 	if abyss_perk_system != null:
 		thoughts_mult *= _safe_mult(abyss_perk_system.get_thoughts_mult())
@@ -1912,100 +1920,7 @@ func _process(delta: float) -> void:
 	
 	if instability >= 100.0:
 		do_fail()
-	
-	# Auto-buy timer
-	_auto_buy_timer += delta
-	if _auto_buy_timer >= 5.0:
-		_auto_buy_timer = 0.0
-		_try_auto_buy()
-
-var _auto_buy_timer: float = 0.0
-
-func _try_auto_buy() -> void:
-	var drc = get_node_or_null("/root/DepthRunController")
-	if not drc:
-		return
-	
-	# Try to auto-buy for each depth that has it unlocked
-	for depth in range(1, 16):
-		if not is_auto_buy_unlocked_for_depth(depth):
-			continue
-		
-		_auto_buy_for_depth(depth, drc)
-
-func _auto_buy_for_depth(depth: int, drc: Node) -> void:
-	var upgrade_ids = []
-	if drc.has_method("get_run_upgrade_ids"):
-		upgrade_ids = drc.call("get_run_upgrade_ids", depth)
-	
-	# Get the depth definition to check actual max levels
-	var meta = get_tree().current_scene.find_child("DepthMetaSystem", true, false)
-	var depth_def = {}
-	if meta and meta.has_method("get_depth_def"):
-		depth_def = meta.call("get_depth_def", depth)
-	
-	var upgrades_def = depth_def.get("upgrades", {})
-	
-	for upg_id in upgrade_ids:
-		var upg_data = {}
-		if drc.has_method("get_run_upgrade_data"):
-			upg_data = drc.call("get_run_upgrade_data", depth, upg_id)
-		
-		# Get current level
-		var lvl = 0
-		if drc.has_method("get_local_upgrades"):
-			var local_upgs = drc.call("get_local_upgrades")
-			if local_upgs.has(depth):
-				lvl = int(local_upgs[depth].get(upg_id, 0))
-		
-		# Get actual max level from depth definition
-		var upgrade_def = upgrades_def.get(upg_id, {})
-		var max_lvl = upgrade_def.get("max_level", 1)
-		
-		# Double check - don't buy if at or over cap
-		if lvl >= max_lvl:
-			continue
-		
-		var base_cost = upg_data.get("base_cost", 100.0)
-		var growth = upg_data.get("cost_growth", 1.5)
-		var cost = base_cost * pow(growth, lvl)
-		
-		if thoughts >= cost:
-			thoughts -= cost
-			drc.call("add_local_upgrade", depth, upg_id, 1)
 			
-func _try_auto_buy_upgrades() -> void:
-	var shop = get_tree().current_scene.find_child("ShopPanel", true, false)
-	if not shop or not shop.has_method("has_auto_buy"):
-		return
-	if not shop.has_auto_buy():
-		return
-	
-	var drc = get_node_or_null("/root/DepthRunController")
-	if not drc:
-		return
-	
-	var current_depth = get_current_depth()
-	var upgrades = drc.get_run_upgrade_ids(current_depth) if drc.has_method("get_run_upgrade_ids") else []
-	
-	for upg_id in upgrades:
-		var upg_data = {}
-		if drc.has_method("get_run_upgrade_data"):
-			upg_data = drc.call("get_run_upgrade_data", current_depth, upg_id)
-		
-		var lvl = int(drc.local_upgrades.get(upg_id, 0)) if drc.has_method("get_local_upgrades") else 0
-		var max_lvl = upg_data.get("max_level", 1)
-		
-		if lvl >= max_lvl:
-			continue
-		
-		var base_cost = upg_data.get("base_cost", 100.0)
-		var growth = upg_data.get("cost_growth", 1.5)
-		var cost = base_cost * pow(growth, lvl)
-		
-		if thoughts >= cost:
-			thoughts -= cost
-			drc.call("add_local_upgrade", current_depth, upg_id, 1)
 
 func _get_shop_boost() -> float:
 	var shop_panel = get_tree().current_scene.find_child("ShopPanel", true, false)
@@ -2415,31 +2330,30 @@ func _get_current_depth_progress_multiplier(depth_idx: int) -> float:
 	return multiplier
 	
 func is_auto_buy_unlocked_for_depth(depth: int) -> bool:
-	# CHECK THE ARRAY FIRST (Fixes immediate issue)
+	# Check direct array (for manual/debug unlocks)
 	if depth in auto_buy_unlocked_depths:
 		return true
+	
+	# Check DepthMetaSystem for Automated Mind upgrades
+	var meta = get_tree().current_scene.find_child("DepthMetaSystem", true, false)
+	if meta != null and meta.has_method("get_level"):
+		# Automated Mind I is in Depth 3, unlocks auto-buy for Depth 1
+		if depth == 1:
+			var automated_mind_1 = meta.call("get_level", 3, "automated_mind")
+			if automated_mind_1 >= 1:
+				return true
+		
+		# Automated Mind II would be in Depth 6, unlocks Depth 2
+		if depth == 2:
+			var automated_mind_2 = meta.call("get_level", 6, "automated_mind_2")
+			if automated_mind_2 >= 1:
+				return true
 	
 	# Check shop early unlock
 	var shop = get_tree().current_scene.find_child("ShopPanel", true, false)
 	if shop and shop.has_method("has_early_auto_buy"):
 		if shop.has_early_auto_buy():
 			return true
-	
-	# Check depth meta upgrades
-	var meta = get_tree().current_scene.find_child("DepthMetaSystem", true, false)
-	if not meta:
-		return false
-	
-	# Check if any unlocked upgrade grants auto-buy for this depth
-	if meta.has_method("get_auto_buy_unlocks"):
-		var unlocks = meta.call("get_auto_buy_unlocks")
-		for upgrade_id in unlocks.keys():
-			var unlocks_depth: int = unlocks[upgrade_id]
-			if unlocks_depth == depth:
-				if meta.has_method("get_level"):
-					var level = meta.call("get_level", depth, upgrade_id)
-					if level > 0:
-						return true
 	
 	return false
 

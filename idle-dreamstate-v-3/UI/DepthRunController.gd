@@ -129,7 +129,7 @@ func _tick_active_depth(delta: float) -> void:
 	var depth_prog_mul := float(applied.get("progress_mul", 1.0))
 	var depth_mem_mul := float(applied.get("mem_mul", 1.0))
 	var depth_cry_mul := float(applied.get("cry_mul", 1.0))
-	var rules: Dictionary = applied.get("rules", {})
+	var _rules: Dictionary = applied.get("rules", {})
 
 	# multipliers from upgrades (RUN UPGRADES)
 	 # Calculate multipliers with DEBUG output
@@ -141,13 +141,6 @@ func _tick_active_depth(delta: float) -> void:
 	var mem_mul: float   = 1.0 + 0.15 * mem_lvl + _frozen_effect(d, "memories_gain", 0.15)
 	var cry_mul: float   = 1.0 + 0.12 * cry_lvl + _frozen_effect(d, "crystals_gain", 0.12)
 	
-	# DEBUG: Print every 2 seconds for active depth
-	if Engine.get_process_frames() % 120 == 0 and d == active_depth:
-		print("Depth ", d, " upgrades - Speed:", speed_lvl, "(x", speed_mul, 
-			  ") Mem:", mem_lvl, "(x", mem_mul, 
-			  ") Cry:", cry_lvl, "(x", cry_mul, ")")
-		print("  Base inst/sec: ", instability_per_sec, 
-			  " Progress/sec: ", (base_progress_per_sec * speed_mul) / get_depth_length(d))
 	# Apply specific depth upgrade bonuses
 	
 	# Depth 2: Controlled Fall (+10% progress per level)
@@ -220,11 +213,9 @@ func _sync_hud() -> void:
 
 
 func can_dive() -> bool:
-	print("can_dive() called, active_depth=", active_depth, " max_depth=", max_depth)
 	
 	# Can't dive past max depth
 	if active_depth < 1 or active_depth >= max_depth:
-		print("can_dive: FALSE - depth out of range")
 		return false
 	
 	# Check if next depth is unlocked in meta progression
@@ -235,10 +226,7 @@ func can_dive() -> bool:
 	else:
 		meta_unlocked = active_depth < max_unlocked_depth
 	
-	print("can_dive: meta_unlocked=", meta_unlocked)
-	
 	if not meta_unlocked:
-		print("can_dive: FALSE - not meta unlocked")
 		return false
 	
 	# Check depth-specific META upgrade requirements (permanent, not run upgrades)
@@ -255,14 +243,10 @@ func can_dive() -> bool:
 			# CHECK META UPGRADE (permanent), not local run upgrade
 			if meta != null and meta.has_method("get_level"):
 				current_level = meta.call("get_level", active_depth, req_upgrade)
-				
-			print("can_dive: upgrade=", req_upgrade, " req=", req_level, " have=", current_level)
 			
 			if current_level < req_level:
-				print("can_dive: FALSE - upgrade level too low")
 				return false
 	
-	print("can_dive: TRUE")
 	return true
 
 func get_perk_index(perk_id: String) -> int:

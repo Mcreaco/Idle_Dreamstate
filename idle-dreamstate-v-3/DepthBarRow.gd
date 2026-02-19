@@ -764,6 +764,10 @@ func _apply_row_background_texture() -> void:
 func _build_upgrades_ui() -> void:
 	if upgrades_box == null:
 		return
+	
+	# CRITICAL: Clear old data when rebuilding UI
+	_auto_buy_enabled.clear()
+	_upgrade_ui_refs.clear()
 		
 	# Clear existing children first
 	for c in upgrades_box.get_children():
@@ -1140,23 +1144,18 @@ func _add_upgrade_row_dynamic(id: String, data: Dictionary) -> void:
 		var auto_check := CheckBox.new()
 		auto_check.name = "AutoCheck"
 		auto_check.tooltip_text = "Auto-buy this upgrade when affordable"
-
-		# IMPORTANT: Default to false unless explicitly true
-		var is_enabled: bool = _auto_buy_enabled.get(id, false)
-		auto_check.button_pressed = is_enabled
-
-		if is_enabled:
-			print("Upgrade ", id, " has auto-buy enabled at row creation")
-
+		
+		# FORCE UNCHECKED
+		auto_check.button_pressed = false
+		_auto_buy_enabled[id] = false
+		
 		auto_check.pressed.connect(func():
 			var new_state := auto_check.button_pressed
 			_auto_buy_enabled[id] = new_state
-			print("Auto-buy for ", id, " set to: ", new_state)
-			if _run != null and _run.has_method("set_upgrade_auto_buy"):
-				_run.call("set_upgrade_auto_buy", depth_index, id, auto_check.button_pressed)
+			print("CHECKBOX: ", id, " = ", new_state)  # Should only print when YOU click
 		)
+		
 		row.add_child(auto_check)
-		print("Created auto-buy checkbox for ", id, " at depth ", depth_index)
 	
 	var name_label := Label.new()
 	name_label.text = data.get("name", id.capitalize())
@@ -1310,15 +1309,19 @@ func _update_upgrade_row_ui(id: String) -> void:
 			cost_label.text += " (-%d%% inst)" % (lvl * 5)  # Show -5% per level
 			
 
-# Update all upgrade buttons every frame while details are open
 func _process(_delta: float) -> void:
+	# ABSOLUTE SAFETY: Don't run if no checkboxes should exist
+	if not _details_open:
+		return
+	
 	_apply_visuals()
-	# In _process, before auto-buy logic:
-	var drc: Node = get_node_or_null("/root/DepthRunController")
-	if drc != null:
-		var active_d = drc.get("active_depth")
-		if active_d != depth_index:
-			return  # Don't auto-buy for non-active depths
+	
+	# Only process for active depth
+	if _run != null:
+		var active_depth = _run.get("active_depth")
+		if active_depth != depth_index:
+			return
+	
 	# Update cooldown
 	if _auto_buy_cooldown > 0:
 		_auto_buy_cooldown -= _delta
@@ -1328,24 +1331,40 @@ func _process(_delta: float) -> void:
 		for id in _upgrade_ui_refs.keys():
 			_update_upgrade_row_ui(id)
 		
-		# AUTO-BUY LOGIC - Only buy ONE upgrade per frame with cooldown
+		# NUCLEAR AUTO-BUY: Only buy if explicitly enabled in dictionary
 		if _auto_buy_cooldown <= 0:
 			var game_mgr := get_tree().current_scene.find_child("GameManager", true, false) as GameManager
 			if game_mgr != null:
-				# Only process auto-buy for this specific depth
-				for id in _auto_buy_enabled.keys():
-					if _auto_buy_enabled[id]:
+				# Debug: Show current states
+				if Engine.get_process_frames() % 300 == 0:  # Every 5 seconds
+					print("Depth ", depth_index, " auto-buy states: ", _auto_buy_enabled)
+				
+				# Iterate through ALL upgrades but only buy checked ones
+				for id in _upgrade_ui_refs.keys():
+					# ABSOLUTE CHECK: Must exist AND be true
+					if _auto_buy_enabled.has(id) and _auto_buy_enabled[id] == true:
 						var current_lvl := int(_local_upgrades.get(id, 0))
+						
 						if _run != null and _run.has_method("get_run_upgrade_data"):
 							var upg_data: Dictionary = _run.call("get_run_upgrade_data", depth_index, id)
 							var max_lvl: int = upg_data.get("max_level", 1)
 							
 							if current_lvl < max_lvl:
-								# Try to buy - if successful, set cooldown and break (only buy one per frame)
-								if _attempt_purchase(id, upg_data):
-									_auto_buy_cooldown = AUTO_BUY_DELAY
-									print("Auto-bought ", id, " for depth ", depth_index, " level ", current_lvl + 1)
-									break  # EXIT AFTER ONE PURCHASE
+								# Check cost
+								var base_cost: float = upg_data.get("base_cost", 100.0)
+								var growth: float = upg_data.get("cost_growth", 1.5)
+								var depth_multiplier := pow(float(depth_index), 2.5) * 3.0
+								var cost := (base_cost * depth_multiplier) * pow(growth, current_lvl)
+								
+								if game_mgr.thoughts >= cost:
+									# BUY IT
+									if _attempt_purchase(id, upg_data):
+										_auto_buy_cooldown = AUTO_BUY_DELAY
+										print("AUTO-BUY: ", id, " level ", current_lvl + 1)
+										break  # Only one per frame
+								else:
+									# Can't afford, skip
+									continue
 
 func _refresh_upgrade_row(id: String, lvl_label: Label, btn: Button, max_lvl: int) -> void:
 	var current_lvl := int(_local_upgrades.get(id, 0))

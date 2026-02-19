@@ -78,7 +78,6 @@ func _ready() -> void:
 		bar.add_theme_stylebox_override("background", bg)
 		bar.add_theme_stylebox_override("fill", fg)
 		add_child(bar)
-		print("Child order: ", get_children().map(func(c): return c.name))
 	
 	# Force layout update after reparenting
 	queue_sort()
@@ -121,7 +120,6 @@ func _on_buy() -> void:
 	var bought = bool(res.get("bought", false))
 	var cost = float(res.get("cost", 0.0))
 	
-	print("DEBUG: ", perk_id, " bought=", bought, " cost=", cost, " memories=", gm.memories, " res=", res)
 	
 	if bought:
 		gm.memories = maxf(gm.memories - cost, 0.0)
