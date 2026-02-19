@@ -39,13 +39,12 @@ func _ready() -> void:
 	set_process(true)
 
 func _process(_delta: float) -> void:
-	# Resolve autoload safely (autoload timing / scene reload proof)
 	if _run == null:
 		_run = get_node_or_null("/root/DepthRunController")
 		if _run == null:
 			return
 
-	# --- Read values from controller ---
+	# EXPLICIT CASTS to float to prevent type errors
 	var thoughts: float = float(_run.get("thoughts"))
 	var control: float = float(_run.get("control"))
 
@@ -57,10 +56,9 @@ func _process(_delta: float) -> void:
 	if _run.has_method("get_control_per_sec"):
 		control_ps = float(_run.call("get_control_per_sec"))
 
-	var inst_raw: float = float(_run.get("instability")) # should be 0..100 in your debug
+	var inst_raw: float = float(_run.get("instability"))
 	var inst_pct: float = inst_raw
 	if inst_pct <= 1.0:
-		# if you ever store 0..1 instead, convert
 		inst_pct = inst_raw * 100.0
 
 	var active_depth: int = int(_run.get("active_depth"))
@@ -70,7 +68,6 @@ func _process(_delta: float) -> void:
 
 	set_depth_ui(active_depth, max_depth)
 
-	# Instability gain + TTF
 	var inst_gain: float = 0.0
 	if _run.has_method("get_instability_per_sec"):
 		inst_gain = float(_run.call("get_instability_per_sec"))
@@ -81,11 +78,9 @@ func _process(_delta: float) -> void:
 	if inst_gain > 0.000001:
 		ttf = (100.0 - inst_pct) / inst_gain
 
-	# Overclock placeholders (wire later if you have it)
 	var is_overclock: bool = false
 	var overclock_time_left: float = 0.0
 
-	# --- This is the key: call the OLD updater every frame ---
 	update_top_bar(
 		thoughts,
 		thoughts_ps,
@@ -169,12 +164,12 @@ func update_top_bar(
 	if thoughts_value:
 		thoughts_value.text = "%s" % _fmt_num(thoughts)
 	if thoughts_gain:
-		thoughts_gain.text = "+%.1f/s" % thoughts_ps
+		thoughts_gain.text = "+%s/s" % _fmt_num(thoughts_ps)  # Fixed: was %.1f
 
 	if control_value:
 		control_value.text = "%s" % _fmt_num(control)
 	if control_gain:
-		control_gain.text = "+%.1f/s" % control_ps
+		control_gain.text = "+%s/s" % _fmt_num(control_ps)  # Fixed: was %.1f
 
 	if inst_bar:
 		inst_bar.value = inst_pct
@@ -190,11 +185,32 @@ func update_top_bar(
 		inst_hint.visible = false
 
 func _fmt_num(v: float) -> String:
-	if v >= 1000000.0:
-		return "%.2fM" % (v / 1000000.0)
-	if v >= 1000.0:
-		return "%.2fK" % (v / 1000.0)
-	return str(int(floor(v)))
+	# Handle infinity and NaN safely
+	if v == INF or v == -INF:
+		return "∞"
+	if v != v:  # NaN check: NaN != NaN
+		return "NaN"
+	
+	# Ensure clean float
+	v = float(v)
+	
+	# Manual scientific notation for large numbers (avoids %e issues)
+	if v >= 1e15:
+		var exponent := int(floor(log(v) / log(10)))
+		var mantissa := snappedf(v / pow(10, exponent), 0.01)
+		return str(mantissa) + "e+" + str(exponent)
+	
+	# Standard abbreviations
+	if v >= 1e12:
+		return "%.2fT" % (v / 1e12)
+	if v >= 1e9:
+		return "%.2fB" % (v / 1e9)
+	if v >= 1e6:
+		return "%.2fM" % (v / 1e6)
+	if v >= 1e3:
+		return "%.2fK" % (v / 1e3)
+	
+	return str(int(v))
 
 func _fmt_time_ui(sec: float) -> String:
 	if sec >= 999900.0:

@@ -69,16 +69,31 @@ func block_row_clicks(ms: int = 200) -> void:
 var _bg_map: Dictionary = {}
 
 func _fmt_num(v: float) -> String:
+	# Handle infinity and NaN safely
+	if v == INF or v == -INF:
+		return "∞"
+	if v != v:  # NaN check: NaN != NaN
+		return "NaN"
+	
+	# Ensure clean float
+	v = float(v)
+	
+	# Manual scientific notation for large numbers (avoids %e issues in Godot 4.5)
 	if v >= 1e15:
-		return "%.2e" % v
-	if v >= 1_000_000_000_000.0:
+		var exponent := int(floor(log(v) / log(10)))
+		var mantissa := snappedf(v / pow(10, exponent), 0.01)
+		return str(mantissa) + "e+" + str(exponent)
+	
+	# Standard abbreviations
+	if v >= 1_000_000_000_000.0:  # 1 trillion
 		return "%.2fT" % (v / 1_000_000_000_000.0)
-	if v >= 1_000_000_000.0:
+	if v >= 1_000_000_000.0:      # 1 billion
 		return "%.2fB" % (v / 1_000_000_000.0)
-	if v >= 1_000_000.0:
+	if v >= 1_000_000.0:          # 1 million
 		return "%.2fM" % (v / 1_000_000.0)
-	if v >= 1_000.0:
+	if v >= 1_000.0:              # 1 thousand
 		return "%.2fk" % (v / 1_000.0)
+	
 	return str(int(v))
 	
 func _ready() -> void:
@@ -478,7 +493,8 @@ func _apply_visuals() -> void:
 		else:
 			var mem := float(_data.get("memories", 0.0))
 			var cry := float(_data.get("crystals", 0.0))
-			_reward_label.text = "+%.1f Mem  +%.1f %s" % [mem, cry, _crystal_name()]
+			# FIX: Use _fmt_num for proper scaling (K, M, B, T, e+)
+			_reward_label.text = "+%s Mem  +%s %s" % [_fmt_num(mem), _fmt_num(cry), _crystal_name()]
 
 	if dive_button != null:
 		var can := false
@@ -516,7 +532,8 @@ func _apply_visuals() -> void:
 			# Show partial based on upgrade level
 			var mem := float(_data.get("memories", 0.0))
 			var cry := float(_data.get("crystals", 0.0))
-			_reward_label.text = "+%.1f Mem  +%.1f %s" % [mem, cry, _crystal_name()]
+			# FIX: Use _fmt_num here too
+			_reward_label.text = "+%s Mem  +%s %s" % [_fmt_num(mem), _fmt_num(cry), _crystal_name()]
 
 
 # NEW: Calculate upgrade completion % for this depth
@@ -1287,20 +1304,21 @@ func _update_upgrade_row_ui(id: String) -> void:
 	else:
 		lvl_label.text = "Lv %d/%d" % [lvl, max_lvl]
 	
+	# In _update_upgrade_row_ui, around line where cost_label.text is set:
 	if lvl >= max_lvl:
 		btn.text = "MAX"
 		btn.disabled = true
 		cost_label.text = ""
 		cost_label.modulate = Color(1, 1, 1)
 	else:
-		var depth_multiplier := pow(float(depth_index), 2.5) * 3.0  # Exponential scaling
+		var depth_multiplier := pow(float(depth_index), 2.5) * 3.0
 		var effective_base := base_cost * depth_multiplier
 		var cost := effective_base * pow(growth, lvl)
 		var can_afford := current_thoughts >= cost
 		
 		btn.text = "+"
 		btn.disabled = not can_afford
-		cost_label.text = "%s Thoughts" % _fmt_num(cost)
+		cost_label.text = "%s Thoughts" % _fmt_num(cost)  # This now uses the fixed formatter
 		cost_label.modulate = Color(0.6, 0.6, 0.6) if not can_afford else Color(1, 1, 1)
 	
 	# DEBUG: Show effect of upgrade
@@ -1365,6 +1383,25 @@ func _process(_delta: float) -> void:
 								else:
 									# Can't afford, skip
 									continue
+									
+		# NEW: Update the Focus button info label to show estimated thoughts gain
+		if _details_open and upgrades_box != null:
+			var click_info := upgrades_box.get_node_or_null("ClickInfoLabel")
+			if click_info != null:
+				var gm = get_tree().current_scene.find_child("GameManager", true, false)
+				if gm != null:
+					var meta := _depth_meta()
+					var click_level := 0
+					if meta != null:
+						click_level = int(meta.get_level(1, "manual_click"))
+					
+					var seconds := 1.0 + (click_level * 0.5)
+					# FIX: Use the idle-only calculation
+					var tps: float = gm.get_idle_thoughts_per_second()
+					var gain: float = tps * seconds
+					
+					var gain_str: String = gm._fmt_num(gain)
+					click_info.text = "(%.1fs of idle Thoughts = ~%s)" % [seconds, gain_str]
 
 func _refresh_upgrade_row(id: String, lvl_label: Label, btn: Button, max_lvl: int) -> void:
 	var current_lvl := int(_local_upgrades.get(id, 0))

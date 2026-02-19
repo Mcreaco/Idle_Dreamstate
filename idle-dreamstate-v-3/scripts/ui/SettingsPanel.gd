@@ -164,6 +164,7 @@ func _fmt_num(v: float) -> String:
 	if not is_finite(v):
 		return "0"
 	if v >= 1.0e15:
+		@warning_ignore("shadowed_global_identifier")
 		var exp := int(floor(log(v) / log(10)))
 		var mant := snappedf(v / pow(10, exp), 0.01)
 		return str(mant) + "e+" + str(exp)

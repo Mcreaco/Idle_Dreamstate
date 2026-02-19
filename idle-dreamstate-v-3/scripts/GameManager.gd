@@ -118,16 +118,31 @@ func get_dive_instability_gain(depth: int) -> float:
 	return 5.0 + (depth * 1.5)
 
 func _fmt_num(v: float) -> String:
+	# Handle infinity and NaN safely
+	if v == INF or v == -INF:
+		return "∞"
+	if v != v:  # NaN check: NaN != NaN
+		return "NaN"
+	
+	# Ensure clean float
+	v = float(v)
+	
+	# Manual scientific notation for large numbers (avoids %e issues in Godot 4.5)
 	if v >= 1e15:
-		return "%.2e" % v
-	if v >= 1_000_000_000_000.0:
+		var exponent := int(floor(log(v) / log(10)))
+		var mantissa := snappedf(v / pow(10, exponent), 0.01)
+		return str(mantissa) + "e+" + str(exponent)
+	
+	# Standard abbreviations
+	if v >= 1_000_000_000_000.0:  # 1 trillion
 		return "%.2fT" % (v / 1_000_000_000_000.0)
-	if v >= 1_000_000_000.0:
+	if v >= 1_000_000_000.0:      # 1 billion
 		return "%.2fB" % (v / 1_000_000_000.0)
-	if v >= 1_000_000.0:
+	if v >= 1_000_000.0:          # 1 million
 		return "%.2fM" % (v / 1_000_000.0)
-	if v >= 1_000.0:
+	if v >= 1_000.0:              # 1 thousand
 		return "%.2fk" % (v / 1_000.0)
+	
 	return str(int(v))
 
 func _fmt_time_ui(sec: float) -> String:
@@ -1920,6 +1935,7 @@ func _process(delta: float) -> void:
 	
 	if instability >= 100.0:
 		do_fail()
+	
 			
 
 func _get_shop_boost() -> float:
@@ -2395,19 +2411,17 @@ func on_manual_focus_clicked() -> void:
 	if meta != null and meta.has_method("get_level"):
 		click_level = meta.call("get_level", 1, "manual_click")
 	
-	# Calculate seconds worth: Base 1.0 + (level * 0.5)
 	var seconds_per_click := 1.0 + (float(click_level) * 0.5)
 	
-	# CRITICAL FIX: Calculate IDLE rate only, not current total rate
-	# This is the base idle rate without manual click contribution
-	var idle_tps := idle_thoughts_rate * _get_total_idle_multiplier()
-	
-	# Give the thoughts instantly
+	# CRITICAL FIX: Use base idle TPS, NOT _thoughts_ps (which includes manual clicks)
+	var idle_tps := get_idle_thoughts_per_second()
 	var thoughts_gained := idle_tps * seconds_per_click
-	thoughts += thoughts_gained
 	
-	# Visual feedback
+	thoughts += thoughts_gained
+	total_thoughts_earned += thoughts_gained
+	
 	_show_click_feedback(thoughts_gained)
+	_refresh_top_ui()
 
 func _get_total_idle_multiplier() -> float:
 	# Calculate just the multipliers that apply to idle generation
@@ -2422,3 +2436,32 @@ func _get_total_idle_multiplier() -> float:
 func _show_click_feedback(amount: float) -> void:
 	# Spawn floating text or flash effect
 	print("Focus! +", _fmt_num(amount), " thoughts")
+
+func get_idle_thoughts_per_second() -> float:
+	var current_depth := get_current_depth()
+	
+	# Calculate base multipliers (without overclock/corruption/manual effects)
+	var thoughts_mult: float = _safe_mult(upgrade_manager.get_thoughts_mult()) * _safe_mult(perk_system.get_thoughts_mult()) * _safe_mult(nightmare_system.get_thoughts_mult())
+	
+	if depth_meta_system != null:
+		thoughts_mult *= _safe_mult(depth_meta_system.get_global_thoughts_mult())
+	
+	if perm_perk_system != null:
+		thoughts_mult *= _safe_mult(perm_perk_system.get_thoughts_mult())
+	
+	if abyss_perk_system != null:
+		thoughts_mult *= _safe_mult(abyss_perk_system.get_thoughts_mult())
+	
+	var deep_bonus_per_depth: float = upgrade_manager.get_deep_dives_thoughts_bonus_per_depth()
+	var depth_thoughts_mult: float = 1.0 + (float(current_depth) * (depth_thoughts_step + deep_bonus_per_depth))
+	
+	# Include timed boosts and depth multipliers
+	var boost_mult := 2.0 if timed_boost_active else 1.0
+	thoughts_mult *= boost_mult
+	
+	# Include frozen depth multipliers
+	var progress_mult := _get_total_progress_multiplier()
+	thoughts_mult *= progress_mult
+	
+	# Return base idle rate (this is the TRUE idle rate without manual clicks)
+	return idle_thoughts_rate * thoughts_mult * depth_thoughts_mult * _get_shop_boost()

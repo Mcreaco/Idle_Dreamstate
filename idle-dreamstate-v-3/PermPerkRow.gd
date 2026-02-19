@@ -124,8 +124,31 @@ func _on_buy() -> void:
 	if bought:
 		gm.memories = maxf(gm.memories - cost, 0.0)
 		gm.save_game()
+		var meta_panel = get_tree().current_scene.find_child("MetaPanelController", true, false)
+		if meta_panel != null and meta_panel.has_method("_update_currency_display"):
+			meta_panel._update_currency_display()
 		refresh()
 
+func _fmt_num(v: float) -> String:
+	if v == INF or v == -INF:
+		return "∞"
+	if v != v:
+		return "NaN"
+	v = float(v)
+	if v >= 1e15:
+		var exponent := int(floor(log(v) / log(10)))
+		var mantissa := snappedf(v / pow(10, exponent), 0.01)
+		return str(mantissa) + "e+" + str(exponent)
+	if v >= 1e12:
+		return "%.2fT" % (v / 1e12)
+	if v >= 1e9:
+		return "%.2fB" % (v / 1e9)
+	if v >= 1e6:
+		return "%.2fM" % (v / 1e6)
+	if v >= 1e3:
+		return "%.2fk" % (v / 1e3)
+	return str(int(v))
+	
 func refresh() -> void:
 	if not gm or not perm:
 		return
@@ -221,8 +244,9 @@ func refresh() -> void:
 	if btn:
 		btn.text = "%s (Lv %d/%d)" % [title, lvl, max_lvl]
 		btn.disabled = (lvl >= max_lvl) or (gm.memories < cost)
-		btn.tooltip_text = "%s\n%s\nCost: %d Memories\nYou have: %d" % [
-			title, tip, int(round(cost)), int(round(gm.memories))
+		# FIX: Format memories in tooltip
+		btn.tooltip_text = "%s\n%s\nCost: %s Memories\nYou have: %s" % [
+			title, tip, _fmt_num(cost), _fmt_num(gm.memories)
 		]
 	
 	if desc_label:
@@ -233,7 +257,8 @@ func refresh() -> void:
 			desc_label.modulate = Color(1, 1, 1, 1.0)
 	
 	if cost_label:
-		cost_label.text = "—" if lvl >= max_lvl else "%d" % int(round(cost))
+		# FIX: Use _fmt_num for cost display
+		cost_label.text = "—" if lvl >= max_lvl else _fmt_num(cost)
 		if lvl < max_lvl and gm.memories < cost:
 			cost_label.add_theme_color_override("font_color", Color(0.9, 0.3, 0.3))
 		else:
@@ -243,19 +268,14 @@ func refresh() -> void:
 		bar.min_value = 0
 		bar.max_value = max_lvl
 		bar.value = lvl
-
-	 # Debug check
+	
+	# Debug/Logic section
 	var is_maxed: bool = lvl >= max_lvl
 	var can_afford: bool = gm.memories >= cost
 	var should_disable := is_maxed or not can_afford
 	
-	#print("PermPerk %s: lvl=%d, cost=%d, memories=%d, disabled=%s" % [
-	#	perk_id, lvl, cost, gm.memories, should_disable
-	#])
-	
 	if btn:
 		btn.disabled = should_disable
-		# Force mouse filter to ensure clicks go through
 		btn.mouse_filter = MOUSE_FILTER_STOP
 	
 	

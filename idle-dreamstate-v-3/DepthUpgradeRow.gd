@@ -117,10 +117,11 @@ func _format_costs(d: int, def: Dictionary) -> Dictionary:
 	for k in costs.keys():
 		var idx := int(k)
 		var need_f := base * float(costs[k])
-		var need := int(round(need_f))
+		var _need := int(round(need_f))  # If you don't use it, prefix with _
 		var cname := DepthMetaSystem.get_depth_currency_name(idx)
 		
-		parts.append("%d %s" % [need, cname])
+		# FIX: Format large numbers nicely
+		parts.append("%s %s" % [_fmt_num(need_f), cname])
 		
 		if depth_meta.currency[idx] < need_f:
 			ok = false
@@ -132,6 +133,26 @@ func _format_costs(d: int, def: Dictionary) -> Dictionary:
 		"costs": costs
 	}
 
+func _fmt_num(v: float) -> String:
+	if v == INF or v == -INF:
+		return "∞"
+	if v != v:
+		return "NaN"
+	v = float(v)
+	if v >= 1e15:
+		var exponent := int(floor(log(v) / log(10)))
+		var mantissa := snappedf(v / pow(10, exponent), 0.01)
+		return str(mantissa) + "e+" + str(exponent)
+	if v >= 1e12:
+		return "%.2fT" % (v / 1e12)
+	if v >= 1e9:
+		return "%.2fB" % (v / 1e9)
+	if v >= 1e6:
+		return "%.2fM" % (v / 1e6)
+	if v >= 1e3:
+		return "%.2fk" % (v / 1e3)
+	return str(int(v))
+	
 func _refresh() -> void:
 	# DEBUG
 	if depth_meta == null:
@@ -186,7 +207,6 @@ func _refresh() -> void:
 		_cost_lbl.text = "MAXED"
 		_bar.visible = false
 	
-	# Hide unlock row until it should appear
 	if upgrade_id == "unlock":
 		visible = depth_meta.can_show_unlock_upgrade(d) and (d < DepthMetaSystem.MAX_DEPTH)
 	else:
