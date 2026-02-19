@@ -161,14 +161,20 @@ func _process(delta: float) -> void:
 
 # Number formatting helper (100, 1.00k, 1.00M, 1.00B, etc.)
 func _fmt_num(v: float) -> String:
-	if v >= 1e12:
-		return "%.2fT" % (v / 1e12)
-	if v >= 1e9:
-		return "%.2fB" % (v / 1e9)
-	if v >= 1e6:
-		return "%.2fM" % (v / 1e6)
-	if v >= 1e3:
-		return "%.2fk" % (v / 1e3)
+	if not is_finite(v):
+		return "0"
+	if v >= 1.0e15:
+		var exp := int(floor(log(v) / log(10)))
+		var mant := snappedf(v / pow(10, exp), 0.01)
+		return str(mant) + "e+" + str(exp)
+	if v >= 1.0e12:
+		return str(snappedf(v / 1.0e12, 0.01)) + "T"
+	if v >= 1.0e9:
+		return str(snappedf(v / 1.0e9, 0.01)) + "B"
+	if v >= 1.0e6:
+		return str(snappedf(v / 1.0e6, 0.01)) + "M"
+	if v >= 1.0e3:
+		return str(snappedf(v / 1.0e3, 0.01)) + "k"
 	return str(int(v))
 
 # -------------------------
