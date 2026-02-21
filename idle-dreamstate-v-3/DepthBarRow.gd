@@ -157,6 +157,7 @@ func _gui_input(event: InputEvent) -> void:
 		return
 
 	# When expanded/overlayed, the row itself should not react to clicks
+	# The close button or clicking outside handles closing
 	if _overlay_mode or _details_open:
 		return
 
@@ -165,9 +166,7 @@ func _gui_input(event: InputEvent) -> void:
 		if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
 			if _active and not _locked and not _frozen:
 				clicked_depth.emit(depth_index)
-
-
-
+				get_viewport().set_input_as_handled()  # Prevent passing to other elements
 # -----------------------
 # Public API
 # -----------------------
@@ -206,11 +205,15 @@ func set_overlay_mode(v: bool) -> void:
 			_margin.add_theme_constant_override("margin_right", 0)
 			_margin.add_theme_constant_override("margin_top", 0)
 			_margin.add_theme_constant_override("margin_bottom", 0)
+			# CRITICAL: Allow clicking through when in overlay mode
+			mouse_filter = Control.MOUSE_FILTER_PASS
 		else:
 			_margin.add_theme_constant_override("margin_left", 10)
 			_margin.add_theme_constant_override("margin_right", 10)
 			_margin.add_theme_constant_override("margin_top", int(top_bottom_padding))
 			_margin.add_theme_constant_override("margin_bottom", int(top_bottom_padding))
+			# Reset to stop clicks when closed
+			mouse_filter = Control.MOUSE_FILTER_STOP
 
 	_apply_bar_style()
 	_apply_row_background_texture()
@@ -259,16 +262,22 @@ func set_details_open(open: bool) -> void:
 
 	if open:
 		details.visible = true
+		set_overlay_mode(true)  # Enable overlay mode when opening
 		var tw := create_tween()
 		tw.tween_property(details, "custom_minimum_size:y", details_open_height, 0.18)\
 			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 		_build_upgrades_ui()
-		_hide_extra_progress_bars() # <-- removes the random 0% bar
+		_hide_extra_progress_bars()
 	else:
+		set_overlay_mode(false)  # CRITICAL: Disable overlay mode when closing
 		var tw2 := create_tween()
 		tw2.tween_property(details, "custom_minimum_size:y", 0.0, 0.16)\
 			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-		tw2.tween_callback(func(): details.visible = false)
+		tw2.tween_callback(func(): 
+			details.visible = false
+			# Ensure mouse filter is reset
+			mouse_filter = Control.MOUSE_FILTER_STOP
+		)
 
 	_apply_visuals()
 	_apply_bar_style()
@@ -279,7 +288,6 @@ func set_details_open(open: bool) -> void:
 		var tm = get_node_or_null("/root/TutorialManage")
 		if tm and tm.has_method("on_depth_bar_expanded"):
 			tm.on_depth_bar_expanded(depth_index)
-
 # -----------------------
 # Layout
 # -----------------------
@@ -782,7 +790,7 @@ func _build_upgrades_ui() -> void:
 	if upgrades_box == null:
 		return
 	
-	# CRITICAL: Clear old data when rebuilding UI
+	# Clear old data when rebuilding UI
 	_auto_buy_enabled.clear()
 	_upgrade_ui_refs.clear()
 		
@@ -790,58 +798,9 @@ func _build_upgrades_ui() -> void:
 	for c in upgrades_box.get_children():
 		c.queue_free()
 	
-	# --- MANUAL FOCUS SECTION (ALL DEPTHS) ---
-	# Create fresh section for each depth row
-	var click_section := HBoxContainer.new()
-	click_section.name = "ClickSection"
-	click_section.alignment = BoxContainer.ALIGNMENT_BEGIN
-	click_section.add_theme_constant_override("separation", 12)
-	upgrades_box.add_child(click_section)
-	
-	var click_title := Label.new()
-	click_title.text = "Manual Focus"
-	click_title.add_theme_font_size_override("font_size", 22)
-	click_title.add_theme_color_override("font_color", Color(0.35, 0.8, 0.95))
-	click_section.add_child(click_title)
-	
-	# Info label showing the amount
-	var click_info := Label.new()
-	click_info.name = "ClickInfoLabel"
-	click_info.add_theme_font_size_override("font_size", 16)
-	click_info.add_theme_color_override("font_color", Color(0.75, 0.85, 0.95, 0.8))
-	
-	# Get level from Depth 1 meta (regardless of which depth row this is)
-	var meta := _depth_meta()
-	var click_level := 0
-	if meta != null:
-		click_level = int(meta.get_level(1, "manual_click"))
-	var seconds := 1.0 + (click_level * 0.5)
-	click_info.text = "(%.1fs idle Thoughts)" % seconds
-	
-	click_section.add_child(click_info)
-	
-	var click_btn := Button.new()
-	click_btn.name = "ClickButton"
-	click_btn.custom_minimum_size = Vector2(120, 40)
-	click_btn.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	click_btn.text = "Focus"
-	_apply_blue_button_style(click_btn)
-	
-	click_btn.pressed.connect(func():
-		var gm = get_tree().current_scene.find_child("GameManager", true, false)
-		if gm != null and gm.has_method("on_manual_focus_clicked"):
-			gm.call("on_manual_focus_clicked")
-	)
-	click_section.add_child(click_btn)
-	
-	# Add separator
-	var sep := HSeparator.new()
-	sep.add_theme_constant_override("separation", 20)
-	upgrades_box.add_child(sep)
-	
-	# --- RUN UPGRADES SECTION ---
+	# --- HEADER ---
 	var title := Label.new()
-	title.text = "Run Upgrades (Depth %d)" % depth_index
+	title.text = "Depth %d Upgrades" % depth_index
 	title.add_theme_font_size_override("font_size", 24)
 	title.add_theme_color_override("font_color", Color(0.35, 0.8, 0.95))
 	upgrades_box.add_child(title)
@@ -851,10 +810,7 @@ func _build_upgrades_ui() -> void:
 	# Get dynamic upgrades from DepthRunController
 	var drc := get_node_or_null("/root/DepthRunController")
 	if drc == null:
-		push_warning("DepthBarRow: DepthRunController not found, using fallback upgrades")
-		_add_upgrade_row("progress_speed", "Progress Speed")
-		_add_upgrade_row("memories_gain", "Memories Gain")
-		_add_upgrade_row("crystals_gain", "Crystals Gain")
+		push_warning("DepthBarRow: DepthRunController not found")
 		return
 	
 	# Get upgrade IDs for this depth
@@ -873,6 +829,102 @@ func _build_upgrades_ui() -> void:
 			upg_data = {"name": upg_id.capitalize(), "description": ""}
 		
 		_add_upgrade_row_dynamic(upg_id, upg_data)
+	
+func _add_meta_upgrades_section() -> void:
+	var meta := _depth_meta()
+	if meta == null:
+		return
+	
+	var defs: Array = meta.get_depth_upgrade_defs(depth_index)
+	if defs.is_empty():
+		return
+	
+	# Separator
+	var sep := HSeparator.new()
+	sep.add_theme_constant_override("separation", 24)
+	upgrades_box.add_child(sep)
+	
+	# Meta Upgrades Header
+	var meta_title := Label.new()
+	meta_title.text = "Permanent Upgrades"
+	meta_title.add_theme_font_size_override("font_size", 22)
+	meta_title.add_theme_color_override("font_color", Color(0.9, 0.7, 0.3))  # Gold color
+	upgrades_box.add_child(meta_title)
+	
+	# Show only non-max meta upgrades for this depth (bought ones are in Meta Panel)
+	var _gm = get_tree().current_scene.find_child("GameManager", true, false)
+	
+	for def in defs:
+		var id := String(def.get("id", ""))
+		if id.is_empty():
+			continue
+		
+		var current_lvl: int = meta.get_level(depth_index, id)
+		var max_lvl := int(def.get("max", 1))
+		
+		# Skip maxed upgrades in this view (they're tracked in Meta Panel)
+		if current_lvl >= max_lvl:
+			continue
+			
+		# Skip run upgrades (already shown above)
+		if id in ["progress_speed", "memories_gain", "crystals_gain", "stabilize"]:
+			continue
+		
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 12)
+		
+		# Name & Desc
+		var vbox := VBoxContainer.new()
+		vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		
+		var name_label := Label.new()
+		name_label.text = def.get("name", id.capitalize())
+		name_label.add_theme_font_size_override("font_size", 18)
+		vbox.add_child(name_label)
+		
+		var desc_label := Label.new()
+		desc_label.text = def.get("desc", "")
+		desc_label.add_theme_font_size_override("font_size", 14)
+		desc_label.add_theme_color_override("font_color", Color(0.75, 0.82, 0.9))
+		desc_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		vbox.add_child(desc_label)
+		
+		row.add_child(vbox)
+		
+		# Level indicator
+		var lvl_label := Label.new()
+		lvl_label.text = "Lv %d/%d" % [current_lvl, max_lvl]
+		lvl_label.add_theme_font_size_override("font_size", 16)
+		row.add_child(lvl_label)
+		
+		# Buy button (opens Meta Panel since these use special currency)
+		var buy_btn := Button.new()
+		buy_btn.text = "Buy"
+		buy_btn.custom_minimum_size = Vector2(80, 36)
+		_apply_blue_button_style(buy_btn)
+		
+		# Check affordability
+		var cost: float = meta.cost_for(depth_index, def)
+		var can_afford := true
+		var costs: Dictionary = def.get("costs", {depth_index: 1.0})
+		
+		for k in costs.keys():
+			var curr_idx := int(k)
+			var need: float = cost * float(costs[k])
+			if meta.currency[curr_idx] < need:
+				can_afford = false
+				break
+		
+		buy_btn.disabled = not can_afford
+		buy_btn.pressed.connect(func():
+			# Open Meta Panel to this depth
+			var mp = get_tree().current_scene.find_child("MetaPanelController", true, false)
+			if mp != null:
+				mp.open_to_depth(depth_index)
+		)
+		
+		row.add_child(buy_btn)
+		upgrades_box.add_child(row)
 
 func _add_upgrade_row(id: String, label_text: String) -> void:
 	var row := HBoxContainer.new()

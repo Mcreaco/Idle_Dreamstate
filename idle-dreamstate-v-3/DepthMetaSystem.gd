@@ -118,6 +118,22 @@ func get_depth_upgrade_cost(depth: int, upgrade_id: String, level: int) -> float
 	
 	return base * depth_mult * level_mult
 	
+func get_depth_specific_effect(depth_i: int, effect_id: String) -> float:
+	var lvl := get_level(depth_i, effect_id)
+	match effect_id:
+		"shallow_eff":
+			return 1.0 + (0.15 * float(lvl))  # +15% per level
+		"pressure_adapt":
+			return 1.0 - (0.10 * float(lvl))  # -10% instab per level
+		"dark_adaptation":
+			return 1.0 + (0.10 * float(lvl))  # +10% crystals
+		"rift_harmonics":
+			return 0.20 * float(lvl)  # Additional 20% instab reduction per click
+		"silent_insight":
+			return 1.0 + (0.25 * float(lvl))
+		_:
+			return 0.0
+			
 func get_depth_upgrade_defs(depth_i: int) -> Array:
 	var d := clampi(depth_i, 1, MAX_DEPTH)
 
@@ -212,6 +228,14 @@ func get_depth_upgrade_defs(depth_i: int) -> Array:
 				"costs": { d: 1.0 }
 			}
 			
+			var shallow_efficiency := {
+				"id": "shallow_eff",
+				"name": "Surface Tension",
+				"desc": "Thoughts gain +15% while at Depth 1 (retroactive boost).",
+				"max": 5,
+				"kind": "depth_specific",
+				"costs": _pick_costs(d, 1)
+			}
 			return [
 				manual_click,  # Click upgrade first
 				t_gain,
@@ -220,6 +244,7 @@ func get_depth_upgrade_defs(depth_i: int) -> Array:
 				wake_yield,
 				dive_start,
 				core_unlock_d1,
+				shallow_efficiency,
 			]
 			
 		2:
@@ -229,6 +254,15 @@ func get_depth_upgrade_defs(depth_i: int) -> Array:
 			wake_yield.name = "Ruby Resonance"
 			dive_start.name = "Quick Descent"
 			
+			var pressure_adapt := {
+				"id": "pressure_adapt",
+				"name": "Pressure Adaptation",
+				"desc": "Reduce Instability gain by 10% while actively at Depth 2.",
+				"max": 3,
+				"kind": "depth_specific",
+				"costs": _pick_costs(d, 2)
+			}
+			
 			return [
 				core_stab,
 				t_gain,
@@ -237,6 +271,7 @@ func get_depth_upgrade_defs(depth_i: int) -> Array:
 				wake_yield,
 				dive_start,
 				core_unlock,
+				pressure_adapt,
 			]
 			
 		3:
@@ -255,6 +290,8 @@ func get_depth_upgrade_defs(depth_i: int) -> Array:
 				"costs": { 3: 75.0 }
 			}
 			
+			
+			
 			return [
 				core_stab,
 				t_gain,
@@ -264,6 +301,7 @@ func get_depth_upgrade_defs(depth_i: int) -> Array:
 				dive_start,
 				auto_mind_1,
 				core_unlock,
+				
 			]
 			
 		4:
@@ -282,6 +320,14 @@ func get_depth_upgrade_defs(depth_i: int) -> Array:
 				"costs": { 4: 120.0 }
 			}
 			
+			var dark_adaptation := {
+				"id": "dark_adaptation",
+				"name": "Dark Adaptation",
+				"desc": "Reveal hidden numbers in Murk. +10% crystal gain here.",
+				"max": 1,
+				"kind": "depth_specific",
+				"costs": {4: 150.0, 5: 50.0}
+			}
 			return [
 				core_stab,
 				t_gain,
@@ -291,6 +337,7 @@ func get_depth_upgrade_defs(depth_i: int) -> Array:
 				dive_start,
 				auto_mind_2,
 				core_unlock,
+				dark_adaptation,
 			]
 			
 		5:
@@ -309,6 +356,14 @@ func get_depth_upgrade_defs(depth_i: int) -> Array:
 				"costs": { 5: 180.0 }
 			}
 			
+			var rift_harmonics := {
+				"id": "rift_harmonics",
+				"name": "Rift Harmonics",
+				"desc": "Control clicks reduce instability by an additional 20% at this depth.",
+				"max": 3,
+				"kind": "depth_specific",
+				"costs": _pick_costs(d, 2)
+			}
 			return [
 				core_stab,
 				t_gain,
@@ -318,6 +373,7 @@ func get_depth_upgrade_defs(depth_i: int) -> Array:
 				dive_start,
 				auto_mind_3,
 				core_unlock,
+				rift_harmonics,
 			]
 			
 		6:
@@ -417,6 +473,14 @@ func get_depth_upgrade_defs(depth_i: int) -> Array:
 				"costs": { 9: 720.0 }
 			}
 			
+			var silent_insight := {
+				"id": "silent_insight",
+				"name": "Silent Insight",
+				"desc": "With Inner Eye active, +25% Thoughts gain at Depth 9.",
+				"max": 2,
+				"kind": "depth_specific",
+				"costs": _pick_costs(d, 3)
+			}
 			return [
 				core_stab,
 				t_gain,
@@ -426,6 +490,7 @@ func get_depth_upgrade_defs(depth_i: int) -> Array:
 				dive_start,
 				auto_mind_7,
 				core_unlock,
+				silent_insight,
 			]
 			
 		10:

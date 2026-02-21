@@ -620,6 +620,22 @@ func _apply_unlocks() -> void:
 
 		if not tab.pressed.is_connected(Callable(self, "_on_depth_tab_pressed")):
 			tab.pressed.connect(Callable(self, "_on_depth_tab_pressed").bind(i))
+		
+		var completion := 0.0
+		var total_upgs := 0
+		var bought_upgs := 0
+		var defs: Array = depth_meta_system.get_depth_upgrade_defs(i)
+		for def in defs:
+			total_upgs += int(def.get("max", 1))
+			bought_upgs += depth_meta_system.get_level(i, def.get("id", ""))
+		if total_upgs > 0:
+			completion = float(bought_upgs) / float(total_upgs)
+		
+		# Show completion percentage in tab
+		tab.text = "%s (%.0f%%)" % [depth_title, completion * 100.0]
+		if completion >= 1.0:
+			tab.add_theme_color_override("font_color", Color(0.3, 0.9, 0.4))  # Green for complete
+
 
 	if _current_depth > max_depth_reached:
 		_current_depth = max_depth_reached
@@ -660,6 +676,17 @@ func open_to_depth(depth_index: int) -> void:
 	open()
 	_show_meta("depth")
 	_show_depth(depth_index)
+	
+	# CRITICAL: Force refresh of upgrade rows for this depth
+	var rows = find_children("*", "DepthUpgradeRow", true, false)
+	for row in rows:
+		if row.has_method("set_depth"):
+			row.set_depth(depth_index)
+		if row.has_method("_refresh"):
+			row._refresh()
+	
+	_update_memories_label_text()
+	_update_bottom_currencies()
 
 func _on_buy_upgrade_pressed(depth: int, upgrade_id: String) -> void:
 	var result = depth_meta_system.buy_upgrade(depth, upgrade_id)

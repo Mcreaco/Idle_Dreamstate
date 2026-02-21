@@ -235,6 +235,9 @@ script = ExtResource("8_x3yn0")
 
 [node name="GameManager" type="Node" parent="."]
 script = ExtResource("1_r0du0")
+dive_cd_min = null
+perk2_cd_reduction_per_level = null
+auto_overclock_instability_limit = null
 
 [node name="Systems" type="Node" parent="."]
 
@@ -302,13 +305,8 @@ layout_mode = 2
 [node name="BottomBarPanel" parent="MainUI/Root" index="3"]
 mouse_filter = 2
 
-[node name="WakeButton" parent="MainUI/Root/BottomBarPanel/BottomBar" index="1"]
-visible = true
-
-[node name="Meta" parent="MainUI/Root/BottomBarPanel/BottomBar" index="2"]
-visible = true
-text = "Meta
-"
+[node name="VBoxContainer" type="VBoxContainer" parent="MainUI/Root/BottomBarPanel" index="1"]
+layout_mode = 2
 
 [node name="RightRail" parent="MainUI/Root" index="5"]
 settings_panel_path = NodePath("")

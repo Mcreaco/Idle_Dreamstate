@@ -114,6 +114,31 @@ var total_runs: int = 0  # Increment this when waking
 var is_diving: bool = false  # Set to true when diving, false when idle
 var max_depth_tier_reached: int = 1  # Track highest depth unlocked
 
+var click_combo_window: float = 0.0  # Combo timing window
+var click_power: float = 5.0  # Base thoughts per click
+var click_control_gain: float = 0.0
+var click_instability_reduction: float = 0.0
+
+# Click upgrade levels (saved with run)
+var click_power_level: int = 0
+var click_control_level: int = 0  
+var click_stability_level: int = 0
+var click_flow_level: int = 0
+var click_resonance_level: int = 0
+var click_upgrade_tab: Button = null
+var click_upgrade_panel: PanelContainer = null
+# Combo system
+var _click_combo_count: int = 0
+var _click_combo_timer: float = 0.0
+var _click_combo_window: float = 2.0  # Base window, modified by upgrades
+
+# Constants for upgrade formulas
+const CLICK_POWER_BASE: float = 5.0
+const CLICK_POWER_GROWTH: float = 1.35  # Exponential scaling
+
+var click_upgrade_sidebar: Control = null
+var click_upgrade_expanded: bool = false
+
 func get_dive_instability_gain(depth: int) -> float:
 	return 5.0 + (depth * 1.5)
 
@@ -194,19 +219,162 @@ func _warn_missing_nodes_once() -> void:
 		push_warning("sound_system missing at ../SoundSystem.")
 		_warned_missing_sound = true
 
-func _ready() -> void:
-	# Temporary debug - remove after fixing
-	var wake_btn = find_child("WakeButton", true, false)
-	if wake_btn:
-		print("WakeButton found: ", wake_btn.get_path())
-	else:
-		print("ERROR: WakeButton not found!")
+func _connect_click_buttons_debug() -> void:
+	# Find the click buttons
+	var click_names := ["Think", "Control", "Stabilize", "ClickThough", "ClickControl", "ClickInstabili"]
+	var found_any := false
+	
+	for btn_name in click_names:
+		var btn := get_tree().current_scene.find_child(btn_name, true, false) as Button
+		if btn != null:
+			found_any = true
+			print("FOUND button: ", btn_name, " at path: ", btn.get_path())
+			print("  - disabled: ", btn.disabled)
+			print("  - visible: ", btn.visible)
+			print("  - mouse_filter: ", btn.mouse_filter)
+			print("  - size: ", btn.size)
+			
+			# Force enable and connect
+			btn.disabled = false
+			btn.mouse_filter = Control.MOUSE_FILTER_STOP
+			
+			# Disconnect any existing connections to avoid duplicates
+			var connections := btn.pressed.get_connections()
+			for conn in connections:
+				btn.pressed.disconnect(conn["callable"])
+			
+			# Connect based on name
+			if "Think" in btn_name or "Though" in btn_name:
+				btn.pressed.connect(on_manual_focus_clicked)
+				print("  -> Connected to on_manual_focus_clicked")
+			elif "Control" in btn_name:
+				btn.pressed.connect(_on_click_control)
+				print("  -> Connected to _on_click_control")
+			elif "Stabil" in btn_name or "Instab" in btn_name:
+				btn.pressed.connect(_on_click_instability)
+				print("  -> Connected to _on_click_instability")
+	
+	if not found_any:
+		push_error("NO CLICK BUTTONS FOUND! Check node names in scene tree.")
 
-	var prestige_wake = find_child("PrestigeWakeButton", true, false) 
-	if prestige_wake:
-		print("PrestigeWakeButton found: ", prestige_wake.get_path())
-	else:
-		print("ERROR: PrestigeWakeButton not found!")
+func _fix_control_button() -> void:
+	var btn := get_tree().current_scene.find_child("ClickControl", true, false) as Button
+	if btn == null:
+		return
+	
+	# REMOVE the manual positioning
+	btn.top_level = false
+	btn.position = Vector2.ZERO
+	btn.global_position = Vector2.ZERO  # Reset any forced position
+	
+	# Force it back into ClickRow layout
+	btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	
+	# Find ClickRow and ensure it's the parent
+	var click_row := get_tree().current_scene.find_child("ClickRow", true, false) as HBoxContainer
+	if click_row and btn.get_parent() != click_row:
+		# Reparent if needed
+		btn.get_parent().remove_child(btn)
+		click_row.add_child(btn)
+		click_row.move_child(btn, 1)  # Position 1 (middle) if needed
+	
+	# Force refresh
+	if click_row:
+		click_row.queue_sort()
+		
+func _fix_click_row_width() -> void:
+	var click_row := get_tree().current_scene.find_child("ClickRow", true, false) as HBoxContainer
+	if click_row == null:
+		return
+	
+	# Make ClickRow fill the available width
+	click_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	click_row.custom_minimum_size = Vector2(900, 70)  # Force wide enough
+	
+	# Ensure all 3 buttons are actually in it and fill equally
+	for child in click_row.get_children():
+		if child is Button:
+			child.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			child.size_flags_stretch_ratio = 1.0  # Equal width
+
+func _check_for_duplicate_buttons() -> void:
+	var all_buttons := get_tree().current_scene.find_children("*", "Button", true)
+	var names := {}
+	for btn in all_buttons:
+		if btn.name in names:
+			print("DUPLICATE BUTTON FOUND: ", btn.name, " at ", btn.get_path(), " and ", names[btn.name])
+		else:
+			names[btn.name] = btn.get_path()
+
+func _check_button_parents() -> void:
+	for btn_name in ["Think", "Control", "Stabilize"]:
+		var btn := get_tree().current_scene.find_child(btn_name, true, false)
+		if btn:
+			print(btn_name, " parent: ", btn.get_parent().name, " | path: ", btn.get_path())
+
+func _force_recreate_click_row() -> void:
+	var content := get_tree().current_scene.find_child("Content", true, false)
+	if content == null:
+		push_error("Content not found")
+		return
+	
+	# Remove old ClickRow completely
+	var old_row := content.find_child("ClickRow", false, false)
+	if old_row:
+		old_row.queue_free()
+		await get_tree().process_frame
+	
+	# Create fresh HBoxContainer
+	var click_row := HBoxContainer.new()
+	click_row.name = "ClickRow"
+	click_row.add_theme_constant_override("separation", 12)
+	click_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	click_row.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	click_row.custom_minimum_size = Vector2(0, 70)
+	click_row.alignment = BoxContainer.ALIGNMENT_BEGIN  # Left to right
+	
+	# Create 3 fresh buttons
+	var configs := [
+		{"name": "Think", "text": "🧠 Think"},
+		{"name": "Control", "text": "🛡️ Control"},
+		{"name": "Stabilize", "text": "❄️ Stabilize"}
+	]
+	
+	for cfg in configs:
+		var btn := Button.new()
+		btn.name = cfg["name"]
+		btn.text = cfg["text"]
+		btn.custom_minimum_size = Vector2(0, 50)  # Width 0 = expand, height 50
+		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL  # Share width equally
+		btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		btn.size_flags_stretch_ratio = 1.0
+		btn.mouse_filter = Control.MOUSE_FILTER_STOP
+		
+		# Connect based on name
+		match cfg["name"]:
+			"Think":
+				btn.pressed.connect(on_manual_focus_clicked)
+			"Control":
+				btn.pressed.connect(_on_click_control)
+			"Stabilize":
+				btn.pressed.connect(_on_click_instability)
+		
+		click_row.add_child(btn)
+		print("Created button: ", btn.name, " parent: ", btn.get_parent().name)
+	
+	# Add to Content at position 0 (above BottomBar)
+	content.add_child(click_row)
+	content.move_child(click_row, 0)
+	
+	print("ClickRow recreated with ", click_row.get_child_count(), " children")
+	print("ClickRow rect: ", click_row.get_global_rect())
+	for btn in click_row.get_children():
+		print("  ", btn.name, " rect: ", (btn as Control).get_global_rect())
+		
+func _ready() -> void:
+	# DEBUG: Connect click buttons
+	_connect_click_buttons_debug()
 	_warn_missing_nodes_once()
 	set_process_priority(1000)
 	
@@ -269,7 +437,7 @@ func _ready() -> void:
 		pillar_stack.call("reset_visuals")
 		
 	
-	
+	_create_click_upgrade_sidebar()
 	_update_depth_ui()
 	_sync_cracks()
 	_refresh_top_ui()
@@ -316,11 +484,61 @@ func _ready() -> void:
 	if not 1 in auto_buy_unlocked_depths:
 		auto_buy_unlocked_depths.append(1)
 		print("FORCED: Unlocked auto-buy for depth 1")
+	
+	_force_rate_sample()  # Add this
+	call_deferred("_create_click_upgrade_sidebar")
+	
+	 # Remove old panels first
+	var old = get_tree().current_scene.find_child("ClickUpgradesContainer", true, false)
+	if old:
+		old.queue_free()
+		print("Removed old ClickUpgradesContainer")
+	
+	# Then create new one
+	call_deferred("_create_click_upgrade_sidebar")
+	
+func _input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.pressed:
+		var mouse_pos := get_viewport().get_mouse_position()
+		print("\n=== CLICK DEBUG ===")
+		print("Mouse at: ", mouse_pos)
+		
+		# Check the ClickControl button specifically
+		var btn := get_tree().current_scene.find_child("ClickControl", true, false) as Button
+		if btn:
+			var btn_rect := btn.get_global_rect()
+			print("ClickControl global rect: ", btn_rect)
+			print("ClickControl position: ", btn.global_position)
+			print("ClickControl size: ", btn.size)
+			print("Mouse inside button? ", btn_rect.has_point(mouse_pos))
+			
+			# Check parent containers
+			var parent := btn.get_parent()
+			while parent:
+				if parent is Control:
+					var p_rect := (parent as Control).get_global_rect()
+					print(parent.name, " rect: ", p_rect, " | mouse inside? ", p_rect.has_point(mouse_pos))
+				parent = parent.get_parent()
+				if parent.name == "Root":
+					break
+		
+		# Force print all controls under mouse
+		print("\n--- All controls under mouse ---")
+		_print_controls_under_mouse(get_tree().current_scene, mouse_pos, 0)
 
-func _input(event):
-	if event is InputEventKey and event.pressed and event.keycode == KEY_F9:
-		print("Current total_dives: ", total_dives)
-		print("Lifetime thoughts: ", lifetime_thoughts)
+func _print_controls_under_mouse(node: Node, mouse_pos: Vector2, depth: int) -> void:
+	if not (node is Control):
+		return
+	var c := node as Control
+	if not c.visible:
+		return
+		
+	var rect := c.get_global_rect()
+	if rect.has_point(mouse_pos):
+		var indent := "  ".repeat(depth)
+		print(indent, node.name, " (", node.get_class(), ") at ", rect)
+		for child in node.get_children():
+			_print_controls_under_mouse(child, mouse_pos, depth + 1)
 		
 func _force_rate_sample() -> void:
 	_last_thoughts_sample = thoughts
@@ -330,14 +548,23 @@ func _force_rate_sample() -> void:
 	_control_ps = 0.0
 
 func _refresh_top_ui() -> void:
+	var hide_numbers := false
 	if top_bar_panel == null:
 		if not _warned_missing_top_bar:
 			push_warning("TopBarPanel missing at ../MainUI/Root/TopBarPanel")
 			_warned_missing_top_bar = true
 		return
 
+	# In _refresh_top_ui, ensure this line uses proper formatting:
 	if thoughts_label != null:
-		thoughts_label.text = "Thoughts: %s" % _fmt_num(thoughts)
+		hide_numbers = false  # Just assign, don't redeclare with 'var'
+		
+		if hide_numbers:
+			thoughts_label.text = "Thoughts: ???"
+		else:
+			# Show the rate properly
+			var rate_str := _fmt_num(_thoughts_ps)  # Make sure _thoughts_ps is actually calculated
+			thoughts_label.text = "Thoughts %s +%s/s" % [_fmt_num(thoughts), rate_str]
 	if control_label != null:
 		control_label.text = "Control: %s" % _fmt_num(control)
 	if instability_bar != null:
@@ -376,7 +603,6 @@ func _refresh_top_ui() -> void:
 	
 	# Silence (Depth 9) - hide numbers if rule active and not upgraded
 	var current_depth := get_current_depth()
-	var hide_numbers := false
 	
 	if current_depth == 9:
 		var drc := get_node_or_null("/root/DepthRunController")
@@ -1326,6 +1552,13 @@ func save_game() -> void:
 	
 	data["last_play_time"] = Time.get_unix_time_from_system()
 	
+	# Click upgrades
+	data["click_power_level"] = click_power_level
+	data["click_control_level"] = click_control_level
+	data["click_stability_level"] = click_stability_level
+	data["click_flow_level"] = click_flow_level
+	data["click_resonance_level"] = click_resonance_level
+	
 	SaveSystem.save_game(data)
 
 func load_game() -> void:
@@ -1456,6 +1689,12 @@ func load_game() -> void:
 	perk_system.perk2_level = int(data.get("perk2_level", 0))
 	perk_system.perk3_level = int(data.get("perk3_level", 0))
 	
+	click_power_level = int(data.get("click_power_level", 0))
+	click_control_level = int(data.get("click_control_level", 0))
+	click_stability_level = int(data.get("click_stability_level", 0))
+	click_flow_level = int(data.get("click_flow_level", 0))
+	click_resonance_level = int(data.get("click_resonance_level", 0))
+	recalculate_click_stats()
 	
 	# Sync panel at end (only once)
 	call_deferred("_sync_panel_after_load")
@@ -1486,10 +1725,10 @@ func _bind_ui_mainui() -> void:
 	_style_action_buttons()
 	_style_run_upgrades()
 
-	overclock_button = _ui_find_button("OverclockButton")
 	wake_button = _ui_find_button("WakeButton")
 	meta_button = _ui_find_button("Meta")
-	dive_button = _ui_find_button("DiveButton")
+	overclock_button = _ui_find_button("OverclockButton")
+	dive_button = find_button_recursive("DiveButton")
 	if dive_button != null:
 		dive_button.visible = false
 		dive_button.disabled = true
@@ -1516,6 +1755,9 @@ func _bind_ui_mainui() -> void:
 	_style_run_upgrades()
 	_style_run_panel()
 	_style_action_panel()
+
+func find_button_recursive(button_name: String) -> Button:
+	return get_tree().current_scene.find_child(button_name, true, false) as Button
 	
 func _ui_find(node_name: String) -> Node:
 	return get_tree().current_scene.find_child(node_name, true, false)
@@ -1809,6 +2051,7 @@ func _notification(what: int) -> void:
 		
 func _process(delta: float) -> void:
 	run_time += delta
+	_update_click_combo(delta)
 	
 	# AD_TIMED_BOOST: Handle countdown
 	if timed_boost_active:
@@ -1897,7 +2140,8 @@ func _process(delta: float) -> void:
 	thoughts_mult *= progress_mult
 	control_mult *= progress_mult
 	
-	# Generate thoughts and control
+	var thoughts_to_add := idle_thoughts_rate * thoughts_mult * depth_thoughts_mult * _get_shop_boost() * delta
+	thoughts += thoughts_to_add
 	thoughts += idle_thoughts_rate * thoughts_mult * depth_thoughts_mult * _get_shop_boost() * delta
 	control += idle_control_rate * control_mult * delta
 	
@@ -1924,6 +2168,16 @@ func _process(delta: float) -> void:
 		_last_thoughts_sample = thoughts
 		_last_control_sample = control
 		_rate_sample_timer = 0.0
+	
+	
+	thoughts_to_add = idle_thoughts_rate * thoughts_mult * depth_thoughts_mult * _get_shop_boost() * delta
+	
+	
+	# Your existing line (keep this):
+	thoughts += thoughts_to_add
+		# Generate thoughts and control (KEEP THIS ONE - DELETE THE DUPLICATE AT BOTTOM)
+	thoughts += idle_thoughts_rate * thoughts_mult * depth_thoughts_mult * _get_shop_boost() * delta
+	control += idle_control_rate * control_mult * delta
 	
 	_refresh_top_ui()
 	_update_buttons_ui()
@@ -2406,22 +2660,78 @@ func fix_depth1_text_color() -> void:
 			desc_label.add_theme_color_override("font_shadow_color", Color(1, 1, 1, 0.5))  # White shadow for contrast
 
 func on_manual_focus_clicked() -> void:
-	var meta := get_tree().current_scene.find_child("DepthMetaSystem", true, false)
-	var click_level := 0
-	if meta != null and meta.has_method("get_level"):
-		click_level = meta.call("get_level", 1, "manual_click")
+	# Calculate base click power
+	var base_power := get_click_power()
 	
-	var seconds_per_click := 1.0 + (float(click_level) * 0.5)
+	# Calculate combo multiplier
+	var combo_mult := get_combo_multiplier()
 	
-	# CRITICAL FIX: Use base idle TPS, NOT _thoughts_ps (which includes manual clicks)
-	var idle_tps := get_idle_thoughts_per_second()
-	var thoughts_gained := idle_tps * seconds_per_click
+	# Calculate idle bonus from Deep Resonance
+	var idle_bonus := get_click_idle_bonus()
+	var idle_portion := get_idle_thoughts_per_second() * idle_bonus
 	
+	# Total thoughts gained
+	var thoughts_gained := (base_power * combo_mult) + idle_portion
+	
+	# Apply gains
 	thoughts += thoughts_gained
 	total_thoughts_earned += thoughts_gained
 	
-	_show_click_feedback(thoughts_gained)
+	# Control gain (scales with combo)
+	control += click_control_gain * combo_mult
+	
+	# Instability reduction
+	if click_instability_reduction > 0:
+		instability = maxf(0.0, instability - click_instability_reduction)
+	
+	# Register combo
+	_register_click_for_combo()
+	
+	# Visual feedback
+	@warning_ignore("standalone_expression")
+	_show_click_feedback
 	_refresh_top_ui()
+	
+	# Notify tutorial
+	var tm = get_node_or_null("/root/TutorialManage")
+	if tm and tm.has_method("on_ui_element_clicked"):
+		tm.on_ui_element_clicked("FocusButton")
+
+func get_click_power() -> float:
+	# Was: 5 * 1.35^level (exponential)
+	# Now: Linear base + moderate exponential to keep early levels relevant
+	var linear_component := CLICK_POWER_BASE * (1.0 + float(click_power_level) * 0.5)
+	var exp_component := pow(1.25, click_power_level)
+	var depth_mult := 1.0 + (get_current_depth() * 0.08)  # Slightly reduced from 0.1
+	return linear_component * exp_component * depth_mult
+
+func get_combo_multiplier() -> float:
+	if click_flow_level <= 0 or _click_combo_count <= 1:
+		return 1.0
+	
+	# +15% per combo level, max 5 stacks
+	var per_click_bonus := 0.15 + (click_flow_level * 0.02)  # 0.17 to 0.33
+	var max_stacks := 5
+	var current_stacks := mini(_click_combo_count - 1, max_stacks)
+	
+	return 1.0 + (per_click_bonus * current_stacks)
+
+func get_click_idle_bonus() -> float:
+	# Deep Resonance: 0% at level 0, up to 25% at level 10
+	if click_resonance_level <= 0:
+		return 0.0
+	return (click_resonance_level * 0.025)  # 2.5% per level
+
+func _register_click_for_combo() -> void:
+	_click_combo_count += 1
+	# Window increases slightly with Flow State levels
+	var window_bonus := click_flow_level * 0.15  # +0.15s per level
+	_click_combo_timer = _click_combo_window + window_bonus
+
+
+func _show_click_feedback(amount: float, type: String) -> void:
+	print("CLICKED: ", type, " +", amount)
+	# Add visual feedback here if you want
 
 func _get_total_idle_multiplier() -> float:
 	# Calculate just the multipliers that apply to idle generation
@@ -2432,10 +2742,6 @@ func _get_total_idle_multiplier() -> float:
 		mult *= _safe_mult(depth_meta_system.get_global_thoughts_mult())
 	
 	return mult
-
-func _show_click_feedback(amount: float) -> void:
-	# Spawn floating text or flash effect
-	print("Focus! +", _fmt_num(amount), " thoughts")
 
 func get_idle_thoughts_per_second() -> float:
 	var current_depth := get_current_depth()
@@ -2465,3 +2771,395 @@ func get_idle_thoughts_per_second() -> float:
 	
 	# Return base idle rate (this is the TRUE idle rate without manual clicks)
 	return idle_thoughts_rate * thoughts_mult * depth_thoughts_mult * _get_shop_boost()
+
+func try_buy_click_power_upgrade() -> bool:
+	var cost := get_click_power_cost()
+	if thoughts < cost:
+		return false
+	
+	thoughts -= cost
+	click_power_level += 1
+	recalculate_click_stats()
+	save_game()
+	return true
+
+func try_buy_click_control_upgrade() -> bool:
+	var cost := get_click_control_cost()
+	if thoughts < cost:
+		return false
+	
+	thoughts -= cost
+	click_control_level += 1
+	recalculate_click_stats()
+	save_game()
+	return true
+
+func try_buy_click_stability_upgrade() -> bool:
+	var cost := get_click_stability_cost()
+	if thoughts < cost:
+		return false
+	
+	thoughts -= cost
+	click_stability_level += 1
+	recalculate_click_stats()
+	save_game()
+	return true
+
+func try_buy_click_flow_upgrade() -> bool:
+	var cost := get_click_flow_cost()
+	if thoughts < cost:
+		return false
+	
+	thoughts -= cost
+	click_flow_level += 1
+	recalculate_click_stats()
+	save_game()
+	return true
+
+func try_buy_click_resonance_upgrade() -> bool:
+	var cost := get_click_resonance_cost()
+	if thoughts < cost:
+		return false
+	
+	thoughts -= cost
+	click_resonance_level += 1
+	recalculate_click_stats()
+	save_game()
+	return true
+
+func recalculate_click_stats() -> void:
+	# Update cached values based on levels
+	click_control_gain = float(click_control_level) * 0.3
+	click_instability_reduction = float(click_stability_level) * 0.8
+
+func get_click_power_cost() -> float:
+	# Was: 50 * 1.6^level (too steep: L5=524, L10=17k)
+	# Now: Polynomial growth - expensive but reachable
+	return 50.0 * pow(float(click_power_level + 1), 2.2) * pow(1.35, click_power_level)
+
+func get_click_control_cost() -> float:
+	return 40.0 * pow(float(click_control_level + 1), 2.0) * pow(1.3, click_control_level)
+
+func get_click_stability_cost() -> float:
+	return 45.0 * pow(float(click_stability_level + 1), 2.1) * pow(1.32, click_stability_level)
+
+func get_click_flow_cost() -> float:
+	# Flow is powerful (combo multipliers), so keep it pricier
+	return 75.0 * pow(float(click_flow_level + 1), 2.3) * pow(1.4, click_flow_level)
+
+func get_click_resonance_cost() -> float:
+	# Idle bonus is very strong late-game
+	return 100.0 * pow(float(click_resonance_level + 1), 2.4) * pow(1.45, click_resonance_level)
+
+# Don't forget to fix the path here:
+func _create_click_upgrade_panel() -> void:
+	# Try to find existing RunUpgradesPanel by different names
+	var target_parent = get_tree().current_scene.find_child("RunUpgradesPanel", true, false)
+	if target_parent == null:
+		target_parent = get_tree().current_scene.find_child("UpgradesPanel", true, false)
+	if target_parent == null:
+		target_parent = get_tree().current_scene.find_child("MainUI", true, false)
+	if target_parent == null:
+		target_parent = get_tree().current_scene  # Fallback to root
+	
+	print("Click upgrades parent: ", target_parent)
+	
+	# Check if already created
+	if target_parent.has_node("ClickUpgradesContainer"):
+		return
+	
+	# Create a PanelContainer to hold the upgrades
+	var container = PanelContainer.new()
+	container.name = "ClickUpgradesContainer"
+	
+	# Style it
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.05, 0.06, 0.08, 0.9)
+	sb.border_color = Color(0.5, 0.6, 0.9, 0.6)
+	sb.border_width_left = 2
+	sb.border_width_top = 2
+	sb.border_width_right = 2
+	sb.border_width_bottom = 2
+	sb.corner_radius_top_left = 8
+	sb.corner_radius_top_right = 8
+	sb.corner_radius_bottom_left = 8
+	sb.corner_radius_bottom_right = 8
+	container.add_theme_stylebox_override("panel", sb)
+	
+	# Position it (bottom-left area, above the action buttons)
+	container.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	container.position = Vector2(20, -300)  # Adjust as needed
+	container.custom_minimum_size = Vector2(600, 280)
+	
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 8)
+	vbox.add_theme_constant_override("margin_left", 12)
+	vbox.add_theme_constant_override("margin_right", 12)
+	vbox.add_theme_constant_override("margin_top", 12)
+	vbox.add_theme_constant_override("margin_bottom", 12)
+	container.add_child(vbox)
+	
+	# Title
+	var title := Label.new()
+	title.text = "— Focus Upgrades —"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 18)
+	title.add_theme_color_override("font_color", Color(0.35, 0.8, 0.95))
+	vbox.add_child(title)
+	
+	var sep := HSeparator.new()
+	vbox.add_child(sep)
+	
+	# Create rows
+	var upgrade_types := ["power", "control", "stability", "flow", "resonance"]
+	for type in upgrade_types:
+		if ResourceLoader.exists("res://UI/ClickUpgradeRow.gd"):
+			var row = preload("res://UI/ClickUpgradeRow.gd").new()
+			row.upgrade_type = type
+			row.name = "ClickUpgrade_" + type.capitalize()
+			vbox.add_child(row)
+		else:
+			push_error("ClickUpgradeRow.gd not found at res://UI/ClickUpgradeRow.gd")
+	
+	target_parent.add_child(container)
+	print("Click upgrades UI created")
+
+func _update_click_combo(delta: float) -> void:
+	if _click_combo_count > 0:
+		_click_combo_timer -= delta
+		if _click_combo_timer <= 0:
+			_click_combo_count = 0
+			_click_combo_timer = 0.0
+
+func _create_click_upgrade_sidebar() -> void:
+	var root = get_tree().current_scene
+	
+	# CRITICAL: Remove ALL existing instances first
+	for child in root.get_children():
+		if child.name == "ClickUpgradeSidebar":
+			child.queue_free()
+			print("Removed duplicate sidebar")
+	# IMPORTANT: Remove ALL old instances
+	var to_remove = []
+	for child in root.get_children():
+		if child.name == "ClickUpgradeSidebar" or child.name == "ClickUpgradesContainer":
+			to_remove.append(child)
+	
+	for old in to_remove:
+		old.queue_free()
+		print("Removed old panel: ", old.name)
+	
+	# Remove any existing
+	var existing = root.find_child("ClickUpgradeSidebar", true, false)
+	if existing:
+		existing.queue_free()
+	
+	# Main container - anchored to left edge
+	click_upgrade_sidebar = Control.new()
+	click_upgrade_sidebar.name = "ClickUpgradeSidebar"
+	click_upgrade_sidebar.set_anchors_preset(Control.PRESET_CENTER_LEFT)
+	click_upgrade_sidebar.position = Vector2(0, 0)
+	click_upgrade_sidebar.custom_minimum_size = Vector2(450, 600)
+	root.add_child(click_upgrade_sidebar)
+	
+	# Vertical Tab Button - FIXED POSITION on left edge
+	var tab_btn := Button.new()
+	tab_btn.name = "VerticalTab"
+	tab_btn.custom_minimum_size = Vector2(32, 180)
+	tab_btn.position = Vector2(0, -90)  # Fixed position, never changes
+	
+	# Style tab
+	var tab_style := StyleBoxFlat.new()
+	tab_style.bg_color = Color(0.08, 0.1, 0.14, 0.95)
+	tab_style.border_color = Color(0.4, 0.6, 0.9, 0.8)
+	tab_style.border_width_top = 2
+	tab_style.border_width_right = 2
+	tab_style.border_width_bottom = 2
+	tab_style.corner_radius_top_right = 8
+	tab_style.corner_radius_bottom_right = 8
+	tab_btn.add_theme_stylebox_override("normal", tab_style)
+	tab_btn.add_theme_stylebox_override("hover", tab_style)
+	tab_btn.add_theme_stylebox_override("pressed", tab_style)
+	
+	# Rotated text - centered properly
+	var label := Label.new()
+	label.text = "Click Upgrades"
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", 12)
+	label.add_theme_color_override("font_color", Color(0.9, 0.95, 1))
+
+	# Set size first
+	label.custom_minimum_size = Vector2(180, 32)
+
+	# Calculate center position manually
+	# Button is 32x180, label (unrotated) is 180x32
+	# After -90° rotation, label becomes 32x180
+	# We want it centered in the 32x180 button
+	label.position = Vector2(0, 74)  # (button_height - label_width) / 2 = (180 - 32) / 2 = 74
+	label.rotation = -PI / 2
+	label.pivot_offset = Vector2(53, 53)  # Half of label size
+
+	tab_btn.add_child(label)
+		
+	tab_btn.pressed.connect(_toggle_click_upgrade_panel)
+	click_upgrade_sidebar.add_child(tab_btn)
+	
+	# Store reference to tab for repositioning
+	click_upgrade_tab = tab_btn
+	
+	# Expanded Panel - positioned at left edge (behind tab)
+	var panel := PanelContainer.new()
+	panel.name = "ExpandedPanel"
+	panel.position = Vector2(-450, -250)  # Hidden off-screen to left initially
+	panel.custom_minimum_size = Vector2(450, 500)
+	panel.visible = false
+	
+	# Panel style
+	var panel_style := StyleBoxFlat.new()
+	panel_style.bg_color = Color(0.05, 0.06, 0.08, 0.98)
+	panel_style.border_color = Color(0.4, 0.6, 0.9, 0.6)
+	panel_style.border_width_left = 2
+	panel_style.border_width_top = 2
+	panel_style.border_width_right = 2
+	panel_style.border_width_bottom = 2
+	panel.add_theme_stylebox_override("panel", panel_style)
+	
+	# ... rest of panel setup (vbox, header, rows) same as before ...
+	var vbox := VBoxContainer.new()
+	vbox.name = "ClickUpgradesList"
+	vbox.add_theme_constant_override("separation", 12)
+	vbox.add_theme_constant_override("margin_left", 16)
+	vbox.add_theme_constant_override("margin_right", 16)
+	vbox.add_theme_constant_override("margin_top", 16)
+	vbox.add_theme_constant_override("margin_bottom", 16)
+	panel.add_child(vbox)
+	
+	# Header
+	var header := HBoxContainer.new()
+	header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.add_child(header)
+	
+	var title := Label.new()
+	title.text = "— Focus Upgrades —"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title.add_theme_font_size_override("font_size", 20)
+	title.add_theme_color_override("font_color", Color(0.35, 0.8, 0.95))
+	header.add_child(title)
+	
+	var close_btn := Button.new()
+	close_btn.text = "X"
+	close_btn.custom_minimum_size = Vector2(32, 32)
+	close_btn.size_flags_horizontal = Control.SIZE_SHRINK_END
+	close_btn.pressed.connect(_toggle_click_upgrade_panel)
+	header.add_child(close_btn)
+	
+	vbox.add_child(HSeparator.new())
+	
+	# Scroll and rows
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	vbox.add_child(scroll)
+	
+	var rows_vbox := VBoxContainer.new()
+	rows_vbox.name = "RowsContainer"
+	rows_vbox.add_theme_constant_override("separation", 8)
+	rows_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(rows_vbox)
+	
+	var upgrade_types := ["power", "control", "stability", "flow", "resonance"]
+	for type in upgrade_types:
+		if ResourceLoader.exists("res://UI/ClickUpgradeRow.gd"):
+			var row = preload("res://UI/ClickUpgradeRow.gd").new()
+			row.upgrade_type = type
+			row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			rows_vbox.add_child(row)
+	
+	click_upgrade_sidebar.add_child(panel)
+	click_upgrade_panel = panel
+
+func _toggle_click_upgrade_panel() -> void:
+	if click_upgrade_sidebar == null:
+		return
+	
+	var panel = click_upgrade_panel
+	var tab = click_upgrade_tab
+	
+	click_upgrade_expanded = not click_upgrade_expanded
+	
+	if click_upgrade_expanded:
+		# OPEN: Panel slides out from left covering the tab's original spot
+		# Tab moves to right edge of panel
+		panel.position = Vector2(0, -250)      # Panel at left edge (x=0)
+		panel.visible = true
+		tab.position = Vector2(450, -90)       # Tab at right edge of panel (panel width 450)
+	else:
+		# CLOSED: Panel hides off-screen left, tab returns to left edge
+		panel.position = Vector2(-450, -250)   # Hide off left
+		panel.visible = false
+		tab.position = Vector2(0, -90)         # Tab back at left edge
+
+func _setup_click_buttons() -> void:
+	var click_row := get_tree().current_scene.find_child("ClickRow", true, false)
+	if click_row == null:
+		push_warning("ClickRow not found - add it to BottomBarPan above BottomBar")
+		return
+	
+	# Find the buttons
+	var thoughts_btn := click_row.find_child("ClickThoughts", false, false) as Button
+	var control_btn := click_row.find_child("ClickControl", false, false) as Button
+	var instability_btn := click_row.find_child("ClickInstability", false, false) as Button
+	
+	# Connect to existing functions
+	if thoughts_btn and not thoughts_btn.pressed.is_connected(on_manual_focus_clicked):
+		thoughts_btn.pressed.connect(on_manual_focus_clicked)
+		_style_click_button(thoughts_btn, "🧠 Focus", Color(0.35, 0.8, 0.95))  # Blue
+	
+	if control_btn:
+		# You'll need to add this function or use existing logic
+		if not control_btn.pressed.is_connected(_on_click_control):
+			control_btn.pressed.connect(_on_click_control)
+		_style_click_button(control_btn, "🛡️ Breathe", Color(0.4, 0.9, 0.5))  # Green
+	
+	if instability_btn:
+		if not instability_btn.pressed.is_connected(_on_click_instability):
+			instability_btn.pressed.connect(_on_click_instability)
+		_style_click_button(instability_btn, "❄️ Calm", Color(0.9, 0.5, 0.5))  # Red/calm
+
+func _style_click_button(btn: Button, text: String, accent: Color) -> void:
+	btn.text = text
+	btn.custom_minimum_size = Vector2(140, 60)
+	btn.add_theme_font_size_override("font_size", 18)
+	
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.08, 0.10, 0.14, 0.95)
+	sb.border_color = accent
+	sb.border_width_left = 2
+	sb.border_width_top = 2
+	sb.border_width_right = 2
+	sb.border_width_bottom = 2
+	sb.corner_radius_top_left = 8
+	sb.corner_radius_top_right = 8
+	sb.corner_radius_bottom_left = 8
+	sb.corner_radius_bottom_right = 8
+	btn.add_theme_stylebox_override("normal", sb)
+
+func _on_click_control() -> void:
+	if get_click_control_cost() <= 0:  # Or however you check affordability
+		return
+	var gain := click_control_gain * get_combo_multiplier()
+	control += gain
+	_register_click_for_combo()
+	_show_click_feedback(gain, "control")
+	_refresh_top_ui()
+
+func _on_click_instability() -> void:
+	if click_instability_reduction <= 0:
+		return
+	var reduction := click_instability_reduction
+	instability = maxf(0.0, instability - reduction)
+	_register_click_for_combo()
+	_show_click_feedback(reduction, "instability")
+	_refresh_top_ui()

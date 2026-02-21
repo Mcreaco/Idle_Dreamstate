@@ -113,7 +113,28 @@ func _ready() -> void:
 	if root != null:
 		root.offset_top += bars_margin_top
 		root.offset_right -= bars_margin_right
-		
+
+func get_expanded_row() -> DepthBarRow:
+	for child in get_children():
+		if child is DepthBarRow:
+			if child.is_details_open():
+				return child
+	return null
+	
+func _input(event: InputEvent) -> void:
+	# If clicking anywhere and we have an expanded row, close it
+	if event is InputEventMouseButton and event.pressed:
+		var expanded_row: DepthBarRow = get_expanded_row()
+		if expanded_row != null:
+			# Check if click is outside the expanded row
+			var mouse_pos := get_global_mouse_position()
+			if not expanded_row.get_global_rect().has_point(mouse_pos):
+				expanded_row.set_details_open(false)
+				# Reset all row states
+				for row in get_children():
+					if row is DepthBarRow:
+						row.set_overlay_mode(false)
+						
 func _refresh_all_rows() -> void:
 	var drc := get_node_or_null("/root/DepthRunController")
 	if drc == null:
