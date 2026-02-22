@@ -164,7 +164,7 @@ func refresh() -> void:
 			title = "Memory Engine"
 			lvl = perm.memory_engine_level
 			cost = perm.get_cost_by_id(perk_id)
-			tip = "+5% Thoughts per level"
+			tip = "×%.0f Thoughts at Lv%d" % [pow(1.18, perm.memory_engine_level), perm.memory_engine_level]
 		"calm_mind":
 			title = "Calm Mind"
 			lvl = perm.calm_mind_level

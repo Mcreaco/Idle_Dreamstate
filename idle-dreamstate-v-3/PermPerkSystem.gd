@@ -3,12 +3,12 @@ class_name PermPerkSystem
 
 # ---- levels ----
 # EXISTING (keep only these declarations, remove the duplicates!)
-var memory_engine_level := 0
-var calm_mind_level := 0
-var focused_will_level := 0
-var starting_insight_level := 0
-var stability_buffer_level := 0
-var offline_echo_level := 0
+var memory_engine_level: int = 0
+var calm_mind_level: int = 0
+var focused_will_level: int = 0
+var starting_insight_level: int = 0
+var stability_buffer_level: int = 0
+var offline_echo_level: int = 0
 
 # NEW UPGRADES - Add these vars (FIXED: added 'var' keyword)
 var recursive_memory_level: int = 0      # +Memories gain per level
@@ -21,6 +21,7 @@ var void_walker_level: int = 0           # +Instability cap increase (can go ove
 var rapid_eye_level: int = 0             # +Dive cooldown reduction
 var sleep_paralysis_level: int = 0       # +Instability freezes temporarily on wake/fail
 var oneiromancy_level: int = 0           # +See next depth preview/bonuses
+
 
 # ---- max ----
 @export var max_level := 50
@@ -93,53 +94,56 @@ func try_buy_oneiromancy(memories: float) -> Dictionary: return _try_buy(memorie
 
 # ---- effects ----
 func get_thoughts_mult() -> float:
-	return 1.0 + float(memory_engine_level) * 0.05   # +5%/lvl
+	return pow(1.18, float(memory_engine_level))
 
 func get_instability_mult() -> float:
-	return maxf(0.25, 1.0 - float(calm_mind_level) * 0.04) # -4%/lvl (floor)
+	return maxf(0.1, pow(0.93, float(calm_mind_level)))
 
 func get_control_mult() -> float:
-	return 1.0 + float(focused_will_level) * 0.06    # +6%/lvl
+	return pow(1.20, float(focused_will_level))
 
 func get_starting_thoughts() -> float:
-	return float(starting_insight_level) * 25.0
+	return 100.0 * pow(2.0, float(starting_insight_level))
 
 func get_starting_instability_reduction() -> float:
-	return float(stability_buffer_level) * 2.0       # -2 per lvl (cap in GM)
+	return 10.0 * pow(1.15, float(stability_buffer_level))
 
 func get_offline_mult() -> float:
-	return 0.75 + (float(offline_echo_level) * 0.08)
-	
-# NEW GETTER METHODS
+	return pow(1.12, float(offline_echo_level))
+
 func get_recursive_memory_mult() -> float:
-	return 1.0 + (float(recursive_memory_level) * 0.05)
+	return pow(1.16, float(recursive_memory_level))
 
 func get_lucid_dreaming_duration_bonus() -> float:
-	return float(lucid_dreaming_level) * 0.10
+	return pow(1.10, float(lucid_dreaming_level))
 
 func get_deep_sleeper_depth_bonus() -> float:
-	return float(deep_sleeper_level) * 0.02
+	return float(deep_sleeper_level) * 0.02  # Keep flat, replaced by Evolution Mastery
 
 func get_night_owl_mult() -> float:
-	return 1.0 + (float(night_owl_level) * 0.08)
+	return pow(1.22, float(night_owl_level))
 
 func get_dream_catcher_chance() -> float:
-	return float(dream_catcher_level) * 0.03
+	return minf(0.95, float(dream_catcher_level) * 0.02)
 
 func get_subconscious_miner_rate() -> float:
-	return float(subconscious_miner_level) * 0.5
+	return 0.1 * pow(1.2, float(subconscious_miner_level))
 
 func get_void_walker_instability_cap() -> float:
-	return float(void_walker_level) * 5.0
+	return float(void_walker_level) * 20.0
 
 func get_rapid_eye_cooldown_reduction() -> float:
-	return float(rapid_eye_level) * 0.03
+	return minf(0.9, float(rapid_eye_level) * 0.02)
 
 func get_sleep_paralysis_seconds() -> float:
-	return float(sleep_paralysis_level) * 1.0
+	return 2.0 * pow(1.1, float(sleep_paralysis_level))
 
 func get_oneiromancy_preview_depths() -> int:
-	return oneiromancy_level
+	return mini(5, ceili(float(oneiromancy_level) / 10.0))
+
+# NEW: Evolution Mastery (replaces Deep Sleeper effect)
+func get_evolution_mastery_reduction() -> float:
+	return float(deep_sleeper_level) * 0.04
 
 func get_perm_upgrade_cost(upgrade_index: int, current_level: int) -> float:
 	var base_costs := [

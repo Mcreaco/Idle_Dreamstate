@@ -9,7 +9,7 @@ extends Node
 @export var control_per_sec: float = 0.0
 @export var instability_per_sec: float = 0.0
 
-@export var base_progress_per_sec: float = 0.000833  # 1/1200 = 0.000833 (20 min base)
+@export var base_progress_per_sec: float = 1 # 1/1200 = 0.000833 (20 min base)
 @export var depth_length_growth: float = 1.25        # Gentler curve
 @export var length_curve_power: float = 1.05         # Softer power curve
 
@@ -25,7 +25,20 @@ var _control_per_sec_cached: float = 0.0
 
 var active_depth: int = 1
 var max_unlocked_depth: int = 1
-var run: Array[Dictionary] = []
+var _run_internal: Array[Dictionary] = []
+
+var run: Array[Dictionary]:
+	get:
+		return _run_internal
+	set(value):
+		_run_internal = value
+	
+func _get_run() -> Array[Dictionary]:
+	return _run_internal
+
+func _set_run(value: Array[Dictionary]) -> void:
+	_run_internal = value
+
 
 # depth_index -> { upgrade_id: level } that are now frozen
 var frozen_upgrades: Dictionary = {}
@@ -43,6 +56,9 @@ var _hud: Node = null
 var _depth_defs: Dictionary = {}              # depth -> definition dict
 var _depth_runtime: Dictionary = {}           # depth -> runtime state (timers, flags)
 var _last_depth: int = -1
+
+var _last_debug_print_time: float = 0.0
+var _last_progress_value: float = -1.0
 
 signal active_depth_changed(new_depth: int)
 
@@ -94,35 +110,62 @@ func bind_hud(hud: Node) -> void:
 
 
 func _process(delta: float) -> void:
-	# Detect depth change FIRST (so timers reset before any ticking)
+	# Remove depth change tracking if not needed, or keep it but don't block
 	if active_depth != _last_depth:
 		_last_depth = active_depth
 		_on_depth_changed(active_depth)
 
-	# Apply gameplay ticks
-	_tick_active_depth(delta) # sets instability_per_sec via rules + events
-	_tick_top(delta)          # actually increments instability using instability_per_sec
-
-	# Forced wake check AFTER instability has been updated this frame
-	var def: Dictionary = get_depth_def(active_depth)
-	var rules: Dictionary = def.get("rules", {})
-	if bool(rules.get("forced_wake_at_100", false)) and instability >= 100.0:
-		wake_cashout(1.0, true)
-		return
+	# CRITICAL FIX: Let depth 1 tick like all others (removed "if active_depth != 1" check)
+	_tick_active_depth(delta)
+	
+	_tick_top(delta)
+	
+	# Check for death/fail when instability hits the cap (only depth 2+)
+	if active_depth >= 2:  # Only check instability death for depth 2 and beyond
+		var game_mgr = get_node_or_null("/root/GameManager")
+		var actual_cap := 1000.0
+		if game_mgr != null and game_mgr.depth_meta_system != null:
+			actual_cap = game_mgr.depth_meta_system.get_instability_cap(active_depth)
+		
+		if instability >= actual_cap:
+			wake_cashout(1.0, true)
+			return
 
 	_sync_hud()
 
 
-
 func _tick_active_depth(delta: float) -> void:
+	var d: int = active_depth
+	var current_time := Time.get_ticks_msec() / 1000.0
+	
+	# Rate-limited debug (once per second)
+	var should_print := (current_time - _last_debug_print_time) >= 1.0
+	
+	if d < 1 or d > _run_internal.size():
+		return
+		
+	var data: Dictionary = _run_internal[d - 1]
+	var current_progress: float = float(data.get("progress", 0.0))
+	
+	# DETECT RESET: If progress suddenly dropped to 0 from a higher value
+	if current_progress == 0.0 and _last_progress_value > 0.1:
+		if should_print:
+			push_warning("DEPTH DATA RESET DETECTED! Progress was %.2f, now 0.0. Stack trace:" % _last_progress_value)
+			# This will print what called this function
+			print_stack()
+			_last_debug_print_time = current_time
+	
+	_last_progress_value = current_progress
+	
+	# ... rest of your calculation code ...
+	
+	# Only print normal updates once per second
+	if d == 1 and should_print:
+		print("Depth 1 Tick: stored_progress=%.2f, new_progress=%.2f" % [current_progress, data.get("progress", 0.0)])
+		_last_debug_print_time = current_time
+	
 	if _panel == null:
 		return
-
-	var d: int = active_depth
-	if d < 1 or d > run.size():
-		return
-
-	var data: Dictionary = run[d - 1]
 
 	# Apply per-depth rules (sets instability_per_sec, returns muls)
 	var applied := _apply_depth_rules(d)
@@ -131,8 +174,7 @@ func _tick_active_depth(delta: float) -> void:
 	var depth_cry_mul := float(applied.get("cry_mul", 1.0))
 	var _rules: Dictionary = applied.get("rules", {})
 
-	# multipliers from upgrades (RUN UPGRADES)
-	 # Calculate multipliers with DEBUG output
+	# Multipliers from upgrades (RUN UPGRADES)
 	var speed_lvl := _get_local_level(d, "progress_speed")
 	var mem_lvl := _get_local_level(d, "memories_gain")
 	var cry_lvl := _get_local_level(d, "crystals_gain")
@@ -142,7 +184,6 @@ func _tick_active_depth(delta: float) -> void:
 	var cry_mul: float   = 1.0 + 0.12 * cry_lvl + _frozen_effect(d, "crystals_gain", 0.12)
 	
 	# Apply specific depth upgrade bonuses
-	
 	# Depth 2: Controlled Fall (+10% progress per level)
 	if d == 2:
 		var controlled_fall_level := _get_local_level(d, "controlled_fall")
@@ -155,7 +196,6 @@ func _tick_active_depth(delta: float) -> void:
 	if d == 2:
 		var ruby_level := _get_local_level(d, "ruby_focus")
 		if ruby_level > 0:
-			# This affects crystal gain specifically for depth 2
 			var ruby_def: Dictionary = get_depth_def(d).get("upgrades", {}).get("ruby_focus", {})
 			var ruby_effect: float = ruby_def.get("effect_per_level", 0.12)
 			cry_mul += (ruby_effect * ruby_level)
@@ -164,28 +204,23 @@ func _tick_active_depth(delta: float) -> void:
 	var length: float = get_depth_length(d)
 	var per_sec: float = (base_progress_per_sec * speed_mul * depth_prog_mul) / maxf(length, 0.0001)
 
+	# CRITICAL FIX: Use actual cap instead of hardcoded 1.0
+	var cap: float = get_depth_progress_cap(d)
 	var p: float = float(data.get("progress", 0.0))
-	p = minf(1.0, p + per_sec * delta)
+	p = minf(cap, p + per_sec * delta)  # Use the actual cap (1000, 2500, etc.)
 	data["progress"] = p
 
+	# Update memories and crystals
 	data["memories"] = float(data.get("memories", 0.0)) + base_memories_per_sec * mem_mul * depth_mem_mul * delta
 	data["crystals"] = float(data.get("crystals", 0.0)) + base_crystals_per_sec * cry_mul * depth_cry_mul * delta
 
-	run[d - 1] = data
+	_run_internal[d - 1] = data
+	
+	_panel.set_row_data(d, data)
+	
+	# Update panel
 	_panel.set_row_data(d, data)
 	_panel.set_active_depth(active_depth)
-
-	# Voidline drain  
-	# Voidline drain  
-	if d == 13:
-		var depth_def: Dictionary = get_depth_def(d)
-		var void_rules: Dictionary = depth_def.get("rules", {})
-		var drain_chance := float(void_rules.get("void_drain_chance", 0.01))
-		var drain_amount := float(void_rules.get("void_drain_amount", 0.05))
-		
-		if randf() < drain_chance * delta:
-			data["progress"] = maxf(0.0, float(data["progress"]) - drain_amount)
-			
 
 func _tick_top(delta: float) -> void:
 	# These should be REAL rates, not cached getters.
@@ -198,13 +233,8 @@ func _tick_top(delta: float) -> void:
 	_thoughts_per_sec_cached = tps
 	_control_per_sec_cached = cps
 
-	instability = clampf(instability + instability_per_sec * delta, 0.0, 100.0)
-	
-	# SYNC with GameManager so bar shows correct value
-	var gm := get_tree().current_scene.find_child("GameManager", true, false)
-	if gm != null:
-		gm.instability = instability
-
+func get_depth_progress_cap(depth: int) -> float:
+	return 1000.0 * pow(2.5, float(depth - 1))
 
 func _sync_hud() -> void:
 	if _hud != null and _hud.has_method("set_values"):
@@ -312,7 +342,7 @@ func dive_next_depth() -> void:
 
 	if _panel != null:
 		_panel.set_active_depth(active_depth)
-		_panel.set_row_data(active_depth, run[active_depth - 1])
+		_panel.set_row_data(active_depth, _run_internal[active_depth - 1])
 
 
 func add_local_upgrade(depth_index: int, upgrade_id: String, amount: int = 1) -> void:
@@ -331,9 +361,9 @@ func add_local_upgrade(depth_index: int, upgrade_id: String, amount: int = 1) ->
 # Helpers
 # --------------------
 func _init_run() -> void:
-	run.clear()
+	_run_internal.clear()  # Was: run.clear()
 	for i in range(max_depth):
-		run.append({"depth": i + 1, "progress": 0.0, "memories": 0.0, "crystals": 0.0})
+		_run_internal.append({"depth": i + 1, "progress": 0.0, "memories": 0.0, "crystals": 0.0})  # Was: run.append(...)
 
 	local_upgrades.clear()
 	frozen_upgrades.clear()
@@ -346,13 +376,16 @@ func _init_run() -> void:
 func _sync_all_to_panel() -> void:
 	if _panel == null:
 		return
+	
 	_panel.set_max_unlocked_depth(max_unlocked_depth)
 	_panel.set_active_depth(active_depth)
+	
+	# CRITICAL: Include depth 1 (remove the d == 1 skip)
 	for d in range(1, max_depth + 1):
-		_panel.set_row_data(d, run[d - 1])
+		_panel.set_row_data(d, _run_internal[d - 1])
 		_panel.set_row_frozen_upgrades(d, frozen_upgrades.get(d, {}))
+	
 	_panel.set_active_local_upgrades(active_depth, local_upgrades.get(active_depth, {}))
-
 
 func _get_local_level(depth_index: int, upgrade_id: String) -> int:
 	var dct: Dictionary = local_upgrades.get(depth_index, {}) as Dictionary
@@ -394,6 +427,8 @@ func get_depth_length(depth_index: int) -> float:
 
 
 func wake_cashout(ad_multiplier: float, forced: bool) -> Dictionary:
+	push_warning("wake_cashout() called - resetting run data")
+	print_stack()
 	var thoughts_mult: float = 1.0
 	var memories_mult: float = 1.0
 	var crystals_mult: float = 1.0
@@ -415,7 +450,7 @@ func wake_cashout(ad_multiplier: float, forced: bool) -> Dictionary:
 
 	var max_d := clampi(active_depth, 1, max_depth)
 	for depth_i in range(1, max_d + 1):
-		var data: Dictionary = run[depth_i - 1]
+		var data: Dictionary = _run_internal[depth_i - 1]  # Was: run[depth_i - 1]
 		var raw_cry := float(data.get("crystals", 0.0))
 		var bank_cry := raw_cry * crystals_mult * ad_multiplier
 		if bank_cry > 0.0:
@@ -444,34 +479,41 @@ func wake_cashout(ad_multiplier: float, forced: bool) -> Dictionary:
 func reset_active_depth_progress_only() -> void:
 	_reset_depth_progress()
 	if _panel != null:
-		_panel.set_row_data(active_depth, run[active_depth - 1])
+		_panel.set_row_data(active_depth, _run_internal[active_depth - 1])
 		_panel.set_active_depth(active_depth)
-
-
 
 func _reset_depth_progress() -> void:
 	var idx := active_depth - 1
-	if idx < 0 or idx >= run.size():
+	if idx < 0 or idx >= _run_internal.size():
 		return
-	var data: Dictionary = run[idx]
-	data["progress"] = 0.0
-	data["memories"] = 0.0
-	data["crystals"] = 0.0
-	run[idx] = data
+	var _data: Dictionary = _run_internal[idx]
+	_data["progress"] = 0.0
+	_data["memories"] = 0.0
+	_data["crystals"] = 0.0
+	_run_internal[idx] = _data
+
+
+func _reset_all_depth_progress() -> void:
+	for i in range(_run_internal.size()):  # Was: run.size()
+		var data: Dictionary = _run_internal[i]  # Was: run[i]
+		data["progress"] = 0.0
+		data["memories"] = 0.0
+		data["crystals"] = 0.0
+		_run_internal[i] = data  # Was: run[i] = data
 
 
 func _calc_memories_gain() -> float:
 	var idx := active_depth - 1
-	if idx < 0 or idx >= run.size():
+	if idx < 0 or idx >= _run_internal.size():  # Was: run.size()
 		return 0.0
-	var data: Dictionary = run[idx]
+	var data: Dictionary = _run_internal[idx]
 	return float(data.get("memories", 0.0))
 
 func _calc_crystals_gain() -> float:
 	var idx := active_depth - 1
-	if idx < 0 or idx >= run.size():
+	if idx < 0 or idx >= _run_internal.size():  # Was: run.size()
 		return 0.0
-	var data: Dictionary = run[idx]
+	var data: Dictionary = _run_internal[idx]
 	return float(data.get("crystals", 0.0))
 
 
@@ -553,12 +595,12 @@ func _build_depth_defs() -> void:
 		},
 		"upgrades": {
 			"progress_speed": {
-				"name": "Lucid Training",
-				"description": "+10% Thought Generation per level",
-				"max_level": 999999,
-				"base_cost": 50.0,
+				"name": "Velocity",
+				"description": "+20% progress speed per level",
+				"max_level": 999,
+				"base_cost": 100.0,
 				"cost_growth": 1.5,
-				"effect_per_level": 0.10,
+				"effect_per_level": 0.20,
 				"cost_currency": "thoughts"
 			},
 			"memories_gain": {
@@ -1875,7 +1917,7 @@ func _sum_run_totals(up_to_depth: int) -> Dictionary:
 	var crystals_by_name: Dictionary = {} # name -> amount
 
 	for d in range(1, max_d + 1):
-		var data: Dictionary = run[d - 1]
+		var data: Dictionary = _run_internal[d - 1]
 		var mem := float(data.get("memories", 0.0))
 		var cry := float(data.get("crystals", 0.0))
 
@@ -1891,15 +1933,7 @@ func _sum_run_totals(up_to_depth: int) -> Dictionary:
 		"crystals_by_name": crystals_by_name,
 		"depth_counted": max_d
 	}
-
-func _reset_all_depth_progress() -> void:
-	for i in range(run.size()):
-		var data: Dictionary = run[i]
-		data["progress"] = 0.0
-		data["memories"] = 0.0
-		data["crystals"] = 0.0
-		run[i] = data
-
+	
 func get_run_upgrade_ids(depth_index: int) -> Array[String]:
 	"""Returns list of upgrade IDs for a specific depth (e.g., ["stabilize", "controlled_fall", ...])"""
 	var def: Dictionary = get_depth_def(depth_index)

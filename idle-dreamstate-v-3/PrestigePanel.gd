@@ -38,7 +38,7 @@ var _pending_gain: float = 0.0
 var _pending_depth_gain: float = 0.0
 var _pending_depth_index: int = 1
 var _pending_preview: Dictionary = {} # stores DepthRunController.preview_wake(...)
-
+var _pending_crystals: Dictionary = {}
 # Ad bonus for this wake (e.g. 1.0 means +100% extra memories)
 var _ad_bonus: float = 0.0
 var _ad_used: bool = false
@@ -54,6 +54,14 @@ func _ready() -> void:
 	_apply_panel_frame()
 	visible = false
 	z_index = 220
+	
+	# DEBUG: Verify nodes exist
+	print("PrestigePanel nodes check:")
+	print("  title: ", title != null)
+	print("  summary: ", summary != null)
+	print("  confirm_btn: ", confirm_btn != null)
+	print("  cancel_btn: ", cancel_btn != null)
+	print("  ad_btn: ", ad_btn != null)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	set_process(true) # <-- add this
 	set_process_unhandled_input(true)
@@ -85,20 +93,40 @@ func _ready() -> void:
 	_update_ad_button_state()
 
 func open_with_depth(mem: float, crystals_dict: Dictionary, wake_depth: int) -> void:
-	"""
-	Opens the prestige panel with wake rewards
-	
-	Args:
-		mem: Total memories to be gained
-		crystals_dict: Dictionary of currency_name -> amount (e.g., {"Amethyst": 45.0, "Ruby": 23.0})
-		wake_depth: The depth being woken from
-	"""
 	visible = true
+	_pending_gain = mem  # ADD THIS LINE - store the gain value!
+	_pending_depth_index = wake_depth
+	_pending_crystals = crystals_dict  # Optional: store crystals too
+	
+	# Fix indentation on these lines (move them left to align with visible = true)
+	_ad_bonus = 0.0
+	_ad_used = false
+	_update_ad_button_state()
+	
+	# Safety check for critical nodes
+	if summary == null:
+		push_warning("PrestigePanel: summary label not found at path Vbox/Summary")
+		summary = find_child("Summary", true, false)
+	
+	if confirm_btn == null:
+		push_warning("PrestigePanel: confirm button not found")
+		confirm_btn = find_child("ConfirmWakeButton", true, false)
+		if confirm_btn and not confirm_btn.pressed.is_connected(Callable(self, "_on_confirm")):
+			confirm_btn.pressed.connect(Callable(self, "_on_confirm"))
+	
+	# Update the text safely
+	if summary != null:
+		summary.text = "If you wake now:\n• +%s Memories\n• Waking from Depth %d" % [_fmt_num(mem), wake_depth]
+	
+	# Update confirm button text
+	if confirm_btn != null:
+		confirm_btn.text = "Wake (+%s)" % _fmt_num(mem)
+		confirm_btn.disabled = mem <= 0
 	
 	# Display memories
 	if has_node("MemoriesLabel"):
 		var mem_label = get_node("MemoriesLabel")
-		mem_label.text = "Memories: +%.1f" % mem
+		mem_label.text = "Memories: +%s" % _fmt_num(mem)
 	
 	# Display all depth currencies
 	# Option A: Dynamic container approach
@@ -120,7 +148,7 @@ func open_with_depth(mem: float, crystals_dict: Dictionary, wake_depth: int) -> 
 		# Create labels for each currency
 		for entry in sorted_currencies:
 			var label = Label.new()
-			label.text = "%s: +%.1f" % [entry.name, entry.amount]
+			label.text = "%s: +%s" % [entry.name, _fmt_num(entry.amount)]
 			label.add_theme_font_size_override("font_size", 14)
 			currency_container.add_child(label)
 		
@@ -174,6 +202,21 @@ func open_with_depth(mem: float, crystals_dict: Dictionary, wake_depth: int) -> 
 		var depth_label = get_node("WakeDepthLabel")
 		depth_label.text = "Waking from %s" % DepthMetaSystem.get_depth_name(wake_depth)
 
+func _fmt_num(v: float) -> String:
+	if v >= 1e15:
+		var exponent := int(floor(log(v) / log(10)))
+		var mantissa := snappedf(v / pow(10, exponent), 0.01)
+		return str(mantissa) + "e+" + str(exponent)
+	if v >= 1_000_000_000_000.0:
+		return "%.2fT" % (v / 1_000_000_000_000.0)
+	if v >= 1_000_000_000.0:
+		return "%.2fB" % (v / 1_000_000_000.0)
+	if v >= 1_000_000.0:
+		return "%.2fM" % (v / 1_000_000.0)
+	if v >= 1_000.0:
+		return "%.2fk" % (v / 1_000.0)
+	return str(int(v))
+	
 func close() -> void:
 	visible = false
 	if backdrop != null:
@@ -189,9 +232,11 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 
 func _on_confirm() -> void:
+	print("CONFIRM BUTTON CLICKED! _pending_gain=", _pending_gain)
 	if _pending_gain <= 0.0:
+		print("ERROR: _pending_gain is 0 or less, returning early")
 		return
-
+	
 	close()
 	confirm_wake.emit()
 
@@ -257,13 +302,13 @@ func _update_summary_text() -> void:
 		# Apply ad bonus ONLY to memories (your current design)
 		if _ad_bonus > 0.0:
 			mem = mem * (1.0 + _ad_bonus)
-			lines.append("• +" + str(int(round(mem))) + " Memories (Ad)")
+			lines.append("• +" + _fmt_num(mem) + " Memories (Ad)")
 		else:
-			lines.append("• +" + str(int(round(mem))) + " Memories")
+			lines.append("• +" + _fmt_num(mem) + " Memories")
 
-		# Thoughts (optional display — remove if you don’t want it shown)
+		# Thoughts (optional display — remove if you don't want it shown)
 		if th > 0.0:
-			lines.append("• +" + str(int(round(th))) + " Thoughts")
+			lines.append("• +" + _fmt_num(th) + " Thoughts")
 
 		# All depth currencies (sorted for stable UI)
 		var names := gems.keys()
@@ -271,8 +316,7 @@ func _update_summary_text() -> void:
 		for gem_name in names:
 			var amt := float(gems[gem_name])
 			if amt > 0.0:
-				lines.append("• +" + str(int(round(amt))) + " " + str(gem_name))
-
+				lines.append("• +" + _fmt_num(amt) + " " + str(gem_name))
 
 		if summary != null:
 			summary.text = "\n".join(lines)
@@ -280,15 +324,15 @@ func _update_summary_text() -> void:
 
 	# FALLBACK (old single-depth display)
 	var depth_name := DepthMetaSystem.get_depth_currency_name(_pending_depth_index)
-	var mem_line := "• +" + str(int(round(_pending_gain))) + " Memories"
+	var mem_line := "• +" + _fmt_num(_pending_gain) + " Memories"
 	if _ad_bonus > 0.0:
 		var boosted := _pending_gain * (1.0 + _ad_bonus)
-		mem_line = "• +" + str(int(round(boosted))) + " Memories (Ad)"
+		mem_line = "• +" + _fmt_num(boosted) + " Memories (Ad)"
 
 	if summary != null:
 		summary.text = "If you wake now:\n" + \
 			mem_line + "\n" + \
-			"• +" + str(int(round(_pending_depth_gain))) + " " + depth_name
+			"• +" + _fmt_num(_pending_depth_gain) + " " + depth_name
 
 
 func _update_confirm_button() -> void:
@@ -307,7 +351,7 @@ func _update_confirm_button() -> void:
 	if _ad_bonus > 0.0:
 		mem = mem * (1.0 + _ad_bonus)
 
-	confirm_btn.text = "Wake (+" + str(int(round(mem))) + ")"
+	confirm_btn.text = "Wake (+" + _fmt_num(mem) + ")"
 	confirm_btn.disabled = false
 
 

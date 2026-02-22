@@ -44,22 +44,13 @@ func _process(_delta: float) -> void:
 		if _run == null:
 			return
 
-	# EXPLICIT CASTS to float to prevent type errors
+	# Read values from DRC (GameManager pushes them here)
 	var thoughts: float = float(_run.get("thoughts"))
 	var control: float = float(_run.get("control"))
-
-	var thoughts_ps: float = 0.0
-	if _run.has_method("get_thoughts_per_sec"):
-		thoughts_ps = float(_run.call("get_thoughts_per_sec"))
-
+	var thoughts_ps: float = float(_run.get("thoughts_per_sec"))
 	var control_ps: float = 0.0
 	if _run.has_method("get_control_per_sec"):
 		control_ps = float(_run.call("get_control_per_sec"))
-
-	var inst_raw: float = float(_run.get("instability"))
-	var inst_pct: float = inst_raw
-	if inst_pct <= 1.0:
-		inst_pct = inst_raw * 100.0
 
 	var active_depth: int = int(_run.get("active_depth"))
 	var max_depth: int = 0
@@ -68,28 +59,29 @@ func _process(_delta: float) -> void:
 
 	set_depth_ui(active_depth, max_depth)
 
+	# Get instability RATE from DRC (GameManager updates this)
 	var inst_gain: float = 0.0
+	if _run != null:
+		inst_gain = float(_run.get("instability_per_sec"))
 	if _run.has_method("get_instability_per_sec"):
 		inst_gain = float(_run.call("get_instability_per_sec"))
 	elif _run.get("instability_per_sec") != null:
 		inst_gain = float(_run.get("instability_per_sec"))
 
-	var ttf: float = 999999.0
-	if inst_gain > 0.000001:
-		ttf = (100.0 - inst_pct) / inst_gain
-
 	var is_overclock: bool = false
 	var overclock_time_left: float = 0.0
 
+	# Pass 0 for inst_pct and ttf since we don't use them anymore
+	# (GameManager sets the bar value directly in _refresh_top_ui)
 	update_top_bar(
 		thoughts,
 		thoughts_ps,
 		control,
 		control_ps,
-		inst_pct,
+		0.0,  # inst_pct - not used
 		is_overclock,
 		overclock_time_left,
-		ttf,
+		0.0,  # ttf - not used
 		inst_gain
 	)
 
@@ -155,31 +147,29 @@ func update_top_bar(
 	thoughts_ps: float,
 	control: float,
 	control_ps: float,
-	inst_pct: float,
-	is_overclock: bool,
-	overclock_time_left: float,
-	ttf: float,
+	_inst_pct: float,
+	_is_overclock: bool,
+	_overclock_time_left: float,
+	_ttf: float,
 	inst_gain: float
 ) -> void:
 	if thoughts_value:
 		thoughts_value.text = "%s" % _fmt_num(thoughts)
 	if thoughts_gain:
-		thoughts_gain.text = "+%s/s" % _fmt_num(thoughts_ps)  # Fixed: was %.1f
+		thoughts_gain.text = "+%s/s" % _fmt_num(thoughts_ps)
 
 	if control_value:
 		control_value.text = "%s" % _fmt_num(control)
 	if control_gain:
-		control_gain.text = "+%s/s" % _fmt_num(control_ps)  # Fixed: was %.1f
+		control_gain.text = "+%s/s" % _fmt_num(control_ps)
 
-	if inst_bar:
-		inst_bar.value = inst_pct
+	# REMOVE THIS - GameManager._refresh_top_ui() handles the bar value now
+	# if inst_bar:
+	#     inst_bar.value = inst_pct
 
 	if inst_title:
-		inst_title.text = "Instability (TTF %s)" % _fmt_time_ui(ttf)
-		inst_title.tooltip_text = "Instab +%.3f/s%s" % [
-			inst_gain,
-			(" | OC %.1fs" % overclock_time_left) if is_overclock else ""
-		]
+		inst_title.text = "Instability (+%s/s)" % _fmt_num(inst_gain)
+		inst_title.tooltip_text = "+%.2f instability per second" % inst_gain
 
 	if inst_hint:
 		inst_hint.visible = false

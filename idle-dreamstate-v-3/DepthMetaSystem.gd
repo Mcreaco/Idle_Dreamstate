@@ -117,6 +117,28 @@ func get_depth_upgrade_cost(depth: int, upgrade_id: String, level: int) -> float
 	var level_mult: float = pow(1.5, level)
 	
 	return base * depth_mult * level_mult
+
+# Per-depth instability config
+var depth_instability_config := {
+	1: {"base_per_sec": 0, "cap": 0},      # Depth 1: No instability
+	2: {"base_per_sec": 5, "cap": 1000},   # +5/sec, die at 1000
+	3: {"base_per_sec": 10, "cap": 1500},  # +10/sec, die at 1500
+	4: {"base_per_sec": 15, "cap": 2000},  # etc...
+	# ... define for all 15 depths
+}
+
+func get_instability_per_sec(depth: int) -> float:
+	var config = depth_instability_config.get(depth, {"base_per_sec": 5, "cap": 1000})
+	var base: float = config["base_per_sec"]
+	
+	# Apply global reductions from upgrades
+	base *= get_global_idle_instability_mult()
+	
+	return base
+
+func get_instability_cap(depth: int) -> float:
+	var config = depth_instability_config.get(depth, {"cap": 1000})
+	return config["cap"]
 	
 func get_depth_specific_effect(depth_i: int, effect_id: String) -> float:
 	var lvl := get_level(depth_i, effect_id)

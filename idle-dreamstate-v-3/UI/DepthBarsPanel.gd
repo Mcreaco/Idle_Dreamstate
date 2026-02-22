@@ -304,22 +304,6 @@ func _on_row_clicked_depth(depth_index: int) -> void:
 	else:
 		_open_overlay(depth_index)
 
-
-func _on_row_request_close(_depth_index: int) -> void:
-	_close_overlay()
-
-func _on_row_request_dive(_depth_index: int) -> void:
-	# Freeze multiplier before diving
-	var gm := get_tree().current_scene.find_child("GameManager", true, false)
-	if gm != null and gm.has_method("freeze_current_depth_multiplier"):
-		gm.call("freeze_current_depth_multiplier")
-	
-	if _depth_run != null and _depth_run.has_method("dive"):
-		_depth_run.call("dive")
-	_close_overlay()
-# -------------------------
-# Center overlay logic
-# -------------------------
 func _open_overlay(depth_index: int) -> void:
 	_close_overlay()
 
@@ -328,18 +312,18 @@ func _open_overlay(depth_index: int) -> void:
 
 	_expanded_depth = depth_index
 
-	# Create a CLONE row for the overlay (do NOT move the real row)
+	# Create a CLONE row for the overlay
 	var overlay_row := depth_row_scene.instantiate()
 	overlay_row.name = "OverlayDepthRow_%d" % depth_index
 	_overlay_slot.add_child(overlay_row)
 	_overlay_row = overlay_row
 
-	# Get FRESH data from controller, not cache
+	# Get FRESH data from controller
 	var drc := get_node_or_null("/root/DepthRunController")
 	var fresh_data: Dictionary = {"progress": 0.0, "memories": 0.0, "crystals": 0.0}
 	if drc != null:
-		var run_data: Array = drc.get("run") as Array
-		if run_data != null and depth_index >= 1 and depth_index <= run_data.size():
+		var run_data = drc.get("run")
+		if run_data is Array and depth_index >= 1 and depth_index <= run_data.size():
 			fresh_data = run_data[depth_index - 1].duplicate(true)
 
 	# Apply index + state
@@ -356,11 +340,10 @@ func _open_overlay(depth_index: int) -> void:
 	if overlay_row.has_method("set_active"):
 		overlay_row.call("set_active", is_active)
 
-	# Use FRESH data, not cached
 	if overlay_row.has_method("set_data"):
 		overlay_row.call("set_data", fresh_data)
 
-	# Copy cached upgrades (these don't change as often)
+	# Copy cached upgrades
 	if _row_local_upgrades_cache.has(depth_index) and overlay_row.has_method("set_local_upgrades"):
 		overlay_row.call("set_local_upgrades", _row_local_upgrades_cache[depth_index])
 	if _row_frozen_upgrades_cache.has(depth_index) and overlay_row.has_method("set_frozen_upgrades"):
@@ -372,19 +355,34 @@ func _open_overlay(depth_index: int) -> void:
 	if overlay_row.has_method("set_details_open"):
 		overlay_row.call("set_details_open", true)
 
-	# Wire overlay buttons
+	# Wire overlay buttons safely
 	if overlay_row.has_signal("request_close") and not overlay_row.request_close.is_connected(_on_row_request_close):
 		overlay_row.request_close.connect(_on_row_request_close)
 	if overlay_row.has_signal("request_dive") and not overlay_row.request_dive.is_connected(_on_row_request_dive):
 		overlay_row.request_dive.connect(_on_row_request_dive)
 	
-	# Force refresh the dive button state
 	if overlay_row.has_method("_apply_visuals"):
 		overlay_row.call("_apply_visuals")
 
 	_overlay.visible = true
+	_ignore_row_clicks_until_msec = Time.get_ticks_msec() + 300
 
 
+func _on_row_request_close(_depth_index: int) -> void:
+	_close_overlay()
+
+func _on_row_request_dive(_depth_index: int) -> void:
+	# Freeze multiplier before diving
+	var gm := get_tree().current_scene.find_child("GameManager", true, false)
+	if gm != null and gm.has_method("freeze_current_depth_multiplier"):
+		gm.call("freeze_current_depth_multiplier")
+	
+	if _depth_run != null and _depth_run.has_method("dive"):
+		_depth_run.call("dive")
+	_close_overlay()
+# -------------------------
+# Center overlay logic
+# -------------------------
 func _close_overlay() -> void:
 	if _overlay == null:
 		return
@@ -716,8 +714,24 @@ func _process(_delta: float) -> void:
 		# Get fresh data from controller
 		var drc := get_node_or_null("/root/DepthRunController")
 		if drc != null:
-			var run_data: Array = drc.get("run") as Array
-			if run_data != null and _expanded_depth >= 1 and _expanded_depth <= run_data.size():
-				var fresh_data: Dictionary = run_data[_expanded_depth - 1]
-				if _overlay_row.has_method("set_data"):
-					_overlay_row.call("set_data", fresh_data)
+			# CRITICAL FIX: Safe type checking instead of invalid cast
+			var run_data_variant = drc.get("run")
+			if run_data_variant != null and typeof(run_data_variant) == TYPE_ARRAY:
+				var run_data: Array = run_data_variant
+				if _expanded_depth >= 1 and _expanded_depth <= run_data.size():
+					var fresh_data = run_data[_expanded_depth - 1]
+					if fresh_data is Dictionary and _overlay_row.has_method("set_data"):
+						_overlay_row.call("set_data", fresh_data)
+
+
+# ADD this function if not present (safe getter for run data)
+func _get_run_data_safely() -> Array:
+	var drc := get_node_or_null("/root/DepthRunController")
+	if drc == null:
+		return []
+	
+	var run_data = drc.get("run")
+	if run_data == null or typeof(run_data) != TYPE_ARRAY:
+		return []
+	
+	return run_data as Array

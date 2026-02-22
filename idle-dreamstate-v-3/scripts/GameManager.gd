@@ -35,7 +35,7 @@ var wake_button: Button
 var meta_button: Button
 var auto_dive_toggle: BaseButton
 var auto_overclock_toggle: BaseButton
-
+var _fail_save_popup: Node = null
 var meta_panel: MetaPanelController
 var prestige_panel: PrestigePanel
 
@@ -83,7 +83,7 @@ var offline_seconds: float = 0.0
 var autosave_timer: float = 0.0
 var autosave_interval: float = 10.0
 
-var _crack_sync_timer: float = 0.0
+#var _crack_sync_timer: float = 0.0
 
 var _rate_sample_timer: float = 0.0
 var _last_thoughts_sample: float = 0.0
@@ -130,6 +130,7 @@ var click_upgrade_panel: PanelContainer = null
 # Combo system
 var _click_combo_count: int = 0
 var _click_combo_timer: float = 0.0
+@warning_ignore("unused_private_class_variable")
 var _click_combo_window: float = 2.0  # Base window, modified by upgrades
 
 # Constants for upgrade formulas
@@ -138,6 +139,27 @@ const CLICK_POWER_GROWTH: float = 1.35  # Exponential scaling
 
 var click_upgrade_sidebar: Control = null
 var click_upgrade_expanded: bool = false
+
+# Evolution System
+var click_power_evolution: int = 0
+var click_control_evolution: int = 0
+var click_stability_evolution: int = 0
+var click_flow_evolution: int = 0
+var click_resonance_evolution: int = 0
+
+# Sacrifice Penalties (-0.5 = -50%, stacks multiplicatively)
+var power_sacrifice_penalty: float = 1.0
+var control_sacrifice_penalty: float = 1.0
+var stability_sacrifice_penalty: float = 1.0
+var flow_sacrifice_penalty: float = 1.0
+var resonance_sacrifice_penalty: float = 1.0
+
+# Auto-dive toggle
+var auto_dive_enabled: bool = false
+var auto_dive_checkbox: CheckBox = null
+
+# Milestone tracking (for visual effects)
+var last_milestone_check: Dictionary = {}
 
 func get_dive_instability_gain(depth: int) -> float:
 	return 5.0 + (depth * 1.5)
@@ -256,6 +278,7 @@ func _connect_click_buttons_debug() -> void:
 	
 	if not found_any:
 		push_error("NO CLICK BUTTONS FOUND! Check node names in scene tree.")
+
 
 func _fix_control_button() -> void:
 	var btn := get_tree().current_scene.find_child("ClickControl", true, false) as Button
@@ -426,7 +449,14 @@ func _ready() -> void:
 		# NOW sync after binding
 		if drc.has_method("_sync_all_to_panel"):
 			drc.call("_sync_all_to_panel")
-	
+	if drc != null:
+		var local_upgs: Dictionary = drc.get("local_upgrades") as Dictionary
+		if local_upgs == null:
+			local_upgs = {}
+		if not local_upgs.has(1):
+			local_upgs[1] = {}
+			drc.set("local_upgrades", local_upgs)
+			
 	if time_in_run <= 0.0:
 		run_start_depth = get_current_depth()
 	
@@ -470,24 +500,27 @@ func _ready() -> void:
 	var meta = get_tree().current_scene.find_child("DepthMetaSystem", true, false)
 	if meta != null and meta.has_method("get_level"):
 		# Automated Mind I unlocks depth 1 auto-buy
-		if meta.call("get_level", 3, "automated_mind") >= 1:
+		if meta.call("get_level", 3, "automated_mind_1") >= 1:
 			if not 1 in auto_buy_unlocked_depths:
 				auto_buy_unlocked_depths.append(1)
 				print("Unlocked auto-buy for depth 1 via Automated Mind I")
-		
-		# Add other automated mind checks here...
-	
-	# Load game after this so save can override
-	load_game()
-	
-		# TEMPORARY TEST: Force unlock depth 1 auto-buy
-	if not 1 in auto_buy_unlocked_depths:
-		auto_buy_unlocked_depths.append(1)
-		print("FORCED: Unlocked auto-buy for depth 1")
 	
 	_force_rate_sample()  # Add this
 	call_deferred("_create_click_upgrade_sidebar")
 	
+	if meta != null:
+		print("=== CHECKING AUTOMATED MIND ===")
+		for d in [1, 2, 3, 4, 5]:
+			var lvl = meta.call("get_level", d, "automated_mind")
+			print("Depth ", d, " 'automated_mind' level: ", lvl)
+			
+			# Try alternative IDs
+			lvl = meta.call("get_level", d, "automated_mind_i")
+			print("Depth ", d, " 'automated_mind_i' level: ", lvl)
+			
+			lvl = meta.call("get_level", d, "automated_mind_1")
+			print("Depth ", d, " 'automated_mind_1' level: ", lvl)
+		
 	 # Remove old panels first
 	var old = get_tree().current_scene.find_child("ClickUpgradesContainer", true, false)
 	if old:
@@ -548,10 +581,15 @@ func _force_rate_sample() -> void:
 	_control_ps = 0.0
 
 func _refresh_top_ui() -> void:
+	var current_depth := get_current_depth()
+	
+	if instability_bar != null:
+		instability_bar.visible = (current_depth >= 2)
 	var hide_numbers := false
+	var cap := depth_meta_system.get_instability_cap(current_depth)  # ADD THIS LINE
+	
 	if top_bar_panel == null:
 		if not _warned_missing_top_bar:
-			push_warning("TopBarPanel missing at ../MainUI/Root/TopBarPanel")
 			_warned_missing_top_bar = true
 		return
 
@@ -567,16 +605,58 @@ func _refresh_top_ui() -> void:
 			thoughts_label.text = "Thoughts %s +%s/s" % [_fmt_num(thoughts), rate_str]
 	if control_label != null:
 		control_label.text = "Control: %s" % _fmt_num(control)
-	if instability_bar != null:
+		
+		# MAKE BAR WIDER AND THICKER
+		instability_bar.custom_minimum_size = Vector2(700, 32)  # 700px wide, 32px tall
+		instability_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL  # Fill available space
+		
 		instability_bar.min_value = 0.0
-		instability_bar.max_value = 100.0
-		instability_bar.value = clampf(instability, 0.0, 100.0)
-		# CRITICAL FIX: Only show bar at depth 2+
-		# var current_depth = get_current_depth()
-		instability_bar.visible = (get_current_depth() >= 2)
+		instability_bar.max_value = cap
+		instability_bar.value = clampf(instability, 0.0, cap)
+		if instability_bar != null:
+			instability_bar.max_value = cap
+		instability_bar.show_percentage = false	
+	# Get or create label (NOW INSIDE THE NULL CHECK)
+	if instability_bar != null:  # ADD THIS LINE
+		var label := instability_bar.get_node_or_null("ValueLabel") as Label
+		if label == null:
+			label = Label.new()
+			label.name = "ValueLabel"
+			instability_bar.add_child(label)
+		
+		# CENTER TEXT PROPERLY
+		label.set_anchors_preset(Control.PRESET_FULL_RECT)
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		label.add_theme_font_size_override("font_size", 18)
+		label.add_theme_color_override("font_color", Color(1, 1, 1, 1))
+		label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.9))
+		label.add_theme_constant_override("shadow_offset_x", 2)
+		label.add_theme_constant_override("shadow_offset_y", 2)
+		
+		# Ensure text is centered with proper margins
+		label.offset_left = 0
+		label.offset_right = 0
+		label.offset_top = 0
+		label.offset_bottom = 0
+		
+		label.text = "%s / %s" % [_fmt_num(instability), _fmt_num(cap)]
+		label.visible = true
+		
+		instability_bar.visible = (current_depth >= 2)
+	# endif  (the closing bracket for the if instability_bar != null check)
+
 	if instability_label != null:
-		instability_label.text = "Instability"
-		instability_label.visible = (get_current_depth() >= 2)
+		if current_depth == 1:
+			instability_label.text = ""
+			instability_label.visible = false
+		else:
+			var ttf := get_seconds_until_fail()
+			var ttf_str := _fmt_time_ui(ttf)
+			
+			# Show absolute value: "Instability: 230 / 1000 (TTF 2:30)"
+			instability_label.text = "Instability: %.0f / %.0f (TTF %s)" % [instability, cap, ttf_str]
+			instability_label.visible = true
 
 	if top_bar_panel.has_method("update_top_bar"):
 		var inst_pct: float = clampf(instability, 0.0, 100.0)
@@ -600,9 +680,6 @@ func _refresh_top_ui() -> void:
 			ttf,
 			inst_gain
 		)
-	
-	# Silence (Depth 9) - hide numbers if rule active and not upgraded
-	var current_depth := get_current_depth()
 	
 	if current_depth == 9:
 		var drc := get_node_or_null("/root/DepthRunController")
@@ -760,6 +837,7 @@ func _on_wake_pressed() -> void:
 	_close_expanded_depth_bars()
 	if prestige_panel == null:
 		prestige_panel = _ui_find("PrestigePanel") as PrestigePanel
+		_connect_prestige_panel()  # Connect signals now that panel exists
 	if prestige_panel == null:
 		push_warning("GameManager: PrestigePanel not found; Wake blocked.")
 		return
@@ -856,9 +934,6 @@ func _on_prestige_confirm_wake() -> void:
 	if prestige_panel != null:
 		prestige_panel.close()
 	
-	# REMOVE the second declaration - reuse 'tm' instead
-	# var tutorial_mgr = get_node_or_null("/root/TutorialManage")  # DELETE THIS LINE
-	
 	# Use 'tm' not 'tutorial_mgr'
 	if tm and tm.has_method("on_ui_element_clicked"):
 		tm.on_ui_element_clicked("PrestigeWakeButton")
@@ -891,6 +966,8 @@ func _close_expanded_depth_bars() -> void:
 		overlay.visible = false
 		
 func do_fail() -> void:
+	push_warning("do_fail() WAS CALLED - this resets all depth progress!")
+	print_stack()  # This shows what triggered the fail
 	if ad_service != null and ad_service.can_show(AdService.AD_FAIL_SAVE) and not _fail_save_prompt_shown:
 		_show_fail_save_prompt()
 		return
@@ -903,12 +980,18 @@ func do_fail() -> void:
 		# CRITICAL FIX: Get accumulated memories/crystals from depth_data
 		var accumulated_memories := 0.0
 		var accumulated_crystals := 0.0
+		
+		var run_data = drc.get("run")
+		if run_data == null or not (run_data is Array):
+			run_data = []
+			
 		var active_d: int = drc.get("active_depth") as int
-		var run_data: Array = drc.get("run") as Array
-		if run_data != null and active_d >= 1 and active_d <= run_data.size():
-			var depth_data: Dictionary = run_data[active_d - 1]
-			accumulated_memories = float(depth_data.get("memories", 0.0))
-			accumulated_crystals = float(depth_data.get("crystals", 0.0))
+		
+		if run_data.size() > 0 and active_d >= 1 and active_d <= run_data.size():
+			var depth_data = run_data[active_d - 1]
+			if depth_data is Dictionary:
+				accumulated_memories = float(depth_data.get("memories", 0.0))
+				accumulated_crystals = float(depth_data.get("crystals", 0.0))
 		
 		var result = drc.call("wake_cashout", 1.0, true)
 		if result is Dictionary:
@@ -916,7 +999,6 @@ func do_fail() -> void:
 			# CRITICAL FIX: Add accumulated memories from offline progress
 			gained_memories += accumulated_memories
 			memories += gained_memories
-			
 			
 			var crystals = result.get("crystals_by_name", {})
 			
@@ -951,17 +1033,14 @@ func calc_depth_currency_gain(depth_i: int) -> float:
 	return sqrt(t) * (1.0 + float(depth_i) * 0.15) * 0.05
 	
 func do_dive() -> void:
-	print("DO_DIVE CALLED")
 	var drc := get_node_or_null("/root/DepthRunController")
 	
 	# CRITICAL FIX: Check if we can actually dive first
 	if drc != null and drc.has_method("can_dive"):
 		if not drc.call("can_dive"):
-			print("DO_DIVE: Cannot dive - requirements not met")
 			return  # Exit early if can't dive
 	
 	total_dives += 1
-	print("Total dives is now: ", total_dives)
 	
 	# CRITICAL: Freeze the current depth's multiplier BEFORE diving
 	freeze_current_depth_multiplier()
@@ -1085,7 +1164,6 @@ func do_dive() -> void:
 	_sync_meta_progress()
 	# Trigger depth 2 tutorial if we just arrived at depth 2
 	if next_depth == 2:
-		print("ARRIVED AT DEPTH 2 - Triggering tutorial")
 		var tm = get_node_or_null("/root/TutorialManage")
 		if tm != null and tm.has_method("start_tutorial"):
 			if tm.get("active_tutorial") == "":
@@ -1129,18 +1207,16 @@ func reset_run() -> void:
 	time_in_run = 0.0
 	total_thoughts_earned = 0.0
 	max_instability = 0.0
-	# Reset frozen multipliers for new run
 	frozen_depth_multipliers = {}
 	
-	# DO NOT reset total_dives here! It's a lifetime stat.
-	# DO NOT reset lifetime_thoughts, lifetime_control, or total_playtime here!
-	
+	# Apply starting perks
 	if perm_perk_system != null:
 		thoughts = perm_perk_system.get_starting_thoughts()
 		instability = maxf(0.0, instability - perm_perk_system.get_starting_instability_reduction())
 	
 	run_start_depth = 1
 	
+	# Reset upgrade manager levels
 	upgrade_manager.thoughts_level = 0
 	upgrade_manager.stability_level = 0
 	upgrade_manager.deep_dives_level = 0
@@ -1151,57 +1227,60 @@ func reset_run() -> void:
 	overclock_system.active = false
 	wake_guard_timer = wake_guard_seconds
 	
-	 # Reset DepthRunController completely
+	# Reset DepthRunController data
 	var drc := get_node_or_null("/root/DepthRunController")
 	if drc != null:
-		# DON'T call _init_run - it clears everything!
-		# Just manually reset what we need
+		var saved_max_unlocked: int = drc.get("max_unlocked_depth")
+		if saved_max_unlocked == null or saved_max_unlocked < 1:
+			saved_max_unlocked = 1
+		
 		drc.set("active_depth", 1)
-		drc.set("max_unlocked_depth", 1)
 		drc.set("local_upgrades", {1: {}})
 		drc.set("frozen_upgrades", {})
 		drc.set("_last_depth", 1)
 		
-		# Reset run array manually
-		var run_data: Array = drc.get("run") as Array
-		if run_data != null:
+		# Reset run array but keep max_unlocked_depth
+		var run_data = drc.get("run")
+		if run_data == null or not (run_data is Array):
+			drc.call("_init_run")
+		else:
+			# Reset all depths to 0 progress but keep array structure
 			for i in range(run_data.size()):
-				var depth_data: Dictionary = run_data[i]
-				depth_data["progress"] = 0.0
-				depth_data["memories"] = 0.0
-				depth_data["crystals"] = 0.0
-				run_data[i] = depth_data
+				var depth_data = run_data[i]
+				if depth_data is Dictionary:
+					depth_data["progress"] = 0.0
+					depth_data["memories"] = 0.0
+					depth_data["crystals"] = 0.0
+					run_data[i] = depth_data
 			drc.set("run", run_data)
+		
+		drc.set("max_unlocked_depth", maxi(saved_max_unlocked, 1))
 	
-	# FORCE RESET THE PANEL VISUALS
+	# CRITICAL FIX: Don't rebuild UI rows, just clear data
 	var panel := get_tree().current_scene.find_child("DepthBarsPanel", true, false)
-	if panel != null:
-		if panel.has_method("clear_all_row_data"):
-			panel.call("clear_all_row_data")
-		# Force a full sync from controller
-		if panel.has_method("_build_rows"):
-			panel.call("_build_rows")
-		if drc != null and drc.has_method("_sync_all_to_panel"):
-			drc.call("_sync_all_to_panel")
+	if panel != null and panel.has_method("clear_all_row_data"):
+		panel.call("clear_all_row_data")
+	# REMOVED: panel.call("_build_rows") - This was causing the freeze!
 	
+	# Reset visual elements
 	if pillar_stack != null and pillar_stack.has_method("reset_visuals"):
 		pillar_stack.call("reset_visuals")
 	
 	if pillar_stack != null and pillar_stack.has_method("set_depth"):
 		pillar_stack.call("set_depth", 1)
-		
-	# Hide instability bar since we're back at Depth 1
+	
+	# Hide instability UI for depth 1
 	if instability_bar != null:
 		instability_bar.visible = false
 	if instability_label != null:
 		instability_label.visible = false
 	
-	# Reset instability value too
-	instability = 0.0
-	
 	_depth_cache = 1
 	_sync_cracks()
 	_sync_meta_progress()
+	_force_rate_sample()
+	
+	_refresh_top_ui()
 	
 func _check_abyss_unlock() -> void:
 	if abyss_unlocked_flag:
@@ -1235,14 +1314,20 @@ func get_idle_instability_gain_per_sec() -> float:
 	# Fallback if DRC not found
 	return 0.0
 
+
 func get_seconds_until_fail() -> float:
-	if instability >= 100.0:
+	var current_depth := get_current_depth()
+	var cap := depth_meta_system.get_instability_cap(current_depth)
+	
+	if instability >= cap:
 		return 0.0
+	
 	var gain_per_sec := get_idle_instability_gain_per_sec()
 	if gain_per_sec <= 0.0001:
 		return 999999.0
-	return (100.0 - instability) / gain_per_sec
-
+		
+	return (cap - instability) / gain_per_sec
+	
 func _apply_offline_progress() -> void:
 	
 	var data: Dictionary = SaveSystem.load_game()
@@ -1307,13 +1392,16 @@ func _apply_offline_progress() -> void:
 		)
 		instability = minf(instability, 99.9)
 	
-	# DEPTH PROGRESS - Match online calculation exactly
+		# DEPTH PROGRESS - Match online calculation exactly
 	var drc := get_node_or_null("/root/DepthRunController")
 	if drc != null and current_depth >= 1:
-		var run_data: Array = drc.get("run") as Array
+		var run_data = drc.get("run")
+		if run_data == null or not (run_data is Array):
+			run_data = []
+		
 		var active_d: int = drc.get("active_depth") as int
 		
-		if run_data != null and active_d >= 1 and active_d <= run_data.size():
+		if run_data.size() > 0 and active_d >= 1 and active_d <= run_data.size():
 			var depth_data: Dictionary = run_data[active_d - 1]
 			
 			# Get base values from DRC
@@ -1374,7 +1462,6 @@ func _apply_offline_progress() -> void:
 			
 			run_data[active_d - 1] = depth_data
 			drc.set("run", run_data)
-			
 	
 	time_in_run += offline_seconds
 	total_thoughts_earned = maxf(total_thoughts_earned, thoughts)
@@ -1523,12 +1610,9 @@ func save_game() -> void:
 		data["perm_oneiromancy_level"] = perm_perk_system.oneiromancy_level
 		
 	if depth_meta_system != null:
-		print("SAVING currencies:")
 		for i in range(1, DepthMetaSystem.MAX_DEPTH + 1):
 			var val = depth_meta_system.currency[i]
 			data["depth_currency_%d" % i] = val
-			if i <= 3:  # Only print first 3
-				print("  depth ", i, ": ", val)
 		
 		# Also save all upgrade levels
 		for i in range(1, DepthMetaSystem.MAX_DEPTH + 1):
@@ -1558,6 +1642,23 @@ func save_game() -> void:
 	data["click_stability_level"] = click_stability_level
 	data["click_flow_level"] = click_flow_level
 	data["click_resonance_level"] = click_resonance_level
+	
+		# Click upgrades evolution
+	data["click_power_evolution"] = click_power_evolution
+	data["click_control_evolution"] = click_control_evolution
+	data["click_stability_evolution"] = click_stability_evolution
+	data["click_flow_evolution"] = click_flow_evolution
+	data["click_resonance_evolution"] = click_resonance_evolution
+	
+	# Sacrifice penalties
+	data["power_sacrifice"] = power_sacrifice_penalty
+	data["control_sacrifice"] = control_sacrifice_penalty
+	data["stability_sacrifice"] = stability_sacrifice_penalty
+	data["flow_sacrifice"] = flow_sacrifice_penalty
+	data["resonance_sacrifice"] = resonance_sacrifice_penalty
+	
+	# Auto-dive
+	data["auto_dive_enabled"] = auto_dive_enabled
 	
 	SaveSystem.save_game(data)
 
@@ -1590,24 +1691,31 @@ func load_game() -> void:
 	abyss_unlocked_flag = bool(data.get("abyss_unlocked", false))
 	run_start_depth = int(data.get("run_start_depth", loaded_depth))
 	
-	# Restore DepthRunController state
+		# Restore DepthRunController state
 	var drc := get_node_or_null("/root/DepthRunController")
 	if drc != null:
 		# RESTORE RUN DATA with proper type casting (fixes TypedArray error)
-		if data.has("depth_run_data"):
+		if data.has("depth_run_data") and data["depth_run_data"] is Array:
 			var loaded_run: Array = data["depth_run_data"]
 			var typed_run: Array[Dictionary] = []
 			
 			for item in loaded_run:
-				var dict: Dictionary = item
-				typed_run.append({
-					"depth": int(dict.get("depth", 1)),
-					"progress": float(dict.get("progress", 0.0)),
-					"memories": float(dict.get("memories", 0.0)),
-					"crystals": float(dict.get("crystals", 0.0))
-				})
+				if item is Dictionary:
+					var dict: Dictionary = item
+					typed_run.append({
+						"depth": int(dict.get("depth", 1)),
+						"progress": float(dict.get("progress", 0.0)),
+						"memories": float(dict.get("memories", 0.0)),
+						"crystals": float(dict.get("crystals", 0.0))
+					})
+				else:
+					# Fallback for corrupted data
+					typed_run.append({"depth": typed_run.size() + 1, "progress": 0.0, "memories": 0.0, "crystals": 0.0})
 			
 			drc.set("run", typed_run)
+		else:
+			# Initialize fresh if no save data
+			drc.call("_init_run")
 		# Set other values
 		if data.has("max_unlocked_depth"):
 			drc.set("max_unlocked_depth", int(data["max_unlocked_depth"]))
@@ -1696,6 +1804,25 @@ func load_game() -> void:
 	click_resonance_level = int(data.get("click_resonance_level", 0))
 	recalculate_click_stats()
 	
+	# Evolution
+	click_power_evolution = int(data.get("click_power_evolution", 0))
+	click_control_evolution = int(data.get("click_control_evolution", 0))
+	click_stability_evolution = int(data.get("click_stability_evolution", 0))
+	click_flow_evolution = int(data.get("click_flow_evolution", 0))
+	click_resonance_evolution = int(data.get("click_resonance_evolution", 0))
+	
+	# Sacrifices
+	power_sacrifice_penalty = float(data.get("power_sacrifice", 1.0))
+	control_sacrifice_penalty = float(data.get("control_sacrifice", 1.0))
+	stability_sacrifice_penalty = float(data.get("stability_sacrifice", 1.0))
+	flow_sacrifice_penalty = float(data.get("flow_sacrifice", 1.0))
+	resonance_sacrifice_penalty = float(data.get("resonance_sacrifice", 1.0))
+	
+	# Auto-dive
+	auto_dive_enabled = bool(data.get("auto_dive_enabled", false))
+	if auto_dive_checkbox != null:
+		auto_dive_checkbox.button_pressed = auto_dive_enabled
+	
 	# Sync panel at end (only once)
 	call_deferred("_sync_panel_after_load")
 	
@@ -1704,6 +1831,27 @@ func load_game() -> void:
 	if get_current_depth() == 1:
 		instability = 0.0
 		print("LOAD: Reset instability to 0 (Depth 1)")
+		
+	# MIGRATE: Convert old 0-1 progress to new fixed scale
+	drc = get_node_or_null("/root/DepthRunController")
+	if drc != null:
+		var run_data = drc.get("run")
+		if run_data == null or not (run_data is Array):
+			run_data = []
+		
+		if run_data.size() > 0:
+			for i in range(run_data.size()):
+				var depth_data: Dictionary = run_data[i]
+				var old_progress: float = float(depth_data.get("progress", 0.0))
+				
+				# If progress is between 0 and 1 (old format), convert to cap
+				if old_progress > 0.0 and old_progress < 1.0:
+					var cap: float = drc.get_depth_progress_cap(i + 1)
+					depth_data["progress"] = old_progress * cap
+					run_data[i] = depth_data
+					print("Migrated depth ", i + 1, " progress from ", old_progress, " to ", depth_data["progress"])
+			
+			drc.set("run", run_data)
 	
 	# Final UI refresh to ensure bar visibility is correct
 	_refresh_top_ui()
@@ -1719,9 +1867,57 @@ func _bind_ui_mainui() -> void:
 	control_label = _ui_find("ControlLabel") as Label
 	instability_label = _ui_find("InstabilityLabel") as Label
 	instability_bar = _ui_find("InstabilityBar") as Range
-	if instability_bar:
+	
+	# ASSIGN BUTTONS BEFORE THE NULL CHECK
+	wake_button = _ui_find_button("WakeButton")
+	meta_button = _ui_find_button("Meta")
+	overclock_button = _ui_find_button("OverclockButton")
+	dive_button = find_button_recursive("DiveButton")
+	
+	# Now safe to check and return
+	if thoughts_label == null:
+		push_warning("ThoughtsLabel not found")
+		return
+	if instability_bar != null:
+		var cap := depth_meta_system.get_instability_cap(get_current_depth())
+		
+		# MAKE BAR WIDER AND THICKER
+		instability_bar.custom_minimum_size = Vector2(700, 32)
 		instability_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		instability_bar.custom_minimum_size.x = 600
+		
+		instability_bar.min_value = 0.0
+		instability_bar.max_value = cap
+		instability_bar.value = clampf(instability, 0.0, cap)
+		instability_bar.show_percentage = false
+	
+		# Get or create label (NOW INSIDE THE NULL CHECK)
+		var label := instability_bar.get_node_or_null("ValueLabel") as Label
+		if label == null:
+			label = Label.new()
+			label.name = "ValueLabel"
+			instability_bar.add_child(label)
+		
+		# CENTER TEXT PROPERLY
+		label.set_anchors_preset(Control.PRESET_FULL_RECT)
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		label.add_theme_font_size_override("font_size", 18)
+		label.add_theme_color_override("font_color", Color(1, 1, 1, 1))
+		label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.9))
+		label.add_theme_constant_override("shadow_offset_x", 2)
+		label.add_theme_constant_override("shadow_offset_y", 2)
+		
+		# Ensure text is centered with proper margins
+		label.offset_left = 0
+		label.offset_right = 0
+		label.offset_top = 0
+		label.offset_bottom = 0
+		
+		label.text = "%s / %s" % [_fmt_num(instability), _fmt_num(cap)]
+		label.visible = true
+		
+		instability_bar.visible = (get_current_depth() >= 2)
+		
 	_style_action_buttons()
 	_style_run_upgrades()
 
@@ -1729,9 +1925,16 @@ func _bind_ui_mainui() -> void:
 	meta_button = _ui_find_button("Meta")
 	overclock_button = _ui_find_button("OverclockButton")
 	dive_button = find_button_recursive("DiveButton")
+	# Add Auto-dive checkbox next to dive button
 	if dive_button != null:
-		dive_button.visible = false
-		dive_button.disabled = true
+		var parent := dive_button.get_parent()
+		auto_dive_checkbox = CheckBox.new()
+		auto_dive_checkbox.name = "AutoDiveCheckBox"
+		auto_dive_checkbox.text = "Auto"
+		auto_dive_checkbox.tooltip_text = "Automatically dive when depth progress is complete"
+		auto_dive_checkbox.toggled.connect(func(on): auto_dive_enabled = on)
+		parent.add_child(auto_dive_checkbox)
+		parent.move_child(auto_dive_checkbox, dive_button.get_index() + 1)
 
 	for b in [dive_button, overclock_button, wake_button, meta_button]:
 		if b == null:
@@ -2050,10 +2253,31 @@ func _notification(what: int) -> void:
 		get_tree().quit()
 		
 func _process(delta: float) -> void:
+	if depth_meta_system == null:
+		push_error("depth_meta_system is null!")
+		return
+	var current_depth := get_current_depth()
+	
+	# Only process instability for depth 2+ (Depth 1 has no instability mechanic)
+	if current_depth >= 2:
+		var _instab_per_sec := depth_meta_system.get_instability_per_sec(current_depth)
+		var _instability_mult: float = _safe_mult(upgrade_manager.get_instability_mult()) * _safe_mult(perk_system.get_instability_mult())
+		
+		if perm_perk_system != null:
+			_instability_mult *= _safe_mult(perm_perk_system.get_instability_mult())
+		
+		instability += _instab_per_sec * delta * _instability_mult
+		
+		# Check for death/fail
+		if depth_meta_system != null:
+			var cap := depth_meta_system.get_instability_cap(current_depth)
+			if instability >= cap:
+				do_fail()
+				return
+	
 	run_time += delta
 	_update_click_combo(delta)
 	
-	# AD_TIMED_BOOST: Handle countdown
 	if timed_boost_active:
 		timed_boost_timer -= delta
 		if timed_boost_timer <= 0:
@@ -2069,7 +2293,7 @@ func _process(delta: float) -> void:
 		_refresh_top_ui()
 		_update_buttons_ui()
 		_force_cooldown_texts()
-		return
+		return  # REMOVED - let game logic continue
 	
 	wake_guard_timer = maxf(wake_guard_timer - delta, 0.0)
 	time_in_run += delta
@@ -2090,70 +2314,60 @@ func _process(delta: float) -> void:
 	
 	var _corruption = corruption_system.update(delta, instability)
 	
-	 # Calculate multipliers - ADD DEBUG PRINTS HERE
+	# Calculate multipliers
 	var thoughts_mult: float = _safe_mult(upgrade_manager.get_thoughts_mult()) * _safe_mult(perk_system.get_thoughts_mult()) * _safe_mult(nightmare_system.get_thoughts_mult()) * _get_run_upgrades_thoughts_mult()
 	var control_mult: float = _safe_mult(perk_system.get_control_mult()) * _safe_mult(nightmare_system.get_control_mult())
 	
-	var depth_meta_thoughts_mult: float = 1.0
-	var depth_meta_control_mult: float = 1.0
-	
 	if depth_meta_system != null:
-		depth_meta_thoughts_mult = _safe_mult(depth_meta_system.get_global_thoughts_mult())
-		depth_meta_control_mult = _safe_mult(depth_meta_system.get_global_control_mult())
+		thoughts_mult *= _safe_mult(depth_meta_system.get_global_thoughts_mult())
+		control_mult *= _safe_mult(depth_meta_system.get_global_control_mult())
 	
-	thoughts_mult *= depth_meta_thoughts_mult
-	control_mult *= depth_meta_control_mult
-	
-	 # APPLY PERM PERKS - Debug these
 	if perm_perk_system != null:
-		var perm_thoughts_mult = perm_perk_system.get_thoughts_mult()
-		var perm_control_mult = perm_perk_system.get_control_mult()
-		
-		thoughts_mult *= perm_thoughts_mult
-		control_mult *= perm_control_mult
-	else:
-		push_warning("PermPerkSystem is NULL in _process!")
+		thoughts_mult *= _safe_mult(perm_perk_system.get_thoughts_mult())
+		control_mult *= _safe_mult(perm_perk_system.get_control_mult())
 	
-	perm_perk_system = get_tree().current_scene.find_child("PermPerkSystem", true, false)
-		
 	if abyss_perk_system != null:
 		thoughts_mult *= _safe_mult(abyss_perk_system.get_thoughts_mult())
 		control_mult *= _safe_mult(abyss_perk_system.get_control_mult())
 	
 	var deep_bonus_per_depth: float = upgrade_manager.get_deep_dives_thoughts_bonus_per_depth()
-	
-	var current_depth = get_current_depth()
 	var depth_thoughts_mult: float = 1.0 + (float(current_depth) * (depth_thoughts_step + deep_bonus_per_depth))
 	
+	# Apply conditional multipliers
 	if overclock_system.active:
 		thoughts_mult *= _safe_mult(overclock_system.thoughts_mult)
 	
 	thoughts_mult *= _safe_mult(_corruption.thoughts_mult)
 	
-	# AD_TIMED_BOOST: Apply 2x multiplier
 	var boost_mult := 2.0 if timed_boost_active else 1.0
 	thoughts_mult *= boost_mult
 	control_mult *= boost_mult
 	
-	# PROGRESS BAR MULTIPLIERS: Stack all frozen depths + current
 	var progress_mult := _get_total_progress_multiplier()
 	thoughts_mult *= progress_mult
 	control_mult *= progress_mult
 	
+	# Calculate and add thoughts
 	var thoughts_to_add := idle_thoughts_rate * thoughts_mult * depth_thoughts_mult * _get_shop_boost() * delta
 	thoughts += thoughts_to_add
-	thoughts += idle_thoughts_rate * thoughts_mult * depth_thoughts_mult * _get_shop_boost() * delta
 	control += idle_control_rate * control_mult * delta
 	
-	# SYNC instability FROM DepthRunController (source of truth)
-	var drc := get_node_or_null("/root/DepthRunController")
-	if drc != null:
-		instability = drc.get("instability")
+	# Instability calculation
+	var instab_per_sec := depth_meta_system.get_instability_per_sec(current_depth)
+	var instability_mult: float = _safe_mult(upgrade_manager.get_instability_mult()) * _safe_mult(perk_system.get_instability_mult()) * _safe_mult(nightmare_system.get_thoughts_mult())
+	if perm_perk_system != null:
+		instability_mult *= _safe_mult(perm_perk_system.get_instability_mult())
 	
-	_crack_sync_timer += delta
-	if _crack_sync_timer >= 0.1:
-		_crack_sync_timer = 0.0
-		_sync_cracks()
+	instability += instab_per_sec * delta * instability_mult
+	
+	# Check for death
+	if depth_meta_system != null:
+		var cap := depth_meta_system.get_instability_cap(current_depth)
+		if current_depth >= 2 and instability >= cap:  # Only fail for depth 2+
+			do_fail()
+			return
+	
+	_sync_cracks()
 	
 	total_thoughts_earned = maxf(total_thoughts_earned, thoughts)
 	max_instability = maxf(max_instability, instability)
@@ -2169,15 +2383,17 @@ func _process(delta: float) -> void:
 		_last_control_sample = control
 		_rate_sample_timer = 0.0
 	
-	
-	thoughts_to_add = idle_thoughts_rate * thoughts_mult * depth_thoughts_mult * _get_shop_boost() * delta
-	
-	
-	# Your existing line (keep this):
-	thoughts += thoughts_to_add
-		# Generate thoughts and control (KEEP THIS ONE - DELETE THE DUPLICATE AT BOTTOM)
-	thoughts += idle_thoughts_rate * thoughts_mult * depth_thoughts_mult * _get_shop_boost() * delta
-	control += idle_control_rate * control_mult * delta
+	var thoughts_ps_display := idle_thoughts_rate * thoughts_mult * depth_thoughts_mult * _get_shop_boost()
+	var control_ps_display := idle_control_rate * control_mult
+
+	var drc := get_node_or_null("/root/DepthRunController")
+	if drc != null:
+		drc.instability = instability
+		drc.instability_per_sec = get_idle_instability_gain_per_sec()
+		drc.set("thoughts", thoughts)
+		drc.set("control", control)
+		drc.set("thoughts_per_sec", thoughts_ps_display)
+		drc.set("control_per_sec", control_ps_display)
 	
 	_refresh_top_ui()
 	_update_buttons_ui()
@@ -2186,16 +2402,92 @@ func _process(delta: float) -> void:
 	
 	if _debug_visible:
 		_update_debug_overlay()
-	
-	if instability >= 100.0:
-		do_fail()
-	
-			
 
+func _update_depth_progress(delta: float, current_depth: int) -> void:
+	var drc := get_node_or_null("/root/DepthRunController")
+	if drc == null:
+		return
+	
+	# CRITICAL FIX: Safe type checking instead of invalid cast
+	var run_data_variant = drc.get("run")
+	if run_data_variant == null:
+		return
+	if typeof(run_data_variant) != TYPE_ARRAY:
+		push_warning("Run data is not an array, got type: " + str(typeof(run_data_variant)))
+		return
+	
+	var run_data: Array = run_data_variant
+	
+	if current_depth < 1 or current_depth > run_data.size():
+		return
+	
+	var depth_data = run_data[current_depth - 1]
+	if depth_data == null or typeof(depth_data) != TYPE_DICTIONARY:
+		return
+	
+	# Initialize depth 1 upgrades if missing
+	var local_upgs = drc.get("local_upgrades")
+	if local_upgs == null or not (local_upgs is Dictionary):
+		local_upgs = {}
+		drc.set("local_upgrades", local_upgs)
+	
+	if not local_upgs.has(1):
+		local_upgs[1] = {}
+		drc.set("local_upgrades", local_upgs)
+	
+	var depth_upgs = local_upgs.get(current_depth, {})
+	if depth_upgs == null:
+		depth_upgs = {}
+	
+	# Get cap safely
+	var cap: float = 1000.0
+	if drc.has_method("get_depth_progress_cap"):
+		cap = drc.call("get_depth_progress_cap", current_depth)
+	
+	# Calculate progress
+	var base_rate: float = cap / 100.0
+	var speed_lvl: int = int(depth_upgs.get("progress_speed", 0))
+	var speed_mult: float = 1.0 + (speed_lvl * 0.25)
+	
+	if overclock_system != null and overclock_system.active:
+		speed_mult *= 2.0
+	
+	var increment: float = base_rate * speed_mult * delta
+	var current_progress: float = float(depth_data.get("progress", 0.0))
+	var new_progress: float = minf(cap, current_progress + increment)
+	
+	# Calculate memories/crystals
+	var base_mem: float = float(drc.get("base_memories_per_sec"))
+	var base_cry: float = float(drc.get("base_crystals_per_sec"))
+	if base_mem <= 0: base_mem = 0.5
+	if base_cry <= 0: base_cry = 0.3
+	
+	var mem_lvl: int = int(depth_upgs.get("memories_gain", 0))
+	var cry_lvl: int = int(depth_upgs.get("crystals_gain", 0))
+	var mem_mult: float = 1.0 + (0.15 * float(mem_lvl))
+	var cry_mult: float = 1.0 + (0.12 * float(cry_lvl))
+	
+	# Update data
+	depth_data["progress"] = new_progress
+	depth_data["memories"] = float(depth_data.get("memories", 0.0)) + (base_mem * mem_mult * delta)
+	depth_data["crystals"] = float(depth_data.get("crystals", 0.0)) + (base_cry * cry_mult * delta)
+	
+	# Write back to DRC's run array
+	run_data[current_depth - 1] = depth_data
+	drc.set("run", run_data)
+	
+	# Update panel
+	var panel = get_tree().current_scene.find_child("DepthBarsPanel", true, false)
+	if panel != null and panel.has_method("set_row_data"):
+		panel.call("set_row_data", current_depth, depth_data)
+
+
+	
 func _get_shop_boost() -> float:
 	var shop_panel = get_tree().current_scene.find_child("ShopPanel", true, false)
 	if shop_panel:
-		return shop_panel.get_active_thoughts_multiplier()
+		var mult = shop_panel.get_active_thoughts_multiplier()
+		return mult if mult > 0 else 1.0  # Prevent 0
 	return 1.0
 	
 func _get_depth_progress_multiplier() -> float:
@@ -2233,14 +2525,55 @@ func _show_fail_save_prompt() -> void:
 		do_fail()
 		return
 	
-	var popup := PanelContainer.new()
-	popup.name = "FailSavePopup"
-	popup.set_anchors_preset(Control.PRESET_CENTER)
-	popup.custom_minimum_size = Vector2(400, 200)
-	popup.z_index = 300  # HIGHER than depth bars to appear on top
+	# Check if DRC exists and has run data
+	var drc := get_node_or_null("/root/DepthRunController")
+	if drc == null:
+		do_fail()
+		return
+		
+	var run_data = drc.get("run")
+	if run_data == null or not (run_data is Array):
+		do_fail()
+		return
 	
+	# Create CanvasLayer to ensure we're above EVERYTHING
+	var canvas_layer := CanvasLayer.new()
+	canvas_layer.name = "FailSaveLayer"
+	canvas_layer.layer = 300
+	_fail_save_popup = canvas_layer
+	
+	get_tree().current_scene.add_child(canvas_layer)
+	
+	# Dimmer background
+	var dimmer := ColorRect.new()
+	dimmer.name = "Dimmer"
+	dimmer.color = Color(0, 0, 0, 0.6)
+	dimmer.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dimmer.mouse_filter = Control.MOUSE_FILTER_STOP
+	canvas_layer.add_child(dimmer)
+	
+	# Click outside to cancel
+	dimmer.gui_input.connect(func(ev: InputEvent):
+		if ev is InputEventMouseButton and (ev as InputEventMouseButton).pressed:
+			_close_fail_save()
+			do_fail()
+	)
+	
+	# Center container
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	canvas_layer.add_child(center)
+	
+	# Popup panel
+	var panel := Panel.new()
+	panel.name = "FailSavePanel"
+	panel.custom_minimum_size = Vector2(400, 200)
+	center.add_child(panel)
+	
+	# Style the panel
 	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0.04, 0.07, 0.12, 0.98)  # More opaque background
+	sb.bg_color = Color(0.04, 0.07, 0.12, 0.98)
 	sb.border_color = Color(0.24, 0.67, 0.94, 1.0)
 	sb.border_width_left = 2
 	sb.border_width_top = 2
@@ -2250,46 +2583,69 @@ func _show_fail_save_prompt() -> void:
 	sb.corner_radius_top_right = 12
 	sb.corner_radius_bottom_left = 12
 	sb.corner_radius_bottom_right = 12
-	popup.add_theme_stylebox_override("panel", sb)
+	panel.add_theme_stylebox_override("panel", sb)
+	
+	# Content
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 20)
+	margin.add_theme_constant_override("margin_right", 20)
+	margin.add_theme_constant_override("margin_top", 20)
+	margin.add_theme_constant_override("margin_bottom", 20)
+	panel.add_child(margin)
 	
 	var vbox := VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 12)
-	popup.add_child(vbox)
+	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	margin.add_child(vbox)
 	
+	# Title
 	var title := Label.new()
 	title.text = "Instability Critical!"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 20)
+	title.add_theme_color_override("font_color", Color(0.35, 0.8, 0.95, 1.0))
 	vbox.add_child(title)
 	
+	# Description
 	var desc := Label.new()
 	desc.text = "Watch an ad to stabilize your mind and continue?"
 	desc.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	desc.autowrap_mode = TextServer.AUTOWRAP_WORD
 	vbox.add_child(desc)
 	
+	# Buttons
 	var hbox := HBoxContainer.new()
 	hbox.add_theme_constant_override("separation", 12)
+	hbox.alignment = BoxContainer.ALIGNMENT_CENTER
 	vbox.add_child(hbox)
 	
 	var watch_btn := Button.new()
 	watch_btn.text = "Watch Ad (Continue)"
 	watch_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	watch_btn.pressed.connect(Callable(self, "_on_watch_ad_save").bind(popup))
+	watch_btn.pressed.connect(func():
+		_close_fail_save()
+		if ad_service != null:
+			ad_service.show_rewarded(AdService.AD_FAIL_SAVE)
+		instability = 75.0
+		_sync_cracks()
+		_fail_save_used = true
+		await get_tree().create_timer(3.0).timeout
+		_fail_save_used = false
+		_fail_save_prompt_shown = false
+	)
 	hbox.add_child(watch_btn)
 	
 	var give_up_btn := Button.new()
 	give_up_btn.text = "Give Up"
 	give_up_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	give_up_btn.pressed.connect(Callable(self, "_on_give_up").bind(popup))
+	give_up_btn.pressed.connect(func():
+		_close_fail_save()
+		_fail_save_prompt_shown = false
+		do_fail()
+	)
 	hbox.add_child(give_up_btn)
 	
-	# Add to a CanvasLayer to ensure it's on top of everything
-	var layer := CanvasLayer.new()
-	layer.layer = 100  # Above everything else
-	layer.add_child(popup)
-	add_child(layer)
-	
+	canvas_layer.visible = true
 	set_process(false)
 	
 func _on_watch_ad_save(layer: Node) -> void:
@@ -2607,17 +2963,15 @@ func is_auto_buy_unlocked_for_depth(depth: int) -> bool:
 	# Check DepthMetaSystem for Automated Mind upgrades
 	var meta = get_tree().current_scene.find_child("DepthMetaSystem", true, false)
 	if meta != null and meta.has_method("get_level"):
-		# Automated Mind I is in Depth 3, unlocks auto-buy for Depth 1
-		if depth == 1:
-			var automated_mind_1 = meta.call("get_level", 3, "automated_mind")
-			if automated_mind_1 >= 1:
-				return true
+		# Pattern discovered from debug:
+		# - automated_mind_1 is bought in Depth 3, unlocks auto-buy for Depth 1
+		# - automated_mind_2 is bought in Depth 4, unlocks auto-buy for Depth 2  
+		# - automated_mind_3 is bought in Depth 5, unlocks auto-buy for Depth 3
+		var upgrade_id := "automated_mind_" + str(depth)
+		var source_depth := depth + 2  # Depth 3 has upgrade for depth 1, etc.
 		
-		# Automated Mind II would be in Depth 6, unlocks Depth 2
-		if depth == 2:
-			var automated_mind_2 = meta.call("get_level", 6, "automated_mind_2")
-			if automated_mind_2 >= 1:
-				return true
+		if meta.call("get_level", source_depth, upgrade_id) >= 1:
+			return true
 	
 	# Check shop early unlock
 	var shop = get_tree().current_scene.find_child("ShopPanel", true, false)
@@ -2660,78 +3014,119 @@ func fix_depth1_text_color() -> void:
 			desc_label.add_theme_color_override("font_shadow_color", Color(1, 1, 1, 0.5))  # White shadow for contrast
 
 func on_manual_focus_clicked() -> void:
-	# Calculate base click power
 	var base_power := get_click_power()
-	
-	# Calculate combo multiplier
 	var combo_mult := get_combo_multiplier()
-	
-	# Calculate idle bonus from Deep Resonance
 	var idle_bonus := get_click_idle_bonus()
 	var idle_portion := get_idle_thoughts_per_second() * idle_bonus
-	
-	# Total thoughts gained
 	var thoughts_gained := (base_power * combo_mult) + idle_portion
 	
-	# Apply gains
 	thoughts += thoughts_gained
 	total_thoughts_earned += thoughts_gained
-	
-	# Control gain (scales with combo)
 	control += click_control_gain * combo_mult
 	
-	# Instability reduction
-	if click_instability_reduction > 0:
-		instability = maxf(0.0, instability - click_instability_reduction)
+	# REMOVED: Instability reduction - only Stabilize button should do this
+	# if click_instability_reduction > 0:
+	# 	instability = maxf(0.0, instability - click_instability_reduction)
 	
-	# Register combo
 	_register_click_for_combo()
-	
-	# Visual feedback
-	@warning_ignore("standalone_expression")
-	_show_click_feedback
+	_show_click_feedback(thoughts_gained, "thoughts")
 	_refresh_top_ui()
 	
-	# Notify tutorial
 	var tm = get_node_or_null("/root/TutorialManage")
 	if tm and tm.has_method("on_ui_element_clicked"):
 		tm.on_ui_element_clicked("FocusButton")
 
 func get_click_power() -> float:
-	# Was: 5 * 1.35^level (exponential)
-	# Now: Linear base + moderate exponential to keep early levels relevant
-	var linear_component := CLICK_POWER_BASE * (1.0 + float(click_power_level) * 0.5)
-	var exp_component := pow(1.25, click_power_level)
-	var depth_mult := 1.0 + (get_current_depth() * 0.08)  # Slightly reduced from 0.1
-	return linear_component * exp_component * depth_mult
+	var base := 10.0 * pow(10.0, float(click_power_level) / 3.0)
+	var milestones := _get_milestone_count(click_power_level)
+	var milestone_mult := pow(1.5, milestones)
+	var evolution_mult := pow(2.0, click_power_evolution)
+	
+	return base * milestone_mult * evolution_mult * power_sacrifice_penalty
+
+func get_click_stability_reduction() -> float:
+	var base := 5.0 * pow(1.15, float(click_stability_level))
+	var milestones := _get_milestone_count(click_stability_level)
+	var milestone_mult := pow(1.3, milestones)
+	var evolution_mult := pow(2.0, click_stability_evolution)
+	
+	return base * milestone_mult * evolution_mult * stability_sacrifice_penalty
+
+func get_click_control_gain() -> float:
+	var base := 0.5 * pow(1.2, float(click_control_level))
+	var milestones := _get_milestone_count(click_control_level)
+	var milestone_mult := pow(1.4, milestones)
+	var evolution_mult := pow(2.0, click_control_evolution)
+	
+	return base * milestone_mult * evolution_mult * control_sacrifice_penalty
+
+func get_combo_window() -> float:
+	var base := 2.0 + (float(click_flow_level) * 0.02)
+	var milestones := _get_milestone_count(click_flow_level)
+	base += milestones * 0.5  # +0.5s per milestone
+	return base * flow_sacrifice_penalty
 
 func get_combo_multiplier() -> float:
-	if click_flow_level <= 0 or _click_combo_count <= 1:
+	if click_flow_level <= 0:
 		return 1.0
-	
-	# +15% per combo level, max 5 stacks
-	var per_click_bonus := 0.15 + (click_flow_level * 0.02)  # 0.17 to 0.33
-	var max_stacks := 5
-	var current_stacks := mini(_click_combo_count - 1, max_stacks)
-	
-	return 1.0 + (per_click_bonus * current_stacks)
+	var base_mult := 1.0 + (float(click_flow_level) * 0.005)
+	var milestones := _get_milestone_count(click_flow_level)
+	base_mult *= pow(1.2, milestones)  # ×1.2 per milestone
+	return base_mult * flow_sacrifice_penalty
 
 func get_click_idle_bonus() -> float:
-	# Deep Resonance: 0% at level 0, up to 25% at level 10
 	if click_resonance_level <= 0:
 		return 0.0
-	return (click_resonance_level * 0.025)  # 2.5% per level
+	var base := float(click_resonance_level) * 0.001  # 0.1% per level
+	var milestones := _get_milestone_count(click_resonance_level)
+	base *= pow(1.5, milestones)
+	return base * resonance_sacrifice_penalty
 
-func _register_click_for_combo() -> void:
-	_click_combo_count += 1
-	# Window increases slightly with Flow State levels
-	var window_bonus := click_flow_level * 0.15  # +0.15s per level
-	_click_combo_timer = _click_combo_window + window_bonus
+func _get_milestone_count(level: int) -> int:
+	var milestones := 0
+	for m in [10, 25, 50, 100, 200, 300, 400, 500, 750, 1000]:
+		if level >= m:
+			milestones += 1
+	return milestones
 
+func can_evolve(upgrade_type: String) -> bool:
+	var level := 0
+	match upgrade_type:
+		"power": level = click_power_level
+		"control": level = click_control_level
+		"stability": level = click_stability_level
+		"flow": level = click_flow_level
+		"resonance": level = click_resonance_level
+	return level >= 1000
 
-func _show_click_feedback(amount: float, type: String) -> void:
-	print("CLICKED: ", type, " +", amount)
-	# Add visual feedback here if you want
+func evolve_upgrade(upgrade_type: String, sacrifice_type: String) -> bool:
+	if not can_evolve(upgrade_type):
+		return false
+	
+	# Apply evolution
+	match upgrade_type:
+		"power": click_power_evolution += 1
+		"control": click_control_evolution += 1
+		"stability": click_stability_evolution += 1
+		"flow": click_flow_evolution += 1
+		"resonance": click_resonance_evolution += 1
+	
+	# Apply sacrifice penalty (-50%, stacks multiplicatively)
+	var penalty := 0.5
+	# Evolution Mastery reduces penalty
+	if perm_perk_system != null:
+		var mastery := perm_perk_system.get_evolution_mastery_reduction()
+		penalty = 0.5 - mastery  # Level 10 mastery = 0.4 penalty (only -40%)
+	
+	match sacrifice_type:
+		"power": power_sacrifice_penalty *= penalty
+		"control": control_sacrifice_penalty *= penalty
+		"stability": stability_sacrifice_penalty *= penalty
+		"flow": flow_sacrifice_penalty *= penalty
+		"resonance": resonance_sacrifice_penalty *= penalty
+	
+	save_game()
+	return true
 
 func _get_total_idle_multiplier() -> float:
 	# Calculate just the multipliers that apply to idle generation
@@ -2833,23 +3228,19 @@ func recalculate_click_stats() -> void:
 	click_instability_reduction = float(click_stability_level) * 0.8
 
 func get_click_power_cost() -> float:
-	# Was: 50 * 1.6^level (too steep: L5=524, L10=17k)
-	# Now: Polynomial growth - expensive but reachable
-	return 50.0 * pow(float(click_power_level + 1), 2.2) * pow(1.35, click_power_level)
-
-func get_click_control_cost() -> float:
-	return 40.0 * pow(float(click_control_level + 1), 2.0) * pow(1.3, click_control_level)
+	return 50.0 * pow(10.0, float(click_power_level) / 2.5)
 
 func get_click_stability_cost() -> float:
-	return 45.0 * pow(float(click_stability_level + 1), 2.1) * pow(1.32, click_stability_level)
+	return 100.0 * pow(10.0, float(click_stability_level) / 2.8)
+
+func get_click_control_cost() -> float:
+	return 75.0 * pow(10.0, float(click_control_level) / 2.6)
 
 func get_click_flow_cost() -> float:
-	# Flow is powerful (combo multipliers), so keep it pricier
-	return 75.0 * pow(float(click_flow_level + 1), 2.3) * pow(1.4, click_flow_level)
+	return 150.0 * pow(10.0, float(click_flow_level) / 2.4)
 
 func get_click_resonance_cost() -> float:
-	# Idle bonus is very strong late-game
-	return 100.0 * pow(float(click_resonance_level + 1), 2.4) * pow(1.45, click_resonance_level)
+	return 200.0 * pow(10.0, float(click_resonance_level) / 2.3)
 
 # Don't forget to fix the path here:
 func _create_click_upgrade_panel() -> void:
@@ -3012,7 +3403,7 @@ func _create_click_upgrade_sidebar() -> void:
 	var panel := PanelContainer.new()
 	panel.name = "ExpandedPanel"
 	panel.position = Vector2(-450, -250)  # Hidden off-screen to left initially
-	panel.custom_minimum_size = Vector2(450, 500)
+	panel.custom_minimum_size = Vector2(450, 0)  # Auto-height based on content
 	panel.visible = false
 	
 	# Panel style
@@ -3057,18 +3448,13 @@ func _create_click_upgrade_sidebar() -> void:
 	
 	vbox.add_child(HSeparator.new())
 	
-	# Scroll and rows
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	vbox.add_child(scroll)
-	
 	var rows_vbox := VBoxContainer.new()
 	rows_vbox.name = "RowsContainer"
-	rows_vbox.add_theme_constant_override("separation", 8)
+	rows_vbox.add_theme_constant_override("separation", 12)
 	rows_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(rows_vbox)
-	
+	# Don't expand vertical - let it grow naturally
+	vbox.add_child(rows_vbox)
+		
 	var upgrade_types := ["power", "control", "stability", "flow", "resonance"]
 	for type in upgrade_types:
 		if ResourceLoader.exists("res://UI/ClickUpgradeRow.gd"):
@@ -3077,8 +3463,21 @@ func _create_click_upgrade_sidebar() -> void:
 			row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			rows_vbox.add_child(row)
 	
+	var panel_bg := StyleBoxFlat.new()
+	panel_bg.bg_color = Color(0.05, 0.06, 0.08, 1.0)  # Fully opaque
+	panel_bg.border_color = Color(0.4, 0.6, 0.9, 0.6)
+	panel_bg.border_width_left = 2
+	panel_bg.border_width_top = 2
+	panel_bg.border_width_right = 2
+	panel_bg.border_width_bottom = 2
+	panel.add_theme_stylebox_override("panel", panel_bg)
+
+	# Ensure it draws on top
+	panel.z_index = 100
+	
 	click_upgrade_sidebar.add_child(panel)
 	click_upgrade_panel = panel
+	click_upgrade_panel.custom_minimum_size = Vector2(450, 0) 
 
 func _toggle_click_upgrade_panel() -> void:
 	if click_upgrade_sidebar == null:
@@ -3128,6 +3527,23 @@ func _setup_click_buttons() -> void:
 			instability_btn.pressed.connect(_on_click_instability)
 		_style_click_button(instability_btn, "❄️ Calm", Color(0.9, 0.5, 0.5))  # Red/calm
 
+func _register_click_for_combo() -> void:
+	_click_combo_count += 1
+	_click_combo_timer = get_combo_window()
+
+func _show_click_feedback(_amount: float, _type: String) -> void:
+	# Optional visual feedback - can be empty for now
+	pass
+	
+func _on_click_instability() -> void:
+	# Reduce instability by flat amount (absolute system, not %)
+	var reduction := click_instability_reduction  # e.g., 5.0 points per click
+	instability = maxf(0.0, instability - reduction)
+	_register_click_for_combo()
+	_show_click_feedback(reduction, "instability")
+	_refresh_top_ui()
+	
+
 func _style_click_button(btn: Button, text: String, accent: Color) -> void:
 	btn.text = text
 	btn.custom_minimum_size = Vector2(140, 60)
@@ -3146,20 +3562,100 @@ func _style_click_button(btn: Button, text: String, accent: Color) -> void:
 	sb.corner_radius_bottom_right = 8
 	btn.add_theme_stylebox_override("normal", sb)
 
-func _on_click_control() -> void:
-	if get_click_control_cost() <= 0:  # Or however you check affordability
+func _connect_click_buttons() -> void:
+	var click_row := get_tree().current_scene.find_child("ClickRow", true, false)
+	if click_row == null:
 		return
+	
+	# Map button names to functions
+	var connections := {
+		"Think": on_manual_focus_clicked,           # or _on_click_think
+		"Control": _on_click_control,
+		"Stabilize": _on_click_stabilize,
+		# Fallback names if different
+		"ClickThoughts": on_manual_focus_clicked,
+		"ClickControl": _on_click_control,
+		"ClickInstability": _on_click_stabilize
+	}
+	
+	for btn_name in connections.keys():
+		var btn := click_row.find_child(btn_name, false, false) as Button
+		if btn and not btn.pressed.is_connected(connections[btn_name]):
+			btn.pressed.connect(connections[btn_name])
+			print("Connected: ", btn_name)
+
+func _on_click_think() -> void:
+	# Generate thoughts based on click power upgrade
+	var base_power := get_click_power()
+	var combo := get_combo_multiplier()
+	var idle_bonus := get_click_idle_bonus()
+	
+	var thoughts_gained := (base_power * combo) + (get_idle_thoughts_per_second() * idle_bonus)
+	thoughts += thoughts_gained
+	total_thoughts_earned += thoughts_gained
+	
+	_register_click_for_combo()
+	_show_click_feedback(thoughts_gained, "thoughts")
+	_refresh_top_ui()
+
+func _on_click_control() -> void:
 	var gain := click_control_gain * get_combo_multiplier()
 	control += gain
 	_register_click_for_combo()
 	_show_click_feedback(gain, "control")
 	_refresh_top_ui()
 
-func _on_click_instability() -> void:
-	if click_instability_reduction <= 0:
-		return
+func _on_click_stabilize() -> void:
 	var reduction := click_instability_reduction
+	if reduction <= 0.0:
+		return  # No levels purchased
+	
+	# Apply reduction
 	instability = maxf(0.0, instability - reduction)
+	
+	# Push to DRC so save/load keeps the stabilized value
+	var drc := get_node_or_null("/root/DepthRunController")
+	if drc != null:
+		drc.instability = instability
+	
 	_register_click_for_combo()
 	_show_click_feedback(reduction, "instability")
 	_refresh_top_ui()
+
+func _style_instability_bar() -> void:
+	if instability_bar == null:
+		return
+	
+	# Width: Make it much wider (900px minimum)
+	instability_bar.custom_minimum_size = Vector2(900, 30)
+	instability_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	
+	# BACKGROUND (dark track)
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = Color(0.08, 0.08, 0.12, 0.8)
+	bg.border_color = Color(0.3, 0.3, 0.4, 0.8)
+	bg.border_width_left = 1
+	bg.border_width_top = 1
+	bg.border_width_right = 1
+	bg.border_width_bottom = 1
+	bg.corner_radius_top_left = 4
+	bg.corner_radius_top_right = 4
+	bg.corner_radius_bottom_left = 4
+	bg.corner_radius_bottom_right = 4
+	
+	# FILL (red progress)
+	var fill := StyleBoxFlat.new()
+	fill.bg_color = Color(0.9, 0.15, 0.15, 1.0)  # Bright red
+	fill.corner_radius_top_left = 3
+	fill.corner_radius_top_right = 3
+	fill.corner_radius_bottom_left = 3
+	fill.corner_radius_bottom_right = 3
+	
+	instability_bar.add_theme_stylebox_override("background", bg)
+	instability_bar.add_theme_stylebox_override("fill", fill)
+
+func _close_fail_save() -> void:
+	if _fail_save_popup != null and is_instance_valid(_fail_save_popup):
+		_fail_save_popup.queue_free()
+	_fail_save_popup = null
+	set_process(true)

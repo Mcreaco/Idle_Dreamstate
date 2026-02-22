@@ -36,6 +36,9 @@ var _frozen_upgrades: Dictionary = {}
 
 var _run: Node = null
 
+var _purchase_cooldown: float = 0.0
+const PURCHASE_COOLDOWN: float = 0.3  # 300ms between purchases
+
 # Scene nodes
 var progress_bar: ProgressBar = null
 var percent_label: Label = null
@@ -469,18 +472,36 @@ func _apply_visuals() -> void:
 	if _locked:
 		display_pct = 0.0
 	elif _active or _frozen:
-		display_pct = _data.get("progress", 0.0) * 100.0
+		# Get cap and normalize progress to 0-100 range for ProgressBar
+		var drc := get_node_or_null("/root/DepthRunController")
+		var cap: float = 1000.0
+		if drc != null and drc.has_method("get_depth_progress_cap"):
+			cap = drc.call("get_depth_progress_cap", depth_index)
+		
+		var current_progress: float = float(_data.get("progress", 0.0))
+		# REMOVED: Debug print that was spamming console
+		# print("DEBUG Row ", depth_index, ": progress=", current_progress, " cap=", cap, " display_pct=", display_pct)
+		
+		# Normalize to 0-100 for ProgressBar
+		if cap > 0:
+			display_pct = (current_progress / cap) * 100.0
 	else:
 		display_pct = 0.0
 
 	if progress_bar != null:
 		progress_bar.value = display_pct
 		progress_bar.show_percentage = false
+	
+	# Update text label to show "X / X" format
+	if percent_label != null:
+		var drc := get_node_or_null("/root/DepthRunController")
+		var cap: float = 1000.0
+		if drc != null and drc.has_method("get_depth_progress_cap"):
+			cap = drc.call("get_depth_progress_cap", depth_index)
+		var current: float = float(_data.get("progress", 0.0))
+		percent_label.text = "%s / %s" % [_fmt_num(current), _fmt_num(cap)]
 
-	if percent_label != null and progress_bar != null:
-		percent_label.text = "%d%%" % int(round(display_pct))
-
-	# NULL CHECKS ADDED HERE:
+	# Update title and rewards
 	if _title_label != null:
 		_title_label.text = _depth_title_text()
 
@@ -490,8 +511,8 @@ func _apply_visuals() -> void:
 		if depth_index == 4:
 			var drc := get_node_or_null("/root/DepthRunController")
 			if drc != null:
-				var local_upgs := drc.get("local_upgrades") as Dictionary
-				if local_upgs.has(4):
+				var local_upgs = drc.get("local_upgrades")
+				if local_upgs is Dictionary and local_upgs.has(4):
 					var dark_adapt := int(local_upgs[4].get("dark_adaptation", 0))
 					if dark_adapt == 0:
 						show_hidden = true
@@ -501,7 +522,6 @@ func _apply_visuals() -> void:
 		else:
 			var mem := float(_data.get("memories", 0.0))
 			var cry := float(_data.get("crystals", 0.0))
-			# FIX: Use _fmt_num for proper scaling (K, M, B, T, e+)
 			_reward_label.text = "+%s Mem  +%s %s" % [_fmt_num(mem), _fmt_num(cry), _crystal_name()]
 
 	if dive_button != null:
@@ -511,7 +531,7 @@ func _apply_visuals() -> void:
 		
 		# Force enable if we're at depth 1 and unlock is bought (special case)
 		if depth_index == 1 and _active:
-			var meta := _depth_meta()
+			var meta = _depth_meta()
 			if meta != null and meta.has_method("is_next_depth_unlocked"):
 				if meta.call("is_next_depth_unlocked", 1):
 					can = true
@@ -530,19 +550,6 @@ func _apply_visuals() -> void:
 		if _overlay_mode or _details_open:
 			a = 1.0
 		_row_bg.modulate = Color(1, 1, 1, a)
-		
-	# If Murk and not upgraded, hide crystal numbers
-	if depth_index == 4:
-		var dark_adapt := 0 # Get from local upgrades
-		if dark_adapt == 0:
-			_reward_label.text = "+??? Mem  +??? %s" % _crystal_name()
-		else:
-			# Show partial based on upgrade level
-			var mem := float(_data.get("memories", 0.0))
-			var cry := float(_data.get("crystals", 0.0))
-			# FIX: Use _fmt_num here too
-			_reward_label.text = "+%s Mem  +%s %s" % [_fmt_num(mem), _fmt_num(cry), _crystal_name()]
-
 
 # NEW: Calculate upgrade completion % for this depth
 func _get_upgrade_completion_percent() -> float:
@@ -1088,14 +1095,23 @@ func _show_dive_confirmation() -> void:
 		if gm != null and gm.has_method("do_dive"):
 			gm.call("do_dive")
 		
-		# 2. CRITICAL: Explicitly refresh the panel immediately
-		var bars_panel = get_tree().current_scene.find_child("DepthBarsPanel", true, false)  # Changed name
-		var drc = get_node_or_null("/root/DepthRunController")
-		if bars_panel != null and drc != null:  # Changed variable name here too
-			var new_depth = drc.get("active_depth")
-			print("Setting panel active depth to: ", new_depth)
-			bars_panel.call("set_active_depth", int(new_depth))
-			bars_panel.call("_apply_row_states")  # Force immediate refresh
+			# 2. CRITICAL: Explicitly refresh the panel immediately
+			var bars_panel = get_tree().current_scene.find_child("DepthBarsPanel", true, false)
+			if bars_panel == null:
+				bars_panel = get_tree().current_scene.find_child("DepthBarPanel", true, false)  # INDENT THIS LINE
+			var drc = get_node_or_null("/root/DepthRunController")
+			if bars_panel != null and drc != null:
+				var new_depth = drc.get("active_depth")
+				print("Setting panel active depth to: ", new_depth)
+				if bars_panel.has_method("set_active_depth"):
+					bars_panel.call("set_active_depth", int(new_depth))
+				else:
+					push_warning("DepthBarsPanel missing set_active_depth method")
+					
+				if bars_panel.has_method("_apply_row_states"):
+					bars_panel.call("_apply_row_states")
+				elif bars_panel.has_method("refresh_rows"):
+					bars_panel.call("refresh_rows")
 		
 		# 3. Close popup
 		_close_dive_confirmation()
@@ -1149,7 +1165,6 @@ func _proceed_with_dive() -> void:
 	if drc != null and panel != null:
 		var new_depth = drc.get("active_depth")
 		if new_depth != null:
-			print("Updating panel to new depth: ", new_depth)
 			panel.call("set_active_depth", int(new_depth))
 			# Also trigger a full row state refresh
 			panel.call("_apply_row_states")
@@ -1199,16 +1214,20 @@ func _add_upgrade_row_dynamic(id: String, data: Dictionary) -> void:
 	var show_auto_buy := false
 	var gm = get_tree().current_scene.find_child("GameManager", true, false)
 	if gm != null:
-		# Check array directly
-		if depth_index in gm.auto_buy_unlocked_depths:
-			show_auto_buy = true
-			print("Auto-buy enabled for depth ", depth_index, " via array")
+		if gm.has_method("is_auto_buy_unlocked_for_depth"):
+			if gm.call("is_auto_buy_unlocked_for_depth", depth_index):
+				show_auto_buy = true
+				print("Auto-buy enabled for depth ", depth_index, " via meta check")
 		
 		# Debug output
 		if gm.has_method("is_auto_buy_unlocked_for_depth"):
 			var method_result = gm.call("is_auto_buy_unlocked_for_depth", depth_index)
 			print("Depth ", depth_index, " auto_buy check: array=", depth_index in gm.auto_buy_unlocked_depths, " method=", method_result)
 
+	if depth_index == 1:
+		if gm != null:
+			print("Auto-buy check: depth 1 in array? ", 1 in gm.auto_buy_unlocked_depths)
+		
 	if show_auto_buy:
 		var auto_check := CheckBox.new()
 		auto_check.name = "AutoCheck"
@@ -1280,6 +1299,13 @@ func _add_upgrade_row_dynamic(id: String, data: Dictionary) -> void:
 	_apply_blue_button_style(btn)
 	btn.custom_minimum_size = Vector2(50, 50)
 	
+	for conn in btn.pressed.get_connections():
+		btn.pressed.disconnect(conn["callable"])
+
+# Then connect
+	btn.pressed.connect(func():
+		_attempt_purchase(id, data)
+	)
 	# Store references for real-time updates
 	_upgrade_ui_refs[id] = {
 		"button": btn,
@@ -1306,6 +1332,7 @@ func _add_upgrade_row_dynamic(id: String, data: Dictionary) -> void:
 	upgrades_box.add_child(row)
 
 func _attempt_purchase(id: String, data: Dictionary) -> bool:
+	# First declare all variables
 	var game_mgr := get_tree().current_scene.find_child("GameManager", true, false) as GameManager
 	if game_mgr == null:
 		return false
@@ -1319,11 +1346,17 @@ func _attempt_purchase(id: String, data: Dictionary) -> bool:
 	var base_cost: float = data.get("base_cost", 100.0)
 	var growth: float = data.get("cost_growth", 1.5)
 	var depth_multiplier := pow(float(depth_index), 2.5) * 3.0
-	var effective_base := base_cost * depth_multiplier
-	var current_cost := effective_base * pow(growth, current_lvl)
+	var current_cost := base_cost * depth_multiplier * pow(growth, current_lvl)
 	
+	# THEN check cooldown (after declaring current_cost)
+	if _purchase_cooldown > 0:
+		print("Purchase on cooldown, skipping")
+		return false
+	
+	# Apply cooldown and purchase
 	if game_mgr.thoughts >= current_cost:
 		game_mgr.thoughts -= current_cost
+		_purchase_cooldown = PURCHASE_COOLDOWN  # Set cooldown on success
 		
 		if _run != null and _run.has_method("add_local_upgrade"):
 			_run.call("add_local_upgrade", depth_index, id, 1)
@@ -1331,6 +1364,7 @@ func _attempt_purchase(id: String, data: Dictionary) -> bool:
 		if game_mgr.has_method("_refresh_top_ui"):
 			game_mgr._refresh_top_ui()
 		return true
+	
 	return false
 	
 func _update_upgrade_row_ui(id: String) -> void:
@@ -1351,7 +1385,7 @@ func _update_upgrade_row_ui(id: String) -> void:
 		current_thoughts = gm.thoughts
 	
 	var lvl := int(_local_upgrades.get(id, 0))
-	if max_lvl >= 999999:
+	if max_lvl >= 999:
 		lvl_label.text = "Lv %d" % lvl
 	else:
 		lvl_label.text = "Lv %d/%d" % [lvl, max_lvl]
@@ -1378,13 +1412,15 @@ func _update_upgrade_row_ui(id: String) -> void:
 		if lvl > 0:
 			cost_label.text += " (-%d%% inst)" % (lvl * 5)  # Show -5% per level
 			
+			
 
 func _process(_delta: float) -> void:
-	# ABSOLUTE SAFETY: Don't run if no checkboxes should exist
+	# CRITICAL: Always update visuals every frame regardless of details_open state
+	_apply_visuals()
+	
+	# Only process auto-buy when details are open
 	if not _details_open:
 		return
-	
-	_apply_visuals()
 	
 	# Only process for active depth
 	if _run != null:
@@ -1395,23 +1431,20 @@ func _process(_delta: float) -> void:
 	# Update cooldown
 	if _auto_buy_cooldown > 0:
 		_auto_buy_cooldown -= _delta
-	
+	# Update cooldown
+	if _purchase_cooldown > 0:
+		_purchase_cooldown -= _delta
+		
 	if _details_open and upgrades_box != null and upgrades_box.visible:
 		# Update UI states
 		for id in _upgrade_ui_refs.keys():
 			_update_upgrade_row_ui(id)
 		
-		# NUCLEAR AUTO-BUY: Only buy if explicitly enabled in dictionary
+		# Auto-buy logic (only if cooldown ready)
 		if _auto_buy_cooldown <= 0:
 			var game_mgr := get_tree().current_scene.find_child("GameManager", true, false) as GameManager
 			if game_mgr != null:
-				# Debug: Show current states
-				if Engine.get_process_frames() % 300 == 0:  # Every 5 seconds
-					print("Depth ", depth_index, " auto-buy states: ", _auto_buy_enabled)
-				
-				# Iterate through ALL upgrades but only buy checked ones
 				for id in _upgrade_ui_refs.keys():
-					# ABSOLUTE CHECK: Must exist AND be true
 					if _auto_buy_enabled.has(id) and _auto_buy_enabled[id] == true:
 						var current_lvl := int(_local_upgrades.get(id, 0))
 						
@@ -1420,40 +1453,15 @@ func _process(_delta: float) -> void:
 							var max_lvl: int = upg_data.get("max_level", 1)
 							
 							if current_lvl < max_lvl:
-								# Check cost
 								var base_cost: float = upg_data.get("base_cost", 100.0)
 								var growth: float = upg_data.get("cost_growth", 1.5)
 								var depth_multiplier := pow(float(depth_index), 2.5) * 3.0
 								var cost := (base_cost * depth_multiplier) * pow(growth, current_lvl)
 								
 								if game_mgr.thoughts >= cost:
-									# BUY IT
 									if _attempt_purchase(id, upg_data):
 										_auto_buy_cooldown = AUTO_BUY_DELAY
-										print("AUTO-BUY: ", id, " level ", current_lvl + 1)
-										break  # Only one per frame
-								else:
-									# Can't afford, skip
-									continue
-									
-		# NEW: Update the Focus button info label to show estimated thoughts gain
-		if _details_open and upgrades_box != null:
-			var click_info := upgrades_box.get_node_or_null("ClickInfoLabel")
-			if click_info != null:
-				var gm = get_tree().current_scene.find_child("GameManager", true, false)
-				if gm != null:
-					var meta := _depth_meta()
-					var click_level := 0
-					if meta != null:
-						click_level = int(meta.get_level(1, "manual_click"))
-					
-					var seconds := 1.0 + (click_level * 0.5)
-					# FIX: Use the idle-only calculation
-					var tps: float = gm.get_idle_thoughts_per_second()
-					var gain: float = tps * seconds
-					
-					var gain_str: String = gm._fmt_num(gain)
-					click_info.text = "(%.1fs of idle Thoughts = ~%s)" % [seconds, gain_str]
+										break
 
 func _refresh_upgrade_row(id: String, lvl_label: Label, btn: Button, max_lvl: int) -> void:
 	var current_lvl := int(_local_upgrades.get(id, 0))

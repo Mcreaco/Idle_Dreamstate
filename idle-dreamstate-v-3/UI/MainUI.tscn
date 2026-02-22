@@ -157,13 +157,14 @@ text = "Instability"
 horizontal_alignment = 1
 
 [node name="InstabilityBar" type="ProgressBar" parent="Root/TopBarPanel/TopBar/InstabilityCenter/InstabilityVBox"]
-custom_minimum_size = Vector2(360, 0)
+custom_minimum_size = Vector2(360, 30)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 tooltip_text = "Instability"
 theme_override_styles/background = SubResource("StyleBoxFlat_wa2eh")
 theme_override_styles/fill = SubResource("StyleBoxFlat_fdbdo")
+show_percentage = false
 
 [node name="InstabilityHint" type="Label" parent="Root/TopBarPanel/TopBar/InstabilityCenter/InstabilityVBox"]
 visible = false
@@ -281,7 +282,7 @@ layout_mode = 2
 size_flags_vertical = 4
 theme_override_constants/separation = 12
 
-[node name="ClickThoughts" type="Button" parent="Root/BottomBarPanel/ClickRow"]
+[node name="Think" type="Button" parent="Root/BottomBarPanel/ClickRow"]
 custom_minimum_size = Vector2(140, 60)
 layout_mode = 2
 size_flags_horizontal = 3
@@ -289,7 +290,7 @@ size_flags_vertical = 4
 theme_override_font_sizes/font_size = 18
 text = "🧠 Think"
 
-[node name="ClickControl" type="Button" parent="Root/BottomBarPanel/ClickRow"]
+[node name="Control" type="Button" parent="Root/BottomBarPanel/ClickRow"]
 custom_minimum_size = Vector2(140, 60)
 layout_mode = 2
 size_flags_horizontal = 3
@@ -297,7 +298,7 @@ size_flags_vertical = 4
 theme_override_font_sizes/font_size = 18
 text = "🛡️ Control"
 
-[node name="ClickInstability" type="Button" parent="Root/BottomBarPanel/ClickRow"]
+[node name="Stabilize" type="Button" parent="Root/BottomBarPanel/ClickRow"]
 custom_minimum_size = Vector2(140, 60)
 layout_mode = 2
 size_flags_horizontal = 3
