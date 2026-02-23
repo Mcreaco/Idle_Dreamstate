@@ -1,0 +1,14 @@
+[gd_scene format=3 uid="uid://cepx2jtdsxtg5"]
+
+[node name="Transcendence" type="PanelContainer"]
+offset_right = 40.0
+offset_bottom = 40.0
+
+[node name="TRANSCENDENCEAVAILABLE" type="Label" parent="."]
+layout_mode = 2
+
+[node name="NextTier" type="Label" parent="."]
+layout_mode = 2
+
+[node name="Transcend" type="Button" parent="."]
+layout_mode = 2

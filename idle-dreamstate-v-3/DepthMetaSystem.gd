@@ -784,10 +784,17 @@ func is_instab_fully_reduced(depth_i: int) -> bool:
 
 func can_show_unlock_upgrade(depth_i: int) -> bool:
 	if depth_i == 1:
-		# Depth 1 requires Focused Intention (manual_click) level 10
 		return get_level(1, "manual_click") >= 10
-	return is_instab_fully_reduced(depth_i)
+	
+	# NEW: Check Stabilize level (10 for most depths)
+	var req_stab := 10 if depth_i < 15 else 5
+	return get_level(depth_i, "stab") >= req_stab
 
+func get_stabilize_requirement_for_dive(depth: int) -> int:
+	if depth == 15:
+		return 5
+	return 10
+	
 func is_next_unlocked(depth_i: int) -> bool:
 	var d := clampi(depth_i, 1, MAX_DEPTH)
 	return unlock_next_bought[d] > 0
@@ -799,33 +806,39 @@ func cost_for(depth_i: int, def: Dictionary) -> float:
 	var d := clampi(depth_i, 1, MAX_DEPTH)
 	var kind := String(def.get("kind", ""))
 	var id := String(def.get("id", ""))
-
 	var lvl := get_level(d, id)
 	
-	# Much cheaper base for Depth 1
-	var base := 10.0 if d == 1 else (50.0 + float(d - 1) * 35.0)
+	# Exponential base: 80 + (depth-1)*20
+	var base := 80.0 + float(d - 1) * 20.0
+	
+	# Apply abyss multiplier from GameManager
+	var abyss_mult: float = 1.0
+	var game_mgr := get_node_or_null("/root/GameManager")
+	if game_mgr != null and game_mgr.has_method("get_abyss_multiplier"):
+		abyss_mult = game_mgr.get_abyss_multiplier()
 
 	match kind:
 		"stab":
-			# Gentler curve for Depth 1
-			var growth := 1.25 if d == 1 else 1.45
-			return base * pow(growth, float(lvl))
+			return base * pow(1.45, float(lvl)) * abyss_mult
 		"unlock":
-			return 250.0 + float(d - 1) * 150.0
+			# NEW: Exponential unlock cost
+			return 100.0 * pow(3.5, float(d - 1)) * abyss_mult
 		"thoughts_mult":
-			return (base * 1.2) * pow(1.55, float(lvl))
+			return (base * 1.2) * pow(1.55, float(lvl)) * abyss_mult
 		"control_mult":
-			return (base * 1.15) * pow(1.52, float(lvl))
+			return (base * 1.15) * pow(1.52, float(lvl)) * abyss_mult
 		"idle_instab_down":
-			return (base * 1.35) * pow(1.60, float(lvl))
+			return (base * 1.35) * pow(1.60, float(lvl)) * abyss_mult
 		"wake_yield":
-			return (base * 1.75) * pow(1.70, float(lvl))
-		"dive_start":  # Changed from dive_eff
-			return (base * 1.45) * pow(1.55, float(lvl))  # Slightly higher growth
+			return (base * 1.75) * pow(1.70, float(lvl)) * abyss_mult
+		"dive_start":
+			return (base * 1.45) * pow(1.55, float(lvl)) * abyss_mult
 		"auto_buy":
-			return (base * 2.0) * pow(1.3, float(lvl))
+			return (base * 2.0) * pow(1.3, float(lvl)) * abyss_mult
+		"click_power":
+			return 50.0 * pow(1.5, float(lvl))
 		_:
-			return base * pow(1.50, float(lvl))
+			return base * pow(1.50, float(lvl)) * abyss_mult
 
 # ---------------------------------------------------
 # BUYING (multi-currency)

@@ -38,7 +38,6 @@ var auto_overclock_toggle: BaseButton
 var _fail_save_popup: Node = null
 var meta_panel: MetaPanelController
 var prestige_panel: PrestigePanel
-
 var thoughts: float = 0.0
 var control: float = 0.0
 var instability: float = 0.0
@@ -60,7 +59,9 @@ const LT_DIVES := "total_dives"
 const LT_DEEPEST := "deepest_depth"
 const LT_PLAYTIME := "total_playtime"
 var memories: float = 0.0
-
+# Abyss Shop data (for saving/loading)
+var abyss_shop_unlocked: Array = []
+var abyss_shop_active: Dictionary = {}
 var idle_thoughts_rate: float = 0.8
 var idle_control_rate: float = 0.5
 var idle_instability_rate: float = 0.12
@@ -161,6 +162,40 @@ var auto_dive_checkbox: CheckBox = null
 # Milestone tracking (for visual effects)
 var last_milestone_check: Dictionary = {}
 
+var gems: int = 0  # Or call it "shards", "essence", etc.
+var times_broken: int = 0
+
+# ============================================
+# F2P MONETIZATION & ABYSS SYSTEM
+# ============================================
+
+const MAX_PURCHASED_TIME_PER_DAY: float = 4.0
+const DAILY_AD_CAP: int = 10
+const PIGGY_CAP: float = 500.0
+const PIGGY_ACCUMULATION_RATE: float = 0.10
+const BASE_OFFLINE_CAP: float = 28800.0  # 8 hours
+const MAX_OFFLINE_CAP: float = 86400.0   # 24 hours
+
+var purchased_time_today: float = 0.0
+var ads_watched_today: int = 0
+var piggy_bank: float = 0.0
+var last_purchase_reset_timestamp: int = 0
+
+var abyss_tier: int = 0
+var abyss_points: float = 0.0
+var has_supporter_pack: bool = false
+
+signal abyss_transcended(new_tier: int, points_gained: float)
+
+func get_abyss_shop():
+	var shop = get_node_or_null("/root/Main/MainUI/Root/MetaPanel/Window/RootVBox/PetaPages/AbyssPage")
+	if shop == null:
+		# Try recursive find
+		var main = get_node_or_null("/root/Main")
+		if main:
+			shop = main.find_child("AbyssPage", true, false)
+	return shop
+	
 func get_dive_instability_gain(depth: int) -> float:
 	return 5.0 + (depth * 1.5)
 
@@ -406,7 +441,7 @@ func _ready() -> void:
 	
 	# Now load game
 	load_game()
-	
+	_load_monetization_data()
 	# Apply offline progress AFTER loading
 	_apply_offline_progress()
 	
@@ -529,8 +564,31 @@ func _ready() -> void:
 	
 	# Then create new one
 	call_deferred("_create_click_upgrade_sidebar")
-	
+
+		
 func _input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed:
+		if event.keycode == KEY_F7:
+			abyss_points += 1000
+			print("Added 1000 AP, total: ", abyss_points)
+	if event is InputEventKey and event.pressed:
+		if event.keycode == KEY_F6:  # Changed from F5
+			piggy_bank += 100
+			print("Added 100 to piggy bank. Total: ", piggy_bank)
+	if event is InputEventKey and event.pressed:
+		match event.keycode:
+			KEY_F9:  # Add test abyss tier
+				abyss_tier += 1
+				print("Abyss Tier: ", abyss_tier)
+			KEY_F10:  # Fill piggy bank
+				piggy_bank = 500.0
+				print("Piggy Bank filled")
+			KEY_F11:  # Reset daily caps
+				purchased_time_today = 0.0
+				ads_watched_today = 0
+				print("Daily caps reset")
+			KEY_F12:  # Force transcendence check
+				prompt_transcendence()
 	if event is InputEventMouseButton and event.pressed:
 		var mouse_pos := get_viewport().get_mouse_position()
 		print("\n=== CLICK DEBUG ===")
@@ -1573,6 +1631,17 @@ func save_game() -> void:
 	data["run_start_depth"] = run_start_depth
 	data["frozen_depth_multipliers"] = frozen_depth_multipliers
 	
+	# F2P Monetization data
+	data["gems"] = gems
+	data["abyss_tier"] = abyss_tier
+	data["abyss_points"] = abyss_points
+	data["piggy_bank"] = piggy_bank
+	data["times_broken"] = times_broken
+	data["purchased_time_today"] = purchased_time_today
+	data["ads_watched_today"] = ads_watched_today
+	data["last_purchase_reset_timestamp"] = last_purchase_reset_timestamp
+	data["has_supporter_pack"] = has_supporter_pack
+	
 	# SAVE DepthRunController data (fixes the "not saving" bug)
 	var drc := get_node_or_null("/root/DepthRunController")
 	if drc != null:
@@ -1660,6 +1729,13 @@ func save_game() -> void:
 	# Auto-dive
 	data["auto_dive_enabled"] = auto_dive_enabled
 	
+	# Abyss Shop data
+	var shop_node = get_node_or_null("/root/Main/MainUI/Root/MetaPanel/Window/RootVBox/PetaPages/AbyssPage")
+	if shop_node and shop_node.has_method("get_shop_data"):
+		var shop_data = shop_node.call("get_shop_data")
+		data["abyss_shop_unlocked"] = shop_data.unlocked
+		data["abyss_shop_active"] = shop_data.active
+		
 	SaveSystem.save_game(data)
 
 func load_game() -> void:
@@ -1690,7 +1766,25 @@ func load_game() -> void:
 	max_depth_reached = int(data.get("max_depth_reached", 1))
 	abyss_unlocked_flag = bool(data.get("abyss_unlocked", false))
 	run_start_depth = int(data.get("run_start_depth", loaded_depth))
-	
+	# F2P Monetization data
+	gems = int(data.get("gems", 0))
+	abyss_tier = int(data.get("abyss_tier", 0))
+	abyss_points = float(data.get("abyss_points", 0.0))
+	piggy_bank = float(data.get("piggy_bank", 0.0))
+	times_broken = int(data.get("times_broken", 0))
+	purchased_time_today = float(data.get("purchased_time_today", 0.0))
+	ads_watched_today = int(data.get("ads_watched_today", 0))
+	last_purchase_reset_timestamp = int(data.get("last_purchase_reset_timestamp", 0))
+	has_supporter_pack = bool(data.get("has_supporter_pack", false))
+	# Load Abyss Shop data directly
+	var loaded_shop = data.get("abyss_shop_unlocked", [])
+	var loaded_active = data.get("abyss_shop_active", {})
+
+	# Store in GameManager for AbyssShop to pick up
+	abyss_shop_unlocked = Array(loaded_shop) if loaded_shop is Array else []
+	abyss_shop_active = Dictionary(loaded_active) if loaded_active is Dictionary else {}
+	# Auto-dive preference (you already have this but ensure it's here)
+	auto_dive_enabled = bool(data.get("auto_dive_enabled", false))
 		# Restore DepthRunController state
 	var drc := get_node_or_null("/root/DepthRunController")
 	if drc != null:
@@ -1747,7 +1841,9 @@ func load_game() -> void:
 			else:
 				drc.set("active_depth", saved_active)
 			_depth_cache = saved_active
-	
+	# Store for AbyssShop to pick up
+	abyss_shop_unlocked = data.get("abyss_shop_unlocked", [])
+	abyss_shop_active = data.get("abyss_shop_active", {})
 	if abyss_perk_system != null:
 		abyss_perk_system.echoed_descent_level = int(data.get("abyss_echoed_descent_level", 0))
 		abyss_perk_system.abyssal_focus_level = int(data.get("abyss_abyssal_focus_level", 0))
@@ -1855,7 +1951,14 @@ func load_game() -> void:
 	
 	# Final UI refresh to ensure bar visibility is correct
 	_refresh_top_ui()
-	
+	# Load Abyss Shop items (call after a delay to ensure scene is ready)
+	call_deferred("_load_abyss_shop")
+
+func _load_abyss_shop():
+	var shop_node = get_node_or_null("/root/Main/MainUI/Root/MetaPanel/Window/RootVBox/PetaPages/AbyssPage")
+	if shop_node and shop_node.has_method("load_data"):
+		shop_node.load_data()
+		shop_node.refresh()
 
 func _sync_panel_after_load() -> void:
 	var drc := get_node_or_null("/root/DepthRunController")
@@ -1876,7 +1979,7 @@ func _bind_ui_mainui() -> void:
 	
 	# Now safe to check and return
 	if thoughts_label == null:
-		push_warning("ThoughtsLabel not found")
+		#push_warning("ThoughtsLabel not found")
 		return
 	if instability_bar != null:
 		var cap := depth_meta_system.get_instability_cap(get_current_depth())
@@ -2283,6 +2386,10 @@ func _process(delta: float) -> void:
 		if timed_boost_timer <= 0:
 			timed_boost_active = false
 			timed_boost_timer = 0.0
+	_check_new_day()
+	# Piggy Bank accumulation
+	var thoughts_earned_this_frame: float = idle_thoughts_rate * _calculate_all_multipliers() * delta
+	_add_to_piggy_bank(thoughts_earned_this_frame * PIGGY_ACCUMULATION_RATE)
 	
 	autosave_timer += delta
 	if autosave_timer >= autosave_interval:
@@ -3659,3 +3766,226 @@ func _close_fail_save() -> void:
 		_fail_save_popup.queue_free()
 	_fail_save_popup = null
 	set_process(true)
+
+func _check_new_day() -> bool:
+	var now := Time.get_unix_time_from_system()
+	var current_day := int(now / 86400.0)  # Add .0 to force float division
+	var last_day := int(last_purchase_reset_timestamp / 86400.0)  # Add .0
+	
+	if current_day > last_day:
+		purchased_time_today = 0.0
+		ads_watched_today = 0
+		last_purchase_reset_timestamp = int(now)
+		_save_monetization_data()
+		return true
+	return false
+
+func _add_to_piggy_bank(amount: float) -> void:
+	piggy_bank = minf(piggy_bank + amount, PIGGY_CAP)
+
+func can_break_piggy_bank() -> bool:
+	return piggy_bank >= 100.0
+
+func break_piggy_bank() -> Dictionary:
+	if not can_break_piggy_bank():
+		return {"success": false, "amount": 0}
+	
+	# Convert piggy bank thoughts to gems (10 thoughts = 1 gem)
+	var gem_amount := int(piggy_bank / 10.0)
+	
+	gems += gem_amount
+	piggy_bank = 0.0
+	times_broken += 1
+	_save_monetization_data()
+	
+	return {
+		"success": true, 
+		"amount": gem_amount, 
+		"currency": "gems"
+	}
+
+func get_piggy_bank_value() -> String:
+	return str(int(piggy_bank)) + " ($" + str(snapped(piggy_bank * 0.01, 0.01)) + ")"
+
+func can_purchase_time_warp(hours: float) -> bool:
+	return (purchased_time_today + hours) <= MAX_PURCHASED_TIME_PER_DAY
+
+func purchase_time_warp(hours: float) -> bool:
+	if not can_purchase_time_warp(hours):
+		return false
+	
+	# In production: Process payment here
+	purchased_time_today += hours
+	apply_offline_earnings(hours * 3600.0)
+	_save_monetization_data()
+	return true
+
+func can_watch_ad() -> bool:
+	return ads_watched_today < DAILY_AD_CAP
+
+func watch_ad_for_time_warp(hours: float = 1.0) -> bool:
+	if not can_watch_ad():
+		return false
+	
+	ads_watched_today += 1
+	apply_offline_earnings(hours * 3600.0)
+	_save_monetization_data()
+	return true
+
+func get_daily_stats() -> Dictionary:
+	return {
+		"purchased_hours": purchased_time_today,
+		"purchased_remaining": MAX_PURCHASED_TIME_PER_DAY - purchased_time_today,
+		"ads_watched": ads_watched_today,
+		"ads_remaining": DAILY_AD_CAP - ads_watched_today
+	}
+
+func get_effective_offline_cap() -> float:
+	var deep_sleeper_level: int = 0
+	if perm_perk_system != null and "deep_sleeper_level" in perm_perk_system:
+		deep_sleeper_level = perm_perk_system.deep_sleeper_level
+	var bonus: float = float(deep_sleeper_level) * 14400.0
+	return minf(BASE_OFFLINE_CAP + bonus, MAX_OFFLINE_CAP)
+
+func _calculate_all_multipliers() -> float:
+	"""Calculate total thought multipliers for piggy bank"""
+	var mult: float = 1.0
+	if upgrade_manager != null:
+		mult *= _safe_mult(upgrade_manager.get_thoughts_mult())
+	if perk_system != null:
+		mult *= _safe_mult(perk_system.get_thoughts_mult())
+	if abyss_perk_system != null:
+		mult *= _safe_mult(abyss_perk_system.get_thoughts_mult())
+	if perm_perk_system != null:
+		mult *= _safe_mult(perm_perk_system.get_thoughts_mult())
+	if depth_meta_system != null:
+		mult *= _safe_mult(depth_meta_system.get_global_thoughts_mult())
+	mult *= get_abyss_multiplier()
+	return mult
+
+func get_abyss_multiplier() -> float:
+	return pow(1.5, float(abyss_tier))
+
+func can_transcend() -> bool:
+	if get_current_depth() != 15:
+		return false
+	var drc := get_node_or_null("/root/DepthRunController")
+	if drc != null and drc.has_method("can_transcend"):
+		return drc.can_transcend()
+	return false
+
+func transcend() -> void:
+	if not can_transcend():
+		return
+	
+	var ap_gained: float = sqrt(memories) * (1.0 + float(abyss_tier) * 0.1)
+	abyss_points += ap_gained
+	abyss_tier += 1
+	
+	# Reset run but keep meta
+	reset_run()
+	var drc := get_node_or_null("/root/DepthRunController")
+	if drc != null:
+		if drc.has_method("perform_transcendence"):
+			drc.perform_transcendence()
+	
+	_save_monetization_data()
+	emit_signal("abyss_transcended", abyss_tier, ap_gained)
+	
+	# Show notification
+	_show_transcendence_notification(ap_gained)
+
+func _show_transcendence_notification(ap_gained: float) -> void:
+	var notif := Label.new()
+	notif.text = "TRANSCENDED! Tier %d | +%.0f Abyss Points" % [abyss_tier, ap_gained]
+	notif.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	notif.add_theme_font_size_override("font_size", 24)
+	notif.add_theme_color_override("font_color", Color(0.8, 0.4, 1.0))
+	notif.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	notif.position.y = 100
+	add_child(notif)
+	
+	var tween := create_tween()
+	tween.tween_property(notif, "modulate:a", 0.0, 3.0)
+	tween.tween_callback(notif.queue_free)
+
+func prompt_transcendence() -> void:
+	"""Called by DepthRunController when D15 complete"""
+	if can_transcend():
+		_show_transcendence_ui()
+
+func _show_transcendence_ui() -> void:
+	# Create or show your transcendence panel here
+	# For now, auto-transcend after confirmation
+	print("TRANSCENDENCE AVAILABLE! Press T to transcend (or add UI button)")
+	# In production: Show TranscendencePanel.tscn
+
+func _load_monetization_data() -> void:
+	var data := SaveSystem.load_game()
+	abyss_tier = int(data.get("abyss_tier", 0))
+	abyss_points = float(data.get("abyss_points", 0.0))
+	piggy_bank = float(data.get("piggy_bank", 0.0))
+	purchased_time_today = float(data.get("purchased_time_today", 0.0))
+	ads_watched_today = int(data.get("ads_watched_today", 0))
+	last_purchase_reset_timestamp = int(data.get("last_purchase_reset_timestamp", 0))
+	has_supporter_pack = bool(data.get("has_supporter_pack", false))
+	gems = int(data.get("gems", 0))
+	times_broken = int(data.get("times_broken", 0))
+	auto_dive_enabled = bool(data.get("auto_dive_enabled", false))
+
+func _save_monetization_data() -> void:
+	var data := SaveSystem.load_game()
+	data["abyss_tier"] = abyss_tier
+	data["abyss_points"] = abyss_points
+	data["piggy_bank"] = piggy_bank
+	data["purchased_time_today"] = purchased_time_today
+	data["ads_watched_today"] = ads_watched_today
+	data["last_purchase_reset_timestamp"] = last_purchase_reset_timestamp
+	data["has_supporter_pack"] = has_supporter_pack
+	data["gems"] = gems
+	data["times_broken"] = times_broken
+	data["auto_dive_enabled"] = auto_dive_enabled
+	SaveSystem.save_game(data)
+
+func apply_offline_earnings(seconds: float) -> void:
+	"""Apply X seconds of offline earnings immediately (for time warp)"""
+	var effective_seconds := minf(seconds, get_effective_offline_cap())
+	
+	# Calculate earnings using same logic as _apply_offline_progress
+	var thoughts_earned := idle_thoughts_rate * _calculate_all_multipliers() * effective_seconds
+	var control_earned := idle_control_rate * _calculate_control_mult() * effective_seconds
+	
+	thoughts += thoughts_earned
+	control += control_earned
+	total_thoughts_earned += thoughts_earned
+	
+	_show_time_warp_notification(effective_seconds, thoughts_earned)
+
+func _calculate_control_mult() -> float:
+	var mult: float = 1.0
+	if perk_system != null:
+		mult *= _safe_mult(perk_system.get_control_mult())
+	if perm_perk_system != null:
+		mult *= _safe_mult(perm_perk_system.get_control_mult())
+	return mult
+
+func _show_time_warp_notification(seconds: float, thoughts_gained: float) -> void:
+	var hours := seconds / 3600.0
+	var notif := Label.new()
+	notif.text = "Time Warp: +%.1fh | Thoughts: +%s" % [hours, _fmt_num(thoughts_gained)]
+	notif.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	notif.add_theme_font_size_override("font_size", 20)
+	notif.add_theme_color_override("font_color", Color(0.4, 0.8, 1.0))
+	notif.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	notif.position.y = 150
+	add_child(notif)
+	
+	var tween := create_tween()
+	tween.tween_property(notif, "modulate:a", 0.0, 2.0)
+	tween.tween_callback(notif.queue_free)
+	
+func has_auto_dive_enabled() -> bool:
+	var shop = get_abyss_shop()
+	if shop == null or not shop.has_method("has_item") or not shop.has_item("auto_dive"):
+		return false
+	return auto_dive_enabled

@@ -19,7 +19,7 @@ extends Node
 var choice_modal: ChoiceModal = null
 var _current_event_timer: float = 0.0
 var _active_event: Dictionary = {}
-
+var auto_dive_enabled: bool = false  # Player toggles this via checkbox
 var _thoughts_per_sec_cached: float = 0.0
 var _control_per_sec_cached: float = 0.0
 
@@ -130,8 +130,24 @@ func _process(delta: float) -> void:
 		if instability >= actual_cap:
 			wake_cashout(1.0, true)
 			return
-
-	_sync_hud()
+		# Check auto-dive
+	var shop = get_node_or_null("/root/Main/MainUI/Root/MetaPanel/Window/RootVBox/PetaPages/AbyssPage")
+	if shop and shop.has_method("is_item_active"):
+		if shop.is_item_active("auto_dive"):
+			# Calculate progress percentage
+			var progress_percent: float = 0.0
+			if active_depth >= 1 and active_depth <= _run_internal.size():
+				var data: Dictionary = _run_internal[active_depth - 1]
+				var current: float = float(data.get("progress", 0.0))
+				var cap: float = get_depth_progress_cap(active_depth)
+				progress_percent = (current / cap) * 100.0 if cap > 0 else 0.0
+				
+				# Check auto-dive
+				var gm = get_node_or_null("/root/Main/GameManager")
+				if gm and gm.has_method("has_auto_dive_enabled"):
+					if gm.has_auto_dive_enabled() and progress_percent >= 100.0 and can_dive():
+						dive()
+		
 
 
 func _tick_active_depth(delta: float) -> void:
@@ -182,7 +198,13 @@ func _tick_active_depth(delta: float) -> void:
 	var speed_mul: float = 1.0 + 0.25 * speed_lvl + _frozen_effect(d, "progress_speed", 0.15)
 	var mem_mul: float   = 1.0 + 0.15 * mem_lvl + _frozen_effect(d, "memories_gain", 0.15)
 	var cry_mul: float   = 1.0 + 0.12 * cry_lvl + _frozen_effect(d, "crystals_gain", 0.12)
-	
+	var game_mgr := get_node_or_null("/root/GameManager")
+	var abyss_mult: float = 1.0
+	if game_mgr != null and game_mgr.has_method("get_abyss_multiplier"):
+		abyss_mult = game_mgr.get_abyss_multiplier()
+
+	mem_mul *= abyss_mult
+	cry_mul *= abyss_mult
 	# Apply specific depth upgrade bonuses
 	# Depth 2: Controlled Fall (+10% progress per level)
 	if d == 2:
@@ -222,6 +244,26 @@ func _tick_active_depth(delta: float) -> void:
 	_panel.set_row_data(d, data)
 	_panel.set_active_depth(active_depth)
 
+func can_transcend() -> bool:
+	if active_depth != 15:
+		return false
+	var progress: float = float(_run_internal[14].get("progress", 0.0))
+	var cap: float = get_depth_progress_cap(15)
+	return progress >= cap * 0.999
+
+func perform_transcendence() -> Dictionary:
+	if not can_transcend():
+		return {"success": false}
+	
+	_init_run()
+	active_depth = 1
+	_last_depth = 1
+	local_upgrades.clear()
+	local_upgrades[1] = {}
+	_sync_all_to_panel()
+	
+	return {"success": true, "new_depth": 1}
+	
 func _tick_top(delta: float) -> void:
 	# These should be REAL rates, not cached getters.
 	var tps: float = thoughts_per_sec
@@ -234,7 +276,8 @@ func _tick_top(delta: float) -> void:
 	_control_per_sec_cached = cps
 
 func get_depth_progress_cap(depth: int) -> float:
-	return 1000.0 * pow(2.5, float(depth - 1))
+	# NEW: Exponential scaling for 250-300 hour target
+	return 1000.0 * pow(2.8, float(depth - 1))
 
 func _sync_hud() -> void:
 	if _hud != null and _hud.has_method("set_values"):
@@ -314,6 +357,14 @@ func get_run_upgrade_info(depth_index: int, upgrade_id: String) -> Dictionary:
 	}
 	
 func dive() -> bool:
+	# At Depth 15, trigger transcendence instead
+	if active_depth == 15:
+		if can_transcend():
+			var game_mgr := get_node_or_null("/root/GameManager")
+			if game_mgr != null and game_mgr.has_method("prompt_transcendence"):
+				game_mgr.prompt_transcendence()
+		return false
+	
 	if not can_dive():
 		return false
 

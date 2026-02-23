@@ -1,0 +1,14 @@
+[gd_scene format=3 uid="uid://bsx0cageg3stg"]
+
+[node name="TimeWarpPanel" type="PanelContainer"]
+offset_right = 40.0
+offset_bottom = 40.0
+
+[node name="DailyWarp" type="Label" parent="."]
+layout_mode = 2
+
+[node name="Hours" type="Button" parent="."]
+layout_mode = 2
+
+[node name="Watch Ad" type="Button" parent="."]
+layout_mode = 2

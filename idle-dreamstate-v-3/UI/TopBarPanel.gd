@@ -19,12 +19,102 @@ const COLOR_BAR_RED: Color = Color(0.85, 0.18, 0.18)
 @onready var inst_title: Label = $TopBar/InstabilityCenter/InstabilityVBox/InstabilityTitle
 @onready var inst_bar: ProgressBar = $TopBar/InstabilityCenter/InstabilityVBox/InstabilityBar
 @onready var inst_hint: Label = $TopBar/InstabilityCenter/InstabilityVBox/InstabilityHint
+@onready var thoughts_box: Control = $TopBar/MarginContainer/ThoughtsBox
 
+# We'll create these dynamically or you can add them in editor
+var piggy_container: HBoxContainer
+var piggy_value: Label
+var piggy_button: Button
+var gems_label: Label
 var _run: Node = null
 
+func _create_gems_display() -> void:
+	gems_label = Label.new()
+	gems_label.add_theme_color_override("font_color", Color(0.2, 0.8, 1.0))  # Blue/cyan for premium
+	add_child(gems_label)
+	
+func _create_piggy_bank_ui() -> void:
+	# Prevent double-creation
+	if piggy_container != null:
+		return
+	
+	# Create container
+	piggy_container = HBoxContainer.new()
+	piggy_container.name = "PiggyBankContainer"
+	piggy_container.mouse_filter = Control.MOUSE_FILTER_PASS  # Let clicks through to children
+	# Icon
+	var icon := Label.new()
+	icon.text = "🐷 "
+	icon.add_theme_font_size_override("font_size", 16)
+	piggy_container.add_child(icon)
+	
+	# Value label
+	piggy_value = Label.new()
+	piggy_value.name = "PiggyValue"
+	piggy_value.text = "0 → 0 Gems"
+	piggy_value.add_theme_color_override("font_color", Color(1.0, 0.85, 0.4))
+	piggy_container.add_child(piggy_value)
+	
+	# Break button - IMPORTANT: Connect before adding to tree
+	piggy_button = Button.new()
+	piggy_button.name = "PiggyButton"
+	piggy_button.text = "Break $4.99"
+	piggy_button.custom_minimum_size = Vector2(80, 30)
+	piggy_button.mouse_filter = Control.MOUSE_FILTER_STOP  # Block clicks from passing through
+	piggy_button.z_index = 10  # Bring to front
+	piggy_button.focus_mode = Control.FOCUS_ALL
+	piggy_button.pressed.connect(_on_piggy_break)
+	
+	piggy_container.add_child(piggy_button)
+	
+	# Gems label
+	gems_label = Label.new()
+	gems_label.name = "GemsLabel"
+	gems_label.text = "💎 0"
+	gems_label.add_theme_color_override("font_color", Color(0.2, 0.8, 1.0))
+	piggy_container.add_child(gems_label)
+	
+	# Add to TopBar
+	var top_bar := $TopBar
+	top_bar.add_child(piggy_container)
+	top_bar.move_child(piggy_container, 1)
+	
+	piggy_container.visible = true
+	print("Piggy Bank UI created successfully!")
+
+func _input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.pressed:
+		if piggy_button != null and piggy_button.get_global_rect().has_point(event.position):
+			if not piggy_button.disabled:
+				print("Button clicked via _input!")
+				_on_piggy_break()
+				
+func _on_piggy_break() -> void:
+	print("!!! PIGGY BREAK BUTTON CLICKED !!!")
+	
+	var gm := get_node_or_null("/root/Main/GameManager")
+	if gm == null:
+		print("ERROR: GameManager not found")
+		return
+	
+	if not gm.has_method("break_piggy_bank"):
+		print("ERROR: GameManager missing break_piggy_bank method")
+		return
+	
+	var result: Dictionary = gm.break_piggy_bank()
+	print("Break result: ", result)
+	
+	if result.success:
+		print("SUCCESS! Gained ", result.amount, " ", result.get("currency", "gems"))
+	else:
+		print("Failed to break piggy bank")
+	
+	_update_piggy_display()
+			
 func _ready() -> void:
 	_style_top_bar_panel()
 	_set_label_colors()
+	_create_piggy_bank_ui()
 	if inst_hint:
 		inst_hint.visible = false # hide inline; tooltip only
 
@@ -84,7 +174,79 @@ func _process(_delta: float) -> void:
 		0.0,  # ttf - not used
 		inst_gain
 	)
+	
+	# Update piggy bank every 60 frames (~1 second)
+	if Engine.get_process_frames() % 60 == 0:
+		_update_piggy_display()
+	
+	# Update gems display
+	var gm := get_node_or_null("/root/Main/GameManager")
+	if gems_label and gm:
+		var gems_count: int = gm.gems if "gems" in gm else 0
+		gems_label.text = "💎 %d" % gems_count
+	
+	if Engine.get_process_frames() % 60 == 0:
+		if piggy_button != null:
+			print("Button exists. Disabled: ", piggy_button.disabled, " Visible: ", piggy_button.visible)
 
+func _update_piggy_display() -> void:
+	if piggy_value == null or piggy_button == null:
+		return
+	
+	# Try multiple paths
+	var gm := get_node_or_null("/root/GameManager")
+	if gm == null:
+		gm = get_node_or_null("/root/Main/GameManager")
+	if gm == null:
+		# Walk up tree
+		var parent := get_parent()
+		while parent != null:
+			var candidate := parent.get_node_or_null("GameManager")
+			if candidate != null:
+				gm = candidate
+				break
+			parent = parent.get_parent()
+	
+	if gm == null:
+		piggy_value.text = "GM NOT FOUND"
+		return
+		
+	if not ("piggy_bank" in gm):
+		piggy_value.text = "NO PIGGY VAR"
+		return
+	
+	# If we get here, it's working
+	var amount: float = float(gm.piggy_bank)
+	var usd: float = amount * 0.01
+	piggy_value.text = "%d ($%.2f)" % [int(amount), usd]
+	
+	# ALWAYS VISIBLE (for testing)
+	if piggy_container:
+		piggy_container.visible = true
+	
+	# Update button
+	var can_break: bool = false
+	if gm.has_method("can_break_piggy_bank"):
+		can_break = gm.can_break_piggy_bank()
+	else:
+		can_break = amount >= 100.0
+	
+	piggy_button.disabled = not can_break
+	if can_break:
+		piggy_button.text = "Break $4.99"
+		piggy_button.modulate = Color(1, 1, 1)
+	else:
+		piggy_button.text = "Save..."
+		piggy_button.modulate = Color(0.5, 0.5, 0.5)
+		
+	# Show gems instead of $
+	var gem_value := int(amount / 10.0)  # 10 thoughts = 1 gem
+	piggy_value.text = "%d → %d Gems" % [int(amount), gem_value]
+	var gems_count: int = gm.gems if "gems" in gm else 0
+	var gems_lbl := piggy_container.get_node_or_null("GemsLabel")
+	if gems_lbl:
+		gems_lbl.text = "💎 %d" % gems_count
+		
 func _resolve_depth_label() -> Label:
 	if depth_label_path != NodePath(""):
 		var n := get_node_or_null(depth_label_path)

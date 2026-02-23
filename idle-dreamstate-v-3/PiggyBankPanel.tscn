@@ -1,0 +1,11 @@
+[gd_scene format=3 uid="uid://dh2crddvag2ib"]
+
+[node name="PiggyBankPanel" type="PanelContainer"]
+offset_right = 40.0
+offset_bottom = 40.0
+
+[node name="PiggyBank" type="Label" parent="."]
+layout_mode = 2
+
+[node name="BreakBank" type="Button" parent="."]
+layout_mode = 2

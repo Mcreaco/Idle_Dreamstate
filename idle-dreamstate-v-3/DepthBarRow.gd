@@ -15,7 +15,7 @@ const COLOR_BLUE: Color = Color(0.24, 0.67, 0.94)
 @export var percent_font := 14
 @export var top_bottom_padding: float = 6.0
 @export var v_separation := 2
-
+@onready var abyss_shop_ref = get_node_or_null("/root/Main/MainUI/Root/MetaPanel/Window/RootVBox/PetaPages/AbyssPage")
 # Row background images
 const BG_DIR := "res://UI/DepthBarBG/"
 const ROW_BORDER_INSET := 2 # must match border width below
@@ -33,9 +33,9 @@ const AUTO_BUY_DELAY: float = 0.5  # Half second between purchases
 var _data: Dictionary = {"progress": 0.0, "memories": 0.0, "crystals": 0.0}
 var _local_upgrades: Dictionary = {}
 var _frozen_upgrades: Dictionary = {}
-
+var auto_dive_enabled: bool = false
 var _run: Node = null
-
+var auto_dive_checkbox: CheckBox = null
 var _purchase_cooldown: float = 0.0
 const PURCHASE_COOLDOWN: float = 0.3  # 300ms between purchases
 
@@ -121,6 +121,12 @@ func _ready() -> void:
 	_apply_bar_style()
 	_style_progress_bar()
 	_apply_row_background_texture()
+	var gm = get_node_or_null("/root/Main/GameManager")
+	if gm:
+		print("GameManager object ID:", gm.get_instance_id())
+	else:
+		print("GameManager is null")
+	print("abyss_shop value:", gm.get_abyss_shop() if gm and gm.has_method("get_abyss_shop") else "null")
 
 	if details != null:
 		details.visible = false
@@ -153,6 +159,101 @@ func _ready() -> void:
 		# Hide buttons with no text and no icon
 		if btn.text == "" and btn.icon == null:
 			btn.visible = false
+		# Check once at start
+	_update_auto_dive_visibility()
+	
+	# Check every 2 seconds instead of every frame
+	var timer = Timer.new()
+	timer.wait_time = 2.0
+	timer.timeout.connect(_update_auto_dive_visibility)
+	add_child(timer)
+	timer.start()
+	
+	# Create Auto checkbox
+	auto_dive_checkbox = CheckBox.new()
+	auto_dive_checkbox.name = "AutoDiveCheckBox"
+	auto_dive_checkbox.text = "Auto"
+	auto_dive_checkbox.custom_minimum_size = Vector2(50, 30)
+	auto_dive_checkbox.visible = false  # Start hidden
+	auto_dive_checkbox.toggled.connect(_on_auto_dive_toggled)
+	
+	# Add to ActionRow next to Dive button
+	var action_row = find_child("ActionRow", true, false)
+	if action_row:
+		action_row.add_child(auto_dive_checkbox)
+		var dive_btn = action_row.find_child("DiveButton", false)
+		if dive_btn:
+			action_row.move_child(auto_dive_checkbox, dive_btn.get_index())
+	
+	# Create checkbox
+	_create_auto_dive_checkbox()
+	
+	# Check initial visibility
+	_update_auto_dive_visibility()
+
+func _create_auto_dive_checkbox():
+	# Prevent duplicate creation
+	if auto_dive_checkbox != null:
+		return
+	
+	# Create the checkbox
+	auto_dive_checkbox = CheckBox.new()
+	auto_dive_checkbox.name = "AutoDiveCheckBox"
+	auto_dive_checkbox.text = "Auto"
+	auto_dive_checkbox.custom_minimum_size = Vector2(50, 30)
+	auto_dive_checkbox.visible = false  # Start hidden
+	
+	# Find ActionRow (where Dive button lives)
+	var action_row = find_child("ActionRow", true, false)
+	
+	if action_row:
+		# Add to ActionRow
+		action_row.add_child(auto_dive_checkbox)
+		
+		# Move it before the Dive button
+		var dive_btn = action_row.find_child("DiveButton", false)
+		if dive_btn:
+			var dive_index = dive_btn.get_index()
+			action_row.move_child(auto_dive_checkbox, dive_index)
+			print("Auto checkbox positioned before Dive button")
+		
+		# Connect signal
+		if not auto_dive_checkbox.toggled.is_connected(_on_auto_dive_toggled):
+			auto_dive_checkbox.toggled.connect(_on_auto_dive_toggled)
+		
+		print("Auto-Dive checkbox created in ActionRow")
+	else:
+		push_error("ActionRow not found in DepthBarRow!")
+	
+	# Check if should be visible
+	_update_auto_dive_visibility()
+
+
+func _update_auto_dive_visibility():
+	if auto_dive_checkbox == null:
+		return
+	
+	var gm = get_node_or_null("/root/Main/GameManager")
+	if gm == null:
+		auto_dive_checkbox.visible = false
+		return
+	
+	# Use getter function instead of direct variable
+	var shop = gm.get_abyss_shop() if gm.has_method("get_abyss_shop") else null
+	if shop == null:
+		# Fallback: try direct node path
+		shop = get_node_or_null("/root/Main/MainUI/Root/MetaPanel/Window/RootVBox/PetaPages/AbyssPage")
+	
+	var has_it = shop != null and shop.has_method("has_item") and shop.has_item("auto_dive")
+	auto_dive_checkbox.visible = has_it
+	
+func _on_auto_dive_toggled(enabled: bool):
+	print("Auto-Dive toggled:", enabled)
+	var gm = get_node_or_null("/root/Main/GameManager")
+	if gm:
+		gm.auto_dive_enabled = enabled
+		gm.save_game()
+
 
 func _gui_input(event: InputEvent) -> void:
 	# Debounce after closing overlay (prevents instant re-open bug)
@@ -1168,7 +1269,7 @@ func _proceed_with_dive() -> void:
 			panel.call("set_active_depth", int(new_depth))
 			# Also trigger a full row state refresh
 			panel.call("_apply_row_states")
-
+	
 func _on_dive_confirmed() -> void:
 	print("Dive confirmed button pressed")
 	_proceed_with_dive()
@@ -1411,9 +1512,12 @@ func _update_upgrade_row_ui(id: String) -> void:
 	if id == "stabilize" and depth_index == 2:
 		if lvl > 0:
 			cost_label.text += " (-%d%% inst)" % (lvl * 5)  # Show -5% per level
-			
-			
 
+func _attempt_dive() -> void:
+	var drc := get_node_or_null("/root/DepthRunController")
+	if drc != null and drc.has_method("dive"):
+		drc.dive()
+		
 func _process(_delta: float) -> void:
 	# CRITICAL: Always update visuals every frame regardless of details_open state
 	_apply_visuals()
@@ -1434,12 +1538,12 @@ func _process(_delta: float) -> void:
 	# Update cooldown
 	if _purchase_cooldown > 0:
 		_purchase_cooldown -= _delta
-		
+	# Check if we should auto-dive
 	if _details_open and upgrades_box != null and upgrades_box.visible:
 		# Update UI states
 		for id in _upgrade_ui_refs.keys():
 			_update_upgrade_row_ui(id)
-		
+	
 		# Auto-buy logic (only if cooldown ready)
 		if _auto_buy_cooldown <= 0:
 			var game_mgr := get_tree().current_scene.find_child("GameManager", true, false) as GameManager
@@ -1463,6 +1567,33 @@ func _process(_delta: float) -> void:
 										_auto_buy_cooldown = AUTO_BUY_DELAY
 										break
 
+	# Update visibility every second (in case purchase happens while panel is open)
+	if Engine.get_process_frames() % 60 == 0:
+		_update_auto_dive_visibility()
+		
+func _update_auto_dive_checkbox():
+	if auto_dive_checkbox == null:
+		return
+	
+	# Only show if:
+	# 1. We own auto_dive
+	# 2. Details panel is expanded (Dive button is visible)
+	var gm = get_node_or_null("/root/Main/GameManager")
+	var shop = gm.get_abyss_shop() if gm != null else null
+	var owns_it = shop != null and shop.has_item("auto_dive")
+	
+	# Check if details are open (use your variable name here)
+	var details_visible = false
+	if has_method("is_details_open"):
+		details_visible = call("is_details_open")
+	elif "is_details_open" in self:
+		details_visible = self.is_details_open
+	elif "_details_open" in self:
+		details_visible = self._details_open
+	
+	auto_dive_checkbox.visible = owns_it and details_visible
+		
+		
 func _refresh_upgrade_row(id: String, lvl_label: Label, btn: Button, max_lvl: int) -> void:
 	var current_lvl := int(_local_upgrades.get(id, 0))
 	lvl_label.text = "Lv %d/%d" % [current_lvl, max_lvl]

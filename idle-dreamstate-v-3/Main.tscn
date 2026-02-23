@@ -1,4 +1,4 @@
-[gd_scene load_steps=47 format=3 uid="uid://fflc2602ivkd"]
+[gd_scene load_steps=48 format=3 uid="uid://fflc2602ivkd"]
 
 [ext_resource type="Script" uid="uid://cr7grsqq7v7ws" path="res://PillarStack.gd" id="1_3ccbu"]
 [ext_resource type="Script" uid="uid://bp0wa73eqxy2l" path="res://MeshForceProbe.gd" id="1_o7g6l"]
@@ -39,6 +39,7 @@
 [ext_resource type="Script" uid="uid://x4rtaidmt5a1" path="res://AbyssPanel.gd" id="25_oye8v"]
 [ext_resource type="Script" uid="uid://c8qm5d7uav3wd" path="res://MemoriesLabelBinder.gd" id="26_xrxkg"]
 [ext_resource type="Script" uid="uid://d1iyqqewlyb3t" path="res://AbyssPerkRow.gd" id="27_gb15f"]
+[ext_resource type="Script" uid="uid://ddbkueb1sta6k" path="res://scripts/AbyssShop.gd" id="27_gngx1"]
 [ext_resource type="Script" uid="uid://40sp2ybhrvuh" path="res://PillarSmokeSpawner.gd" id="39_ny7u2"]
 [ext_resource type="Script" uid="uid://t1l570qbptfq" path="res://LifetimeStatsTracker.gd" id="41_1w2xm"]
 
@@ -1106,6 +1107,8 @@ script = ExtResource("23_5mkgo")
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
+size_flags_vertical = 3
+script = ExtResource("27_gngx1")
 
 [node name="BackToMenuButton" type="Button" parent="MainUI"]
 visible = false
