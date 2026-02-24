@@ -196,36 +196,25 @@ func _create_auto_dive_checkbox():
 	if auto_dive_checkbox != null:
 		return
 	
-	# Create the checkbox
 	auto_dive_checkbox = CheckBox.new()
 	auto_dive_checkbox.name = "AutoDiveCheckBox"
 	auto_dive_checkbox.text = "Auto"
 	auto_dive_checkbox.custom_minimum_size = Vector2(50, 30)
-	auto_dive_checkbox.visible = false  # Start hidden
+	auto_dive_checkbox.visible = false
 	
-	# Find ActionRow (where Dive button lives)
+	# Connect signal
+	if not auto_dive_checkbox.toggled.is_connected(_on_auto_dive_toggled):
+		auto_dive_checkbox.toggled.connect(_on_auto_dive_toggled)
+	
+	# Add to ActionRow
 	var action_row = find_child("ActionRow", true, false)
-	
 	if action_row:
-		# Add to ActionRow
 		action_row.add_child(auto_dive_checkbox)
-		
-		# Move it before the Dive button
 		var dive_btn = action_row.find_child("DiveButton", false)
 		if dive_btn:
-			var dive_index = dive_btn.get_index()
-			action_row.move_child(auto_dive_checkbox, dive_index)
-			print("Auto checkbox positioned before Dive button")
-		
-		# Connect signal
-		if not auto_dive_checkbox.toggled.is_connected(_on_auto_dive_toggled):
-			auto_dive_checkbox.toggled.connect(_on_auto_dive_toggled)
-		
-		print("Auto-Dive checkbox created in ActionRow")
-	else:
-		push_error("ActionRow not found in DepthBarRow!")
+			action_row.move_child(auto_dive_checkbox, dive_btn.get_index())
 	
-	# Check if should be visible
+	# Check initial visibility
 	_update_auto_dive_visibility()
 
 
@@ -238,21 +227,41 @@ func _update_auto_dive_visibility():
 		auto_dive_checkbox.visible = false
 		return
 	
-	# Use getter function instead of direct variable
-	var shop = gm.get_abyss_shop() if gm.has_method("get_abyss_shop") else null
-	if shop == null:
-		# Fallback: try direct node path
-		shop = get_node_or_null("/root/Main/MainUI/Root/MetaPanel/Window/RootVBox/PetaPages/AbyssPage")
+	# Check ownership via GameManager's cache OR shop node
+	var has_auto_dive = false
 	
-	var has_it = shop != null and shop.has_method("has_item") and shop.has_item("auto_dive")
-	auto_dive_checkbox.visible = has_it
+	# Method 1: Check GameManager's cached data
+	if "abyss_shop_unlocked" in gm:
+		has_auto_dive = "auto_dive" in gm.abyss_shop_unlocked
+	
+	# Method 2: Fallback to shop node
+	if not has_auto_dive:
+		var shop = gm.get_abyss_shop() if gm.has_method("get_abyss_shop") else null
+		if shop != null and shop.has_method("has_item"):
+			has_auto_dive = shop.has_item("auto_dive")
+	
+	auto_dive_checkbox.visible = has_auto_dive
+	
+	# Sync checkbox state with GameManager
+	if has_auto_dive and "auto_dive_enabled" in gm:
+		auto_dive_checkbox.button_pressed = gm.auto_dive_enabled
 	
 func _on_auto_dive_toggled(enabled: bool):
 	print("Auto-Dive toggled:", enabled)
 	var gm = get_node_or_null("/root/Main/GameManager")
-	if gm:
-		gm.auto_dive_enabled = enabled
-		gm.save_game()
+	if gm == null:
+		return
+	
+	# Update GameManager
+	gm.auto_dive_enabled = enabled
+	
+	# CRITICAL: Also update AbyssShop active_items
+	var shop = gm.get_abyss_shop() if gm.has_method("get_abyss_shop") else null
+	if shop != null and shop.has_method("set_active"):
+		shop.set_active("auto_dive", enabled)
+	
+	# Save immediately
+	gm.save_game()
 
 
 func _gui_input(event: InputEvent) -> void:

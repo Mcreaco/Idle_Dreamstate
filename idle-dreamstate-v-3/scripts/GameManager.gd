@@ -60,12 +60,11 @@ const LT_DEEPEST := "deepest_depth"
 const LT_PLAYTIME := "total_playtime"
 var memories: float = 0.0
 # Abyss Shop data (for saving/loading)
-var abyss_shop_unlocked: Array = []
+var abyss_shop_unlocked: Array[String] = []
 var abyss_shop_active: Dictionary = {}
 var idle_thoughts_rate: float = 0.8
 var idle_control_rate: float = 0.5
 var idle_instability_rate: float = 0.12
-
 var dive_thoughts_gain: float = 18.0
 var dive_control_gain: float = 6.0
 
@@ -187,6 +186,20 @@ var has_supporter_pack: bool = false
 
 signal abyss_transcended(new_tier: int, points_gained: float)
 
+func get_abyss_shop_data() -> Dictionary:
+	# Return copies to prevent external modification
+	return {
+		"unlocked": abyss_shop_unlocked.duplicate(),
+		"active": abyss_shop_active.duplicate()
+	}
+
+# Add to GameManager.gd - called by AbyssShop when purchases happen
+func update_abyss_shop_data(unlocked: Array[String], active: Dictionary) -> void:
+	abyss_shop_unlocked = unlocked.duplicate()
+	abyss_shop_active = active.duplicate()
+	save_game()  # Immediate persist
+	print("Abyss Shop data updated and saved")
+	
 func get_abyss_shop():
 	var shop = get_node_or_null("/root/Main/MainUI/Root/MetaPanel/Window/RootVBox/PetaPages/AbyssPage")
 	if shop == null:
@@ -1642,6 +1655,11 @@ func save_game() -> void:
 	data["last_purchase_reset_timestamp"] = last_purchase_reset_timestamp
 	data["has_supporter_pack"] = has_supporter_pack
 	
+	# CRITICAL: Always save shop data from authoritative cache
+	data["abyss_shop_unlocked"] = abyss_shop_unlocked
+	data["abyss_shop_active"] = abyss_shop_active
+	data["auto_dive_enabled"] = auto_dive_enabled
+	
 	# SAVE DepthRunController data (fixes the "not saving" bug)
 	var drc := get_node_or_null("/root/DepthRunController")
 	if drc != null:
@@ -1737,7 +1755,8 @@ func save_game() -> void:
 		data["abyss_shop_active"] = shop_data.active
 		
 	SaveSystem.save_game(data)
-
+	print("Game Saved - Shop items: ", abyss_shop_unlocked.size())
+	
 func load_game() -> void:
 	var data: Dictionary = SaveSystem.load_game()
 	
@@ -1766,7 +1785,7 @@ func load_game() -> void:
 	max_depth_reached = int(data.get("max_depth_reached", 1))
 	abyss_unlocked_flag = bool(data.get("abyss_unlocked", false))
 	run_start_depth = int(data.get("run_start_depth", loaded_depth))
-	# F2P Monetization data
+	# Load F2P data
 	gems = int(data.get("gems", 0))
 	abyss_tier = int(data.get("abyss_tier", 0))
 	abyss_points = float(data.get("abyss_points", 0.0))
@@ -1776,15 +1795,24 @@ func load_game() -> void:
 	ads_watched_today = int(data.get("ads_watched_today", 0))
 	last_purchase_reset_timestamp = int(data.get("last_purchase_reset_timestamp", 0))
 	has_supporter_pack = bool(data.get("has_supporter_pack", false))
-	# Load Abyss Shop data directly
-	var loaded_shop = data.get("abyss_shop_unlocked", [])
-	var loaded_active = data.get("abyss_shop_active", {})
-
-	# Store in GameManager for AbyssShop to pick up
-	abyss_shop_unlocked = Array(loaded_shop) if loaded_shop is Array else []
-	abyss_shop_active = Dictionary(loaded_active) if loaded_active is Dictionary else {}
-	# Auto-dive preference (you already have this but ensure it's here)
+	
+	# Load Abyss Shop data - SINGLE ROBUST BLOCK
+	var _loaded_shop = data.get("abyss_shop_unlocked", [])
+	var _loaded_active = data.get("abyss_shop_active", {})
+	
+	# Cast to proper types (handles both typed and untyped arrays from save)
+	if _loaded_shop is Array:
+		abyss_shop_unlocked.clear()
+		for item in _loaded_shop:
+			abyss_shop_unlocked.append(str(item))  # str() ensures String type
+	else:
+		abyss_shop_unlocked.clear()
+	
+	abyss_shop_active = Dictionary(_loaded_active) if _loaded_active is Dictionary else {}
 	auto_dive_enabled = bool(data.get("auto_dive_enabled", false))
+	
+	print("Game Loaded - Shop items: ", abyss_shop_unlocked.size())
+	
 		# Restore DepthRunController state
 	var drc := get_node_or_null("/root/DepthRunController")
 	if drc != null:
@@ -1841,9 +1869,20 @@ func load_game() -> void:
 			else:
 				drc.set("active_depth", saved_active)
 			_depth_cache = saved_active
-	# Store for AbyssShop to pick up
-	abyss_shop_unlocked = data.get("abyss_shop_unlocked", [])
-	abyss_shop_active = data.get("abyss_shop_active", {})
+		# ABYSS SHOP - SINGLE LOADING BLOCK (replaces all scattered assignments)
+	var _raw_shop = data.get("abyss_shop_unlocked", [])
+	var _raw_active = data.get("abyss_shop_active", {})
+	
+	# Clear and rebuild with proper typing (handles untyped Arrays from save)
+	abyss_shop_unlocked.clear()
+	if _raw_shop is Array:
+		for _item in _raw_shop:
+			abyss_shop_unlocked.append(str(_item))
+	
+	abyss_shop_active = Dictionary(_raw_active) if _raw_active is Dictionary else {}
+	auto_dive_enabled = bool(data.get("auto_dive_enabled", false))
+	
+	print("Game Loaded - Shop items: ", abyss_shop_unlocked.size())
 	if abyss_perk_system != null:
 		abyss_perk_system.echoed_descent_level = int(data.get("abyss_echoed_descent_level", 0))
 		abyss_perk_system.abyssal_focus_level = int(data.get("abyss_abyssal_focus_level", 0))
@@ -1953,7 +1992,15 @@ func load_game() -> void:
 	_refresh_top_ui()
 	# Load Abyss Shop items (call after a delay to ensure scene is ready)
 	call_deferred("_load_abyss_shop")
-
+	# CRITICAL: Defer shop sync to ensure scene is ready
+	call_deferred("_sync_abyss_shop_to_scene")
+	
+func _sync_abyss_shop_to_scene():
+	var shop = get_abyss_shop()
+	if shop != null and shop.has_method("load_from_gamemanager"):
+		shop.load_from_gamemanager(abyss_shop_unlocked.duplicate(), abyss_shop_active.duplicate())
+		print("AbyssShop synced")
+		
 func _load_abyss_shop():
 	var shop_node = get_node_or_null("/root/Main/MainUI/Root/MetaPanel/Window/RootVBox/PetaPages/AbyssPage")
 	if shop_node and shop_node.has_method("load_data"):

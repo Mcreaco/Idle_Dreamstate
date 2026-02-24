@@ -142,13 +142,12 @@ func _process(delta: float) -> void:
 				var cap: float = get_depth_progress_cap(active_depth)
 				progress_percent = (current / cap) * 100.0 if cap > 0 else 0.0
 				
-				# Check auto-dive
-				var gm = get_node_or_null("/root/Main/GameManager")
-				if gm and gm.has_method("has_auto_dive_enabled"):
-					if gm.has_auto_dive_enabled() and progress_percent >= 100.0 and can_dive():
+					# Check auto-dive using GameManager (consolidated check)
+				var gm_check = get_node_or_null("/root/Main/GameManager")
+				if gm_check and gm_check.has_method("has_auto_dive_enabled"):
+					if gm_check.has_auto_dive_enabled() and progress_percent >= 100.0 and can_dive():
+						print("Auto-diving from depth ", active_depth)
 						dive()
-		
-
 
 func _tick_active_depth(delta: float) -> void:
 	var d: int = active_depth
