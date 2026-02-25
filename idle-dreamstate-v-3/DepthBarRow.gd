@@ -140,14 +140,17 @@ func _ready() -> void:
 			(n as PanelContainer).add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 
 	if dive_button != null:
-		_apply_blue_button_style(dive_button)
-		if not dive_button.pressed.is_connected(Callable(self, "_on_dive_pressed")):
-			dive_button.pressed.connect(Callable(self, "_on_dive_pressed"))
-
+		# Disconnect any existing connections first
+		for conn in dive_button.pressed.get_connections():
+			dive_button.pressed.disconnect(conn.callable)
+	
 	if close_button != null:
-		_apply_blue_button_style(close_button)
-		if not close_button.pressed.is_connected(Callable(self, "_on_close_pressed")):
-			close_button.pressed.connect(Callable(self, "_on_close_pressed"))
+		for conn in close_button.pressed.get_connections():
+			close_button.pressed.disconnect(conn.callable)
+		close_button.pressed.connect(_on_close_pressed)
+	
+	# CRITICAL FIX: Ensure dive button is visible and enabled when it should be
+	call_deferred("_refresh_dive_button_state")
 
 	_apply_visuals()
 	
@@ -190,7 +193,48 @@ func _ready() -> void:
 	
 	# Check initial visibility
 	_update_auto_dive_visibility()
+	
+	# CRITICAL FIX: Set up proper input handling
+	mouse_filter = Control.MOUSE_FILTER_PASS  # Let children handle input
+	
+	# Ensure all interactive elements can receive input
+	call_deferred("_setup_input_handling")
+	
+	# DEBUG: Check if confirmation function exists
+	if has_method("_show_dive_confirmation"):
+		print("CONFIRMATION METHOD EXISTS")
+	else:
+		push_error("MISSING: _show_dive_confirmation method!")
+	
+	# Check current connections after arrangement
+	call_deferred("_debug_dive_connections")
 
+func _debug_dive_connections() -> void:
+	if dive_button:
+		print("Dive button connections:")
+		for conn in dive_button.pressed.get_connections():
+			print("  - ", conn.callable)
+			
+func _fix_button_mouse_filters() -> void:
+	# Make sure all containers pass through input to buttons
+	for child in get_children():
+		if child is Control:
+			child.mouse_filter = Control.MOUSE_FILTER_PASS
+	
+	# Ensure buttons capture input
+	for btn in find_children("*", "Button", true):
+		btn.mouse_filter = Control.MOUSE_FILTER_STOP
+		btn.z_index = 100  # Bring to front
+	
+	# Specifically fix ActionRow
+	var action_row = find_child("ActionRow", true, false)
+	if action_row:
+		action_row.mouse_filter = Control.MOUSE_FILTER_PASS
+	
+	# Fix upgrades box
+	if upgrades_box:
+		upgrades_box.mouse_filter = Control.MOUSE_FILTER_PASS
+		
 func _create_auto_dive_checkbox():
 	# Prevent duplicate creation
 	if auto_dive_checkbox != null:
@@ -264,22 +308,61 @@ func _on_auto_dive_toggled(enabled: bool):
 	gm.save_game()
 
 
+func _setup_input_handling() -> void:
+	# Make all containers pass input through
+	for child in get_children():
+		_set_mouse_filter_recursive(child, Control.MOUSE_FILTER_PASS)
+	
+	# But buttons should stop input
+	for btn in find_children("*", "Button", true):
+		btn.mouse_filter = Control.MOUSE_FILTER_STOP
+		btn.z_index = 100
+	
+	# Checkboxes too
+	for chk in find_children("*", "CheckBox", true):
+		chk.mouse_filter = Control.MOUSE_FILTER_STOP
+
+func _set_mouse_filter_recursive(node: Node, filter: int) -> void:
+	if node is Control:
+		node.mouse_filter = filter
+	for child in node.get_children():
+		_set_mouse_filter_recursive(child, filter)
+
 func _gui_input(event: InputEvent) -> void:
-	# Debounce after closing overlay (prevents instant re-open bug)
+	if not (event is InputEventMouseButton and event.pressed):
+		return
+	
+	var mouse_pos = get_global_mouse_position()
+	
+	# CRITICAL FIX: Check if clicking dive button directly
+	if dive_button and dive_button.visible and not dive_button.disabled:
+		var btn_rect = dive_button.get_global_rect()
+		if btn_rect.has_point(mouse_pos):
+			print("DIVE BUTTON CLICKED DIRECTLY")
+			_show_dive_confirmation()
+			get_viewport().set_input_as_handled()
+			return
+	
+	# Check close button
+	if close_button and close_button.visible:
+		var close_rect = close_button.get_global_rect()
+		if close_rect.has_point(mouse_pos):
+			print("CLOSE BUTTON CLICKED")
+			request_close.emit(depth_index)
+			get_viewport().set_input_as_handled()
+			return
+	
+	# Debounce
 	if Time.get_ticks_msec() < _block_click_until_msec:
 		return
-
-	# When expanded/overlayed, the row itself should not react to clicks
-	# The close button or clicking outside handles closing
+	
+	# Row click to expand (only if not clicking buttons)
 	if _overlay_mode or _details_open:
 		return
-
-	if event is InputEventMouseButton:
-		var mb := event as InputEventMouseButton
-		if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
-			if _active and not _locked and not _frozen:
-				clicked_depth.emit(depth_index)
-				get_viewport().set_input_as_handled()  # Prevent passing to other elements
+	
+	if _active and not _locked and not _frozen:
+		clicked_depth.emit(depth_index)
+		get_viewport().set_input_as_handled()
 # -----------------------
 # Public API
 # -----------------------
@@ -318,7 +401,8 @@ func set_overlay_mode(v: bool) -> void:
 			_margin.add_theme_constant_override("margin_right", 0)
 			_margin.add_theme_constant_override("margin_top", 0)
 			_margin.add_theme_constant_override("margin_bottom", 0)
-			# CRITICAL: Allow clicking through when in overlay mode
+			# CRITICAL FIX: Allow clicking through when in overlay mode
+			# BUT let children (buttons) receive input
 			mouse_filter = Control.MOUSE_FILTER_PASS
 		else:
 			_margin.add_theme_constant_override("margin_left", 10)
@@ -331,8 +415,18 @@ func set_overlay_mode(v: bool) -> void:
 	_apply_bar_style()
 	_apply_row_background_texture()
 	_apply_visuals()
+	
+	# CRITICAL FIX: Ensure buttons can receive input when details are open
+	if _details_open:
+		call_deferred("_ensure_buttons_clickable")
 
-
+func _ensure_buttons_clickable() -> void:
+	# Force all buttons to have proper mouse filter
+	for btn in find_children("*", "Button", true):
+		btn.mouse_filter = Control.MOUSE_FILTER_STOP
+		# Ensure buttons aren't being blocked by parent containers
+		if btn.get_parent() is Control:
+			(btn.get_parent() as Control).mouse_filter = Control.MOUSE_FILTER_PASS
 
 func set_data(data: Dictionary) -> void:
 	# Update internal data - ensure we have valid values
@@ -1097,13 +1191,30 @@ func _apply_blue_button_style(b: Button) -> void:
 # -----------------------
 # Button callbacks
 # -----------------------
-func _on_dive_pressed() -> void:
-	_show_dive_confirmation()
+func _refresh_dive_button_state() -> void:
+	if dive_button == null:
+		return
+	
+	var drc := get_node_or_null("/root/DepthRunController")
+	if drc == null:
+		return
+	
+	var can_dive_now := false
+	if drc.has_method("can_dive"):
+		can_dive_now = drc.can_dive()
+	
+	# Only update if changed to avoid spam
+	if dive_button.disabled == can_dive_now:  # If disabled status matches can_dive, flip it
+		dive_button.disabled = not can_dive_now
+		print("Depth ", depth_index, " dive button updated: can_dive=", can_dive_now)
 	
 func _show_dive_confirmation() -> void:
+	print("SHOWING DIVE CONFIRMATION for depth ", depth_index)
+	
 	# Remove existing popup if any
 	if _dive_confirm_popup != null and is_instance_valid(_dive_confirm_popup):
 		_dive_confirm_popup.queue_free()
+		_dive_confirm_popup = null
 	
 	# Create CanvasLayer to ensure we're above EVERYTHING
 	var canvas_layer := CanvasLayer.new()
@@ -1190,7 +1301,7 @@ func _show_dive_confirmation() -> void:
 	hbox.add_theme_constant_override("separation", 25)
 	vbox.add_child(hbox)
 	
-	# DIVE BUTTON - CRITICAL FIX
+	# DIVE BUTTON - CONFIRMED
 	var dive_btn := Button.new()
 	dive_btn.name = "DiveConfirmButton"
 	dive_btn.text = "Dive"
@@ -1198,38 +1309,24 @@ func _show_dive_confirmation() -> void:
 	_apply_blue_button_style(dive_btn)
 	
 	dive_btn.pressed.connect(func():
-		print("DIVE CONFIRMED - executing dive")
+		print("DIVE CONFIRMED - executing dive from depth ", depth_index)
 		
-		# 1. EXECUTE DIVE
+		# Execute the actual dive
 		var gm = get_tree().current_scene.find_child("GameManager", true, false)
 		if gm != null and gm.has_method("do_dive"):
 			gm.call("do_dive")
+		else:
+			# Fallback to DRC
+			var drc := get_node_or_null("/root/DepthRunController")
+			if drc != null and drc.has_method("dive"):
+				drc.dive()
 		
-			# 2. CRITICAL: Explicitly refresh the panel immediately
-			var bars_panel = get_tree().current_scene.find_child("DepthBarsPanel", true, false)
-			if bars_panel == null:
-				bars_panel = get_tree().current_scene.find_child("DepthBarPanel", true, false)  # INDENT THIS LINE
-			var drc = get_node_or_null("/root/DepthRunController")
-			if bars_panel != null and drc != null:
-				var new_depth = drc.get("active_depth")
-				print("Setting panel active depth to: ", new_depth)
-				if bars_panel.has_method("set_active_depth"):
-					bars_panel.call("set_active_depth", int(new_depth))
-				else:
-					push_warning("DepthBarsPanel missing set_active_depth method")
-					
-				if bars_panel.has_method("_apply_row_states"):
-					bars_panel.call("_apply_row_states")
-				elif bars_panel.has_method("refresh_rows"):
-					bars_panel.call("refresh_rows")
-		
-		# 3. Close popup
+		# Close popup and panel
 		_close_dive_confirmation()
 		set_details_open(false)
 		request_close.emit(depth_index)
 	)
 	
-	# CRITICAL: Must add the button to the scene!
 	hbox.add_child(dive_btn)
 	
 	# CANCEL BUTTON
@@ -1241,12 +1338,13 @@ func _show_dive_confirmation() -> void:
 	hbox.add_child(cancel_btn)
 	
 	canvas_layer.visible = true
-
+	print("Dive confirmation panel should be visible now")
 
 func _close_dive_confirmation() -> void:
 	if _dive_confirm_popup != null and is_instance_valid(_dive_confirm_popup):
 		_dive_confirm_popup.queue_free()
 	_dive_confirm_popup = null
+	print("Dive confirmation closed")
 
 
 func _proceed_with_dive() -> void:
@@ -1310,139 +1408,188 @@ func _hide_extra_progress_bars() -> void:
 		pb.visible = false
 
 func _add_upgrade_row_dynamic(id: String, data: Dictionary) -> void:
+	var row_panel := PanelContainer.new()
+	row_panel.name = "UpgradePanel_%s" % id
+	row_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row_panel.mouse_filter = Control.MOUSE_FILTER_PASS
+	
+	# Style the row panel with blue border
+	var panel_style := StyleBoxFlat.new()
+	panel_style.bg_color = Color(0.08, 0.12, 0.18, 0.6)
+	panel_style.border_color = Color(0.24, 0.67, 0.94, 0.8)
+	panel_style.border_width_left = 2
+	panel_style.border_width_top = 2
+	panel_style.border_width_right = 2
+	panel_style.border_width_bottom = 2
+	panel_style.corner_radius_top_left = 6
+	panel_style.corner_radius_top_right = 6
+	panel_style.corner_radius_bottom_left = 6
+	panel_style.corner_radius_bottom_right = 6
+	panel_style.content_margin_left = 8
+	panel_style.content_margin_right = 8
+	panel_style.content_margin_top = 6
+	panel_style.content_margin_bottom = 6
+	row_panel.add_theme_stylebox_override("panel", panel_style)
+	
 	var row := HBoxContainer.new()
 	row.name = "UpgradeRow_%s" % id
 	row.add_theme_constant_override("separation", 12)
+	row.mouse_filter = Control.MOUSE_FILTER_PASS
+	row_panel.add_child(row)
 	
-	# NAME + DESCRIPTION
-	var name_desc_hbox := HBoxContainer.new()
-	name_desc_hbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	name_desc_hbox.add_theme_constant_override("separation", 12)
-	name_desc_hbox.custom_minimum_size.x = 450
+	# CRITICAL FIX: Declare auto_check here with broader scope
+	var auto_check: CheckBox = null
 	
-	# AUTO-BUY CHECKBOX - only show if unlocked for this depth
+	# AUTO-BUY CHECKBOX
 	var show_auto_buy := false
 	var gm = get_tree().current_scene.find_child("GameManager", true, false)
-	if gm != null:
-		if gm.has_method("is_auto_buy_unlocked_for_depth"):
-			if gm.call("is_auto_buy_unlocked_for_depth", depth_index):
-				show_auto_buy = true
-				print("Auto-buy enabled for depth ", depth_index, " via meta check")
-		
-		# Debug output
-		if gm.has_method("is_auto_buy_unlocked_for_depth"):
-			var method_result = gm.call("is_auto_buy_unlocked_for_depth", depth_index)
-			print("Depth ", depth_index, " auto_buy check: array=", depth_index in gm.auto_buy_unlocked_depths, " method=", method_result)
-
-	if depth_index == 1:
-		if gm != null:
-			print("Auto-buy check: depth 1 in array? ", 1 in gm.auto_buy_unlocked_depths)
-		
+	if gm != null and gm.has_method("is_auto_buy_unlocked_for_depth"):
+		if gm.call("is_auto_buy_unlocked_for_depth", depth_index):
+			show_auto_buy = true
+	
 	if show_auto_buy:
-		var auto_check := CheckBox.new()
+		auto_check = CheckBox.new()
 		auto_check.name = "AutoCheck"
-		auto_check.tooltip_text = "Auto-buy this upgrade when affordable"
-		
-		# FORCE UNCHECKED
+		auto_check.tooltip_text = "Auto-buy when affordable"
 		auto_check.button_pressed = false
 		_auto_buy_enabled[id] = false
 		
-		auto_check.pressed.connect(func():
-			var new_state := auto_check.button_pressed
-			_auto_buy_enabled[id] = new_state
-			print("CHECKBOX: ", id, " = ", new_state)  # Should only print when YOU click
+		auto_check.toggled.connect(func(checked):
+			_auto_buy_enabled[id] = checked
+			print("Auto-buy for ", id, ": ", checked)
 		)
 		
 		row.add_child(auto_check)
+		row.move_child(auto_check, 0)
+	
+	# NAME + DESCRIPTION
+	var name_desc_vbox := VBoxContainer.new()
+	name_desc_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	
 	var name_label := Label.new()
 	name_label.text = data.get("name", id.capitalize())
 	name_label.add_theme_font_size_override("font_size", 20)
 	name_label.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0))
-	name_label.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	name_desc_vbox.add_child(name_label)
 	
 	var desc_label := Label.new()
 	desc_label.text = data.get("description", "")
-	desc_label.add_theme_font_size_override("font_size", 15)
-	
-	# FIX: Darker text for Depth 1 (light background), lighter for others
-	if depth_index == 1:
-		desc_label.add_theme_color_override("font_color", Color(0.1, 0.12, 0.18, 1.0))  # Dark blue-black
-	else:
-		desc_label.add_theme_color_override("font_color", Color(0.75, 0.85, 0.95, 1.0))  # Light blue-white
-	
+	desc_label.add_theme_font_size_override("font_size", 14)
+	# CRITICAL FIX: Always use light text now that we have bordered panels
+	desc_label.add_theme_color_override("font_color", Color(0.85, 0.92, 1.0, 0.9))
 	desc_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	desc_label.max_lines_visible = 1
-	desc_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	desc_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	desc_label.max_lines_visible = 2
+	name_desc_vbox.add_child(desc_label)
 	
-	name_desc_hbox.add_child(name_label)
-	name_desc_hbox.add_child(desc_label)
+	row.add_child(name_desc_vbox)
 	
-	# Get upgrade data
-	var lvl := int(_local_upgrades.get(id, 0))
-	var max_lvl: int = data.get("max_level", 1)
-	var base_cost: float = data.get("base_cost", 100.0)
-	var growth: float = data.get("cost_growth", 1.5)
+	# LEVEL LABEL (with border)
+	var lvl_container := PanelContainer.new()
+	lvl_container.custom_minimum_size = Vector2(80, 0)
 	
-	# LEVEL LABEL
+	var lvl_style := StyleBoxFlat.new()
+	lvl_style.bg_color = Color(0.06, 0.08, 0.12, 0.8)
+	lvl_style.border_color = Color(0.24, 0.67, 0.94, 0.6)
+	lvl_style.border_width_left = 1
+	lvl_style.border_width_top = 1
+	lvl_style.border_width_right = 1
+	lvl_style.border_width_bottom = 1
+	lvl_style.corner_radius_top_left = 4
+	lvl_style.corner_radius_top_right = 4
+	lvl_style.corner_radius_bottom_left = 4
+	lvl_style.corner_radius_bottom_right = 4
+	lvl_container.add_theme_stylebox_override("panel", lvl_style)
+	
 	var lvl_label := Label.new()
 	lvl_label.name = "LevelLabel"
-	if max_lvl >= 999999:
-		lvl_label.text = "Lv %d" % lvl
-	else:
-		lvl_label.text = "Lv %d/%d" % [lvl, max_lvl]
-	lvl_label.add_theme_font_size_override("font_size", 18)
+	lvl_label.text = "Lv 0/%d" % data.get("max_level", 1) if data.get("max_level", 1) < 999 else "Lv 0"
+	lvl_label.add_theme_font_size_override("font_size", 16)
 	lvl_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	lvl_label.custom_minimum_size.x = 90
+	lvl_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	lvl_container.add_child(lvl_label)
 	
-	# COST LABEL (will be updated dynamically)
+	row.add_child(lvl_container)
+	
+	# COST LABEL (with border - THE 🧠 ICON)
+	var cost_container := PanelContainer.new()
+	cost_container.custom_minimum_size = Vector2(100, 0)
+	
+	var cost_style := StyleBoxFlat.new()
+	cost_style.bg_color = Color(0.12, 0.08, 0.16, 0.8)
+	cost_style.border_color = Color(0.8, 0.4, 0.9, 0.8)
+	cost_style.border_width_left = 1
+	cost_style.border_width_top = 1
+	cost_style.border_width_right = 1
+	cost_style.border_width_bottom = 1
+	cost_style.corner_radius_top_left = 4
+	cost_style.corner_radius_top_right = 4
+	cost_style.corner_radius_bottom_left = 4
+	cost_style.corner_radius_bottom_right = 4
+	cost_container.add_theme_stylebox_override("panel", cost_style)
+	
 	var cost_label := Label.new()
 	cost_label.name = "CostLabel"
 	cost_label.add_theme_font_size_override("font_size", 16)
-	cost_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	cost_label.custom_minimum_size.x = 140
+	cost_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	cost_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	cost_container.add_child(cost_label)
 	
-	# BUTTON (will be updated dynamically)
+	row.add_child(cost_container)
+	
+	# BUY BUTTON (with blue border)
+	var btn_container := PanelContainer.new()
+	btn_container.custom_minimum_size = Vector2(50, 50)
+	btn_container.mouse_filter = Control.MOUSE_FILTER_PASS
+	
+	var btn_style := StyleBoxFlat.new()
+	btn_style.bg_color = Color(0.08, 0.14, 0.22, 0.9)
+	btn_style.border_color = Color(0.24, 0.67, 0.94, 1.0)
+	btn_style.border_width_left = 2
+	btn_style.border_width_top = 2
+	btn_style.border_width_right = 2
+	btn_style.border_width_bottom = 2
+	btn_style.corner_radius_top_left = 6
+	btn_style.corner_radius_top_right = 6
+	btn_style.corner_radius_bottom_left = 6
+	btn_style.corner_radius_bottom_right = 6
+	btn_container.add_theme_stylebox_override("panel", btn_style)
+	
 	var btn := Button.new()
-	btn.text = "+" if lvl < max_lvl else "MAX"
-	_apply_blue_button_style(btn)
-	btn.custom_minimum_size = Vector2(50, 50)
+	btn.text = "+"
+	btn.custom_minimum_size = Vector2(46, 46)
+	btn.flat = true
+	btn.mouse_filter = Control.MOUSE_FILTER_STOP
+	btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	
-	for conn in btn.pressed.get_connections():
-		btn.pressed.disconnect(conn["callable"])
-
-# Then connect
-	btn.pressed.connect(func():
-		_attempt_purchase(id, data)
-	)
-	# Store references for real-time updates
+	btn.pressed.connect(_attempt_purchase.bind(id, data))
+	
+	btn_container.add_child(btn)
+	row.add_child(btn_container)
+	
+	# Store references - CRITICAL FIX: auto_check is now in scope
 	_upgrade_ui_refs[id] = {
 		"button": btn,
 		"cost_label": cost_label,
 		"lvl_label": lvl_label,
-		"base_cost": base_cost,
-		"growth": growth,
-		"max_lvl": max_lvl,
-		"row": row
+		"cost_container": cost_container,
+		"lvl_container": lvl_container,
+		"base_cost": data.get("base_cost", 100.0),
+		"growth": data.get("cost_growth", 1.5),
+		"max_lvl": data.get("max_level", 1),
+		"row": row,
+		"panel": row_panel,
+		"auto_check": auto_check  # Now safely in scope
 	}
 	
-	# Initial update
+	upgrades_box.add_child(row_panel)
+	
+	var spacer := Control.new()
+	spacer.custom_minimum_size = Vector2(0, 6)
+	upgrades_box.add_child(spacer)
+	
 	_update_upgrade_row_ui(id)
-	
-	# Button pressed logic
-	btn.pressed.connect(func():
-		_attempt_purchase(id, data)
-	)
-	
-	row.add_child(name_desc_hbox)
-	row.add_child(lvl_label)
-	row.add_child(cost_label)
-	row.add_child(btn)
-	upgrades_box.add_child(row)
 
 func _attempt_purchase(id: String, data: Dictionary) -> bool:
-	# First declare all variables
 	var game_mgr := get_tree().current_scene.find_child("GameManager", true, false) as GameManager
 	if game_mgr == null:
 		return false
@@ -1458,9 +1605,9 @@ func _attempt_purchase(id: String, data: Dictionary) -> bool:
 	var depth_multiplier := pow(float(depth_index), 2.5) * 3.0
 	var current_cost := base_cost * depth_multiplier * pow(growth, current_lvl)
 	
-	# THEN check cooldown (after declaring current_cost)
+	# Check cooldown (after declaring current_cost)
 	if _purchase_cooldown > 0:
-		print("Purchase on cooldown, skipping")
+		print("Purchase on cooldown: ", _purchase_cooldown)
 		return false
 	
 	# Apply cooldown and purchase
@@ -1473,6 +1620,9 @@ func _attempt_purchase(id: String, data: Dictionary) -> bool:
 		
 		if game_mgr.has_method("_refresh_top_ui"):
 			game_mgr._refresh_top_ui()
+		
+		# Refresh UI to show new level
+		_update_upgrade_row_ui(id)
 		return true
 	
 	return false
@@ -1488,6 +1638,8 @@ func _update_upgrade_row_ui(id: String) -> void:
 	var base_cost: float = refs["base_cost"]
 	var growth: float = refs["growth"]
 	var max_lvl: int = refs["max_lvl"]
+	var cost_container: PanelContainer = refs["cost_container"]
+	var lvl_container: PanelContainer = refs["lvl_container"]  # This line causes warning if not used
 	
 	var gm := get_tree().current_scene.find_child("GameManager", true, false) as GameManager
 	var current_thoughts := 0.0
@@ -1495,17 +1647,23 @@ func _update_upgrade_row_ui(id: String) -> void:
 		current_thoughts = gm.thoughts
 	
 	var lvl := int(_local_upgrades.get(id, 0))
+	
 	if max_lvl >= 999:
 		lvl_label.text = "Lv %d" % lvl
 	else:
 		lvl_label.text = "Lv %d/%d" % [lvl, max_lvl]
 	
-	# In _update_upgrade_row_ui, around line where cost_label.text is set:
 	if lvl >= max_lvl:
 		btn.text = "MAX"
 		btn.disabled = true
-		cost_label.text = ""
-		cost_label.modulate = Color(1, 1, 1)
+		cost_label.text = "MAX"
+		cost_label.modulate = Color(0.5, 0.5, 0.5)
+		
+		# Use lvl_container here to avoid warning
+		var dim_style := lvl_container.get_theme_stylebox("panel").duplicate()
+		if dim_style is StyleBoxFlat:
+			dim_style.border_color = Color(0.4, 0.4, 0.4, 0.4)
+			lvl_container.add_theme_stylebox_override("panel", dim_style)
 	else:
 		var depth_multiplier := pow(float(depth_index), 2.5) * 3.0
 		var effective_base := base_cost * depth_multiplier
@@ -1514,13 +1672,27 @@ func _update_upgrade_row_ui(id: String) -> void:
 		
 		btn.text = "+"
 		btn.disabled = not can_afford
-		cost_label.text = "%s Thoughts" % _fmt_num(cost)  # This now uses the fixed formatter
-		cost_label.modulate = Color(0.6, 0.6, 0.6) if not can_afford else Color(1, 1, 1)
-	
-	# DEBUG: Show effect of upgrade
-	if id == "stabilize" and depth_index == 2:
-		if lvl > 0:
-			cost_label.text += " (-%d%% inst)" % (lvl * 5)  # Show -5% per level
+		cost_label.text = "%s 🧠" % _fmt_num(cost)
+		cost_label.modulate = Color(1, 1, 1) if can_afford else Color(0.8, 0.5, 0.5)
+		
+		# Update cost container border color based on affordability
+		var cost_style := cost_container.get_theme_stylebox("panel").duplicate()
+		if cost_style is StyleBoxFlat:
+			if can_afford:
+				cost_style.border_color = Color(0.4, 0.9, 0.4, 1.0)
+				# Also update lvl container to show available
+				var lvl_style_green := lvl_container.get_theme_stylebox("panel").duplicate()
+				if lvl_style_green is StyleBoxFlat:
+					lvl_style_green.border_color = Color(0.4, 0.9, 0.4, 0.6)
+					lvl_container.add_theme_stylebox_override("panel", lvl_style_green)
+			else:
+				cost_style.border_color = Color(0.8, 0.4, 0.4, 0.8)
+				# Reset lvl container
+				var lvl_style_normal := lvl_container.get_theme_stylebox("panel").duplicate()
+				if lvl_style_normal is StyleBoxFlat:
+					lvl_style_normal.border_color = Color(0.24, 0.67, 0.94, 0.6)
+					lvl_container.add_theme_stylebox_override("panel", lvl_style_normal)
+			cost_container.add_theme_stylebox_override("panel", cost_style)
 
 func _attempt_dive() -> void:
 	var drc := get_node_or_null("/root/DepthRunController")
@@ -1579,6 +1751,9 @@ func _process(_delta: float) -> void:
 	# Update visibility every second (in case purchase happens while panel is open)
 	if Engine.get_process_frames() % 60 == 0:
 		_update_auto_dive_visibility()
+	# CRITICAL FIX: Refresh dive button state every frame when expanded
+	if _details_open and dive_button != null:
+		_refresh_dive_button_state()
 		
 func _update_auto_dive_checkbox():
 	if auto_dive_checkbox == null:
@@ -1618,32 +1793,61 @@ func _arrange_dive_close_buttons() -> void:
 	if parent == null:
 		return
 	
-	# Ensure parent fills the width
+	# Ensure parent doesn't block
+	parent.mouse_filter = Control.MOUSE_FILTER_PASS
+	
+	# CRITICAL FIX: Disconnect ANY existing connections first
+	for conn in dive_button.pressed.get_connections():
+		dive_button.pressed.disconnect(conn.callable)
+		print("Disconnected: ", conn.callable)
+	
+	# CRITICAL FIX: Connect to confirmation panel
+	dive_button.pressed.connect(_show_dive_confirmation)
+	print("Connected dive button to _show_dive_confirmation")
+	
+	# Ensure buttons are properly configured
+	dive_button.mouse_filter = Control.MOUSE_FILTER_STOP
+	dive_button.z_index = 200
+	
+	close_button.mouse_filter = Control.MOUSE_FILTER_STOP
+	
+	# Layout
 	parent.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	
-	# Order: X first, then spacer, then Dive (right-aligned)
-	parent.move_child(close_button, 0)
+	# Order: Close (X), spacer, Dive
+	if close_button.get_parent() == parent:
+		parent.move_child(close_button, 0)
 	
-	# Check if we already added a spacer
 	var spacer = parent.get_node_or_null("ButtonSpacer")
 	if spacer == null:
 		spacer = Control.new()
 		spacer.name = "ButtonSpacer"
 		spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		parent.add_child(spacer)
+	if spacer.get_parent() == parent:
 		parent.move_child(spacer, 1)
-	
-	if dive_button.get_index() != 2:
+	if dive_button.get_parent() == parent:
 		parent.move_child(dive_button, 2)
 	
-	# X button: Small, anchored left
+	# Styling
 	close_button.custom_minimum_size = Vector2(50, 44)
 	close_button.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	close_button.size_flags_stretch_ratio = 0
 	close_button.text = "X"
 	
-	# Dive button: Wide, anchored right (near the + buttons)
-	dive_button.custom_minimum_size = Vector2(400, 44)
+	dive_button.custom_minimum_size = Vector2(120, 44)
 	dive_button.size_flags_horizontal = Control.SIZE_SHRINK_END
-	dive_button.size_flags_stretch_ratio = 0
 	dive_button.text = "Dive"
+	
+	print("Dive button arranged - connects to confirmation panel")
+
+func _input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.pressed:
+		if get_global_rect().has_point(get_global_mouse_position()):
+			var mouse_pos = get_global_mouse_position()
+			print("Click at: ", mouse_pos)
+			
+			if dive_button:
+				var btn_rect = dive_button.get_global_rect()
+				print("Dive button rect: ", btn_rect)
+				print("Mouse inside dive button: ", btn_rect.has_point(mouse_pos))
+				print("Dive button disabled: ", dive_button.disabled)

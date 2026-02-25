@@ -1861,14 +1861,20 @@ func load_game() -> void:
 			drc.set("instability", float(data["depth_instability"]))
 		
 		# Set active depth LAST (and only if different)
-		var current_active: int = drc.get("active_depth")
-		if data.has("active_depth"):
-			var saved_active: int = int(data["active_depth"])
-			if saved_active != current_active:
-				drc.call("set_active_depth", saved_active)
-			else:
-				drc.set("active_depth", saved_active)
-			_depth_cache = saved_active
+	var current_active: int = drc.get("active_depth")
+	if data.has("active_depth"):
+		var saved_active: int = int(data["active_depth"])
+		# CRITICAL FIX: Clamp to valid range
+		saved_active = clampi(saved_active, 1, 15)
+		
+		if saved_active != current_active:
+			drc.call("set_active_depth", saved_active)
+		else:
+			drc.set("active_depth", saved_active)
+		_depth_cache = saved_active
+		
+		# Update UI visibility based on depth
+		_on_depth_changed_from_controller(saved_active)
 		# ABYSS SHOP - SINGLE LOADING BLOCK (replaces all scattered assignments)
 	var _raw_shop = data.get("abyss_shop_unlocked", [])
 	var _raw_active = data.get("abyss_shop_active", {})

@@ -121,7 +121,8 @@ func _process(delta: float) -> void:
 	_tick_top(delta)
 	
 	# Check for death/fail when instability hits the cap (only depth 2+)
-	if active_depth >= 2:  # Only check instability death for depth 2 and beyond
+	# Check for death/fail when instability hits the cap (only depth 2+)
+	if active_depth >= 2:
 		var game_mgr = get_node_or_null("/root/GameManager")
 		var actual_cap := 1000.0
 		if game_mgr != null and game_mgr.depth_meta_system != null:
@@ -130,7 +131,10 @@ func _process(delta: float) -> void:
 		if instability >= actual_cap:
 			wake_cashout(1.0, true)
 			return
-		# Check auto-dive
+	
+	# CRITICAL FIX: Auto-Dive Check (moved outside depth 2+ block, runs for all depths)
+	_check_auto_dive()
+
 	var shop = get_node_or_null("/root/Main/MainUI/Root/MetaPanel/Window/RootVBox/PetaPages/AbyssPage")
 	if shop and shop.has_method("is_item_active"):
 		if shop.is_item_active("auto_dive"):
@@ -144,11 +148,69 @@ func _process(delta: float) -> void:
 				
 					# Check auto-dive using GameManager (consolidated check)
 				var gm_check = get_node_or_null("/root/Main/GameManager")
-				if gm_check and gm_check.has_method("has_auto_dive_enabled"):
-					if gm_check.has_auto_dive_enabled() and progress_percent >= 100.0 and can_dive():
-						print("Auto-diving from depth ", active_depth)
-						dive()
+				if gm_check.has_auto_dive_enabled() and progress_percent >= 99.9 and can_dive():
+					print("Auto-diving from depth ", active_depth)
+					
+					# CRITICAL FIX: Close ALL depth bars
+					var panel = get_tree().current_scene.find_child("DepthBarsPanel", true, false)
+					if panel:
+						if panel.has_method("close_all_expanded"):
+							panel.call("close_all_expanded")
+						elif panel.has_method("set_expanded_depth"):
+							panel.call("set_expanded_depth", -1)
+					
+					# Also notify any open rows to close
+					for row in get_tree().current_scene.find_children("DepthBarRow*", "PanelContainer", true):
+						if row.has_method("set_details_open"):
+							row.call("set_details_open", false)
+					
+					dive()
 
+
+func _check_auto_dive() -> void:
+	# Get GameManager reference
+	var gm = get_node_or_null("/root/Main/GameManager")
+	if gm == null or not gm.has_method("has_auto_dive_enabled"):
+		return
+	
+	# Check if player owns and has enabled auto-dive
+	if not gm.has_auto_dive_enabled():
+		return
+	
+	# Verify we have valid run data
+	if active_depth < 1 or active_depth > _run_internal.size():
+		return
+	
+	var data: Dictionary = _run_internal[active_depth - 1]
+	var current_progress: float = float(data.get("progress", 0.0))
+	var cap: float = get_depth_progress_cap(active_depth)
+	
+	if cap <= 0:
+		return
+	
+	# CRITICAL FIX: Use 99.9% threshold to avoid floating point precision issues
+	var progress_percent: float = (current_progress / cap) * 100.0
+	if progress_percent < 99.9:
+		return
+	
+	# Check if we can actually dive
+	if not can_dive():
+		return
+	
+	# CRITICAL FIX: Add small cooldown to prevent multiple rapid dives
+	if not has_meta("last_auto_dive_time"):
+		set_meta("last_auto_dive_time", 0.0)
+	
+	var last_dive: float = float(get_meta("last_auto_dive_time"))
+	var now: float = Time.get_ticks_msec() / 1000.0
+	if now - last_dive < 2.0:  # 2 second cooldown
+		return
+	
+	# Execute dive
+	print("Auto-diving from depth ", active_depth, " (progress: ", progress_percent, "%)")
+	set_meta("last_auto_dive_time", now)
+	dive()
+	
 func _tick_active_depth(delta: float) -> void:
 	var d: int = active_depth
 	var current_time := Time.get_ticks_msec() / 1000.0
@@ -285,10 +347,16 @@ func _sync_hud() -> void:
 
 
 func can_dive() -> bool:
-	
 	# Can't dive past max depth
 	if active_depth < 1 or active_depth >= max_depth:
 		return false
+	
+	# CRITICAL FIX: For depth 1, allow dive at 100% progress regardless of other requirements
+	if active_depth == 1:
+		var current_progress: float = float(_run_internal[0].get("progress", 0.0))
+		var cap: float = get_depth_progress_cap(1)
+		if current_progress >= cap * 0.999:  # 99.9% complete
+			return true
 	
 	# Check if next depth is unlocked in meta progression
 	var meta: Node = get_tree().current_scene.find_child("DepthMetaSystem", true, false)
@@ -301,7 +369,7 @@ func can_dive() -> bool:
 	if not meta_unlocked:
 		return false
 	
-	# Check depth-specific META upgrade requirements (permanent, not run upgrades)
+	# Check depth-specific META upgrade requirements
 	var def: Dictionary = get_depth_def(active_depth)
 	var rules: Dictionary = def.get("rules", {})
 	var dive_req = rules.get("dive_unlock_requirement", null)
@@ -312,7 +380,6 @@ func can_dive() -> bool:
 		
 		if req_upgrade != "":
 			var current_level: int = 0
-			# CHECK META UPGRADE (permanent), not local run upgrade
 			if meta != null and meta.has_method("get_level"):
 				current_level = meta.call("get_level", active_depth, req_upgrade)
 			

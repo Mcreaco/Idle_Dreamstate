@@ -1,13 +1,17 @@
-[gd_scene format=3 uid="uid://bsx0cageg3stg"]
+[gd_scene load_steps=2 format=3 uid="uid://bsx0cageg3stg"]
+
+[ext_resource type="Script" uid="uid://bsn4xrw3e344x" path="res://TimeWarpUI.gd" id="1_binv2"]
 
 [node name="TimeWarpPanel" type="PanelContainer"]
+visible = false
 offset_right = 40.0
 offset_bottom = 40.0
+script = ExtResource("1_binv2")
 
 [node name="DailyWarp" type="Label" parent="."]
 layout_mode = 2
 
-[node name="Hours" type="Button" parent="."]
+[node name="Hours" type="Label" parent="."]
 layout_mode = 2
 
 [node name="Watch Ad" type="Button" parent="."]
