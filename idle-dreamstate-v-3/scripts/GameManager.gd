@@ -67,7 +67,7 @@ var idle_control_rate: float = 0.5
 var idle_instability_rate: float = 0.12
 var dive_thoughts_gain: float = 18.0
 var dive_control_gain: float = 6.0
-
+var dream_current: float = 1.0  # Global progress multiplier
 var wake_bonus_mult: float = 1.35
 var fail_penalty_mult: float = 0.60
 
@@ -504,7 +504,10 @@ func _ready() -> void:
 		if not local_upgs.has(1):
 			local_upgs[1] = {}
 			drc.set("local_upgrades", local_upgs)
-			
+	# Connect auto-dive signal for panel closure
+	if drc != null:
+		if not drc.is_connected("auto_dive_triggered", Callable(self, "_on_auto_dive_triggered")):
+			drc.auto_dive_triggered.connect(Callable(self, "_on_auto_dive_triggered"))
 	if time_in_run <= 0.0:
 		run_start_depth = get_current_depth()
 	
@@ -578,6 +581,16 @@ func _ready() -> void:
 	# Then create new one
 	call_deferred("_create_click_upgrade_sidebar")
 
+func _on_auto_dive_triggered(_depth_index: int) -> void:
+	# Close expanded depth panels when auto-dive triggers
+	var panel = get_tree().current_scene.find_child("DepthBarsPanel", true, false)
+	if panel != null:
+		if panel.has_method("close_all_expanded"):
+			panel.call("close_all_expanded")
+		elif panel.has_method("set_expanded_depth"):
+			panel.call("set_expanded_depth", -1)
+	
+	print("Auto-dive triggered - closed expanded panels")
 		
 func _input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed:
@@ -653,11 +666,40 @@ func _force_rate_sample() -> void:
 
 func _refresh_top_ui() -> void:
 	var current_depth := get_current_depth()
+	var hide_numbers := false
+	
+	# CRITICAL FIX: Calculate actual instability gain per second
+	var inst_gain: float = 0.0
+	if current_depth >= 2:
+		# Get from depth meta system
+		if depth_meta_system != null:
+			inst_gain = depth_meta_system.get_instability_per_sec(current_depth)
+		
+		# Apply multipliers (same as in _process)
+		var instability_mult: float = _safe_mult(upgrade_manager.get_instability_mult()) * _safe_mult(perk_system.get_instability_mult())
+		if perm_perk_system != null:
+			instability_mult *= _safe_mult(perm_perk_system.get_instability_mult())
+		
+		inst_gain *= instability_mult
+	
 	
 	if instability_bar != null:
 		instability_bar.visible = (current_depth >= 2)
-	var hide_numbers := false
-	var cap := depth_meta_system.get_instability_cap(current_depth)  # ADD THIS LINE
+	
+	
+	# CRITICAL FIX: Get proper instability cap
+	var cap: float = 1000.0
+	var drc = get_node_or_null("/root/DepthRunController")
+	if drc != null and drc.has_method("get_instability_cap"):
+		cap = drc.get_instability_cap(current_depth)
+	
+	if instability_bar != null:
+		instability_bar.max_value = cap
+		instability_bar.value = clampf(instability, 0.0, cap)
+		
+		var label = instability_bar.get_node_or_null("ValueLabel")
+		if label != null:
+			label.text = "%s / %s" % [_fmt_num(instability), _fmt_num(cap)]
 	
 	if top_bar_panel == null:
 		if not _warned_missing_top_bar:
@@ -672,7 +714,7 @@ func _refresh_top_ui() -> void:
 			thoughts_label.text = "Thoughts: ???"
 		else:
 			# Show the rate properly
-			var rate_str := _fmt_num(_thoughts_ps)  # Make sure _thoughts_ps is actually calculated
+			var rate_str := _fmt_num(_thoughts_ps)
 			thoughts_label.text = "Thoughts %s +%s/s" % [_fmt_num(thoughts), rate_str]
 	if control_label != null:
 		control_label.text = "Control: %s" % _fmt_num(control)
@@ -716,7 +758,14 @@ func _refresh_top_ui() -> void:
 		
 		instability_bar.visible = (current_depth >= 2)
 	# endif  (the closing bracket for the if instability_bar != null check)
-
+	
+	# CRITICAL FIX: Use proper instability cap scaling
+	drc = get_node_or_null("/root/DepthRunController")
+	if drc != null and drc.has_method("get_instability_cap"):
+		cap = drc.get_instability_cap(current_depth)
+	elif depth_meta_system != null:
+		cap = depth_meta_system.get_instability_cap(current_depth)
+		
 	if instability_label != null:
 		if current_depth == 1:
 			instability_label.text = ""
@@ -735,7 +784,6 @@ func _refresh_top_ui() -> void:
 		if overclock_system != null and overclock_system.active:
 			overclock_time_left = maxf(overclock_system.timer, 0.0)
 		var ttf: float = get_seconds_until_fail()
-		var inst_gain: float = get_idle_instability_gain_per_sec()
 
 		var disp_thoughts_ps := maxf(_thoughts_ps, 0.0)
 		var disp_control_ps := maxf(_control_ps, 0.0)
@@ -753,17 +801,19 @@ func _refresh_top_ui() -> void:
 		)
 	
 	if current_depth == 9:
-		var drc := get_node_or_null("/root/DepthRunController")
-		if drc != null:
-			var def: Dictionary = drc.get_depth_def(9)
-			var rules: Dictionary = def.get("rules", {})
-			if rules.get("hide_all_numbers", false):
+		var rules := {}
+		if drc != null and drc.has_method("get_depth_def"):
+			var def = drc.call("get_depth_def", 9)
+			if def is Dictionary:
+				rules = def.get("rules", {})
+		
+		if rules.get("hide_all_numbers", false):
 				# Check if player bought Inner Eye upgrade
 				var inner_eye_lvl := 0
 				if drc.has_method("_get_local_level"):
 					inner_eye_lvl = drc.call("_get_local_level", 9, "inner_eye")
 				if inner_eye_lvl == 0:
-					hide_numbers = true
+					hide_numbers = true  # This now works because hide_numbers is declared above
 	
 	if thoughts_label != null:
 		if hide_numbers:
@@ -1716,7 +1766,7 @@ func save_game() -> void:
 	data["mental_buffer_level"] = upgrade_manager.mental_buffer_level
 	data["overclock_mastery_level"] = upgrade_manager.overclock_mastery_level
 	data["overclock_safety_level"] = upgrade_manager.overclock_safety_level
-	
+	data["dream_current"] = dream_current
 	data["perk1_level"] = perk_system.perk1_level
 	data["perk2_level"] = perk_system.perk2_level
 	data["perk3_level"] = perk_system.perk3_level
@@ -1795,7 +1845,7 @@ func load_game() -> void:
 	ads_watched_today = int(data.get("ads_watched_today", 0))
 	last_purchase_reset_timestamp = int(data.get("last_purchase_reset_timestamp", 0))
 	has_supporter_pack = bool(data.get("has_supporter_pack", false))
-	
+	dream_current = float(data.get("dream_current", 1.0))
 	# Load Abyss Shop data - SINGLE ROBUST BLOCK
 	var _loaded_shop = data.get("abyss_shop_unlocked", [])
 	var _loaded_active = data.get("abyss_shop_active", {})
@@ -2407,7 +2457,13 @@ func _notification(what: int) -> void:
 		save_game()
 		await get_tree().create_timer(0.1).timeout
 		get_tree().quit()
-		
+
+# When buying velocity/progress upgrades:
+func buy_dream_current_upgrade(amount: float) -> void:
+	dream_current += amount
+	_refresh_top_ui()  # ADD THIS LINE - forces immediate UI update
+	save_game()
+	
 func _process(delta: float) -> void:
 	if depth_meta_system == null:
 		push_error("depth_meta_system is null!")
@@ -2554,6 +2610,7 @@ func _process(delta: float) -> void:
 		drc.set("control", control)
 		drc.set("thoughts_per_sec", thoughts_ps_display)
 		drc.set("control_per_sec", control_ps_display)
+		drc.set("dream_current", dream_current)
 	
 	_refresh_top_ui()
 	_update_buttons_ui()

@@ -20,7 +20,11 @@ func load_game() -> Dictionary:
 	
 	var parsed: Variant = JSON.parse_string(text)
 	if typeof(parsed) == TYPE_DICTIONARY:
-		return parsed as Dictionary
+		var data = parsed as Dictionary
+		# Ensure new keys exist with defaults
+		if not data.has("dream_current"):
+			data["dream_current"] = 1.0
+		return data
 	
 	# If parsing failed or returned wrong type, delete corrupted save
 	delete_save()

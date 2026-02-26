@@ -208,7 +208,23 @@ func _ready() -> void:
 	
 	# Check current connections after arrangement
 	call_deferred("_debug_dive_connections")
+	
+	# CRITICAL FIX: Connect to run controller's upgrade signal if available
+	if _run != null and _run.has_signal("local_upgrade_added"):
+		if not _run.is_connected("local_upgrade_added", Callable(self, "_on_external_upgrade_added")):
+			_run.connect("local_upgrade_added", Callable(self, "_on_external_upgrade_added"))
 
+func _on_external_upgrade_added(upg_depth: int, upg_id: String, _amount: int) -> void:
+	# Only update if this upgrade is for our depth
+	if upg_depth == depth_index:
+		# Refresh local upgrades from controller
+		if _run != null:
+			var new_locals = _run.get("local_upgrades")
+			if new_locals is Dictionary and new_locals.has(depth_index):
+				_local_upgrades = new_locals[depth_index]
+				if _upgrade_ui_refs.has(upg_id):
+					_update_upgrade_row_ui(upg_id)
+					
 func _debug_dive_connections() -> void:
 	if dive_button:
 		print("Dive button connections:")
@@ -1590,7 +1606,7 @@ func _add_upgrade_row_dynamic(id: String, data: Dictionary) -> void:
 	_update_upgrade_row_ui(id)
 
 func _attempt_purchase(id: String, data: Dictionary) -> bool:
-	var game_mgr := get_tree().current_scene.find_child("GameManager", true, false) as GameManager
+	var game_mgr = get_tree().current_scene.find_child("GameManager", true, false)
 	if game_mgr == null:
 		return false
 	
@@ -1600,20 +1616,20 @@ func _attempt_purchase(id: String, data: Dictionary) -> bool:
 	if current_lvl >= max_lvl:
 		return false
 	
+	# CRITICAL FIX: Declare all variables here before using them
 	var base_cost: float = data.get("base_cost", 100.0)
 	var growth: float = data.get("cost_growth", 1.5)
 	var depth_multiplier := pow(float(depth_index), 2.5) * 3.0
 	var current_cost := base_cost * depth_multiplier * pow(growth, current_lvl)
 	
-	# Check cooldown (after declaring current_cost)
 	if _purchase_cooldown > 0:
-		print("Purchase on cooldown: ", _purchase_cooldown)
 		return false
 	
-	# Apply cooldown and purchase
 	if game_mgr.thoughts >= current_cost:
 		game_mgr.thoughts -= current_cost
-		_purchase_cooldown = PURCHASE_COOLDOWN  # Set cooldown on success
+		_purchase_cooldown = PURCHASE_COOLDOWN
+		
+		_local_upgrades[id] = current_lvl + 1
 		
 		if _run != null and _run.has_method("add_local_upgrade"):
 			_run.call("add_local_upgrade", depth_index, id, 1)
@@ -1621,7 +1637,6 @@ func _attempt_purchase(id: String, data: Dictionary) -> bool:
 		if game_mgr.has_method("_refresh_top_ui"):
 			game_mgr._refresh_top_ui()
 		
-		# Refresh UI to show new level
 		_update_upgrade_row_ui(id)
 		return true
 	
@@ -1639,14 +1654,24 @@ func _update_upgrade_row_ui(id: String) -> void:
 	var growth: float = refs["growth"]
 	var max_lvl: int = refs["max_lvl"]
 	var cost_container: PanelContainer = refs["cost_container"]
-	var lvl_container: PanelContainer = refs["lvl_container"]  # This line causes warning if not used
+	var lvl_container: PanelContainer = refs["lvl_container"]
 	
-	var gm := get_tree().current_scene.find_child("GameManager", true, false) as GameManager
+	var gm = get_tree().current_scene.find_child("GameManager", true, false)
 	var current_thoughts := 0.0
 	if gm != null:
 		current_thoughts = gm.thoughts
 	
 	var lvl := int(_local_upgrades.get(id, 0))
+	
+	# CRITICAL FIX: Declare variables here so they're accessible in both blocks
+	var cost: float = 0.0
+	var depth_multiplier: float = 0.0
+	var effective_base: float = 0.0
+	
+	if lvl < max_lvl:
+		depth_multiplier = pow(float(depth_index), 2.5) * 3.0
+		effective_base = base_cost * depth_multiplier
+		cost = effective_base * pow(growth, lvl)
 	
 	if max_lvl >= 999:
 		lvl_label.text = "Lv %d" % lvl
@@ -1659,39 +1684,26 @@ func _update_upgrade_row_ui(id: String) -> void:
 		cost_label.text = "MAX"
 		cost_label.modulate = Color(0.5, 0.5, 0.5)
 		
-		# Use lvl_container here to avoid warning
 		var dim_style := lvl_container.get_theme_stylebox("panel").duplicate()
 		if dim_style is StyleBoxFlat:
 			dim_style.border_color = Color(0.4, 0.4, 0.4, 0.4)
 			lvl_container.add_theme_stylebox_override("panel", dim_style)
 	else:
-		var depth_multiplier := pow(float(depth_index), 2.5) * 3.0
-		var effective_base := base_cost * depth_multiplier
-		var cost := effective_base * pow(growth, lvl)
+		# Now 'cost' is accessible here because we declared it above
 		var can_afford := current_thoughts >= cost
 		
 		btn.text = "+"
 		btn.disabled = not can_afford
+		# Show brain icon with cost
 		cost_label.text = "%s 🧠" % _fmt_num(cost)
 		cost_label.modulate = Color(1, 1, 1) if can_afford else Color(0.8, 0.5, 0.5)
 		
-		# Update cost container border color based on affordability
 		var cost_style := cost_container.get_theme_stylebox("panel").duplicate()
 		if cost_style is StyleBoxFlat:
 			if can_afford:
 				cost_style.border_color = Color(0.4, 0.9, 0.4, 1.0)
-				# Also update lvl container to show available
-				var lvl_style_green := lvl_container.get_theme_stylebox("panel").duplicate()
-				if lvl_style_green is StyleBoxFlat:
-					lvl_style_green.border_color = Color(0.4, 0.9, 0.4, 0.6)
-					lvl_container.add_theme_stylebox_override("panel", lvl_style_green)
 			else:
 				cost_style.border_color = Color(0.8, 0.4, 0.4, 0.8)
-				# Reset lvl container
-				var lvl_style_normal := lvl_container.get_theme_stylebox("panel").duplicate()
-				if lvl_style_normal is StyleBoxFlat:
-					lvl_style_normal.border_color = Color(0.24, 0.67, 0.94, 0.6)
-					lvl_container.add_theme_stylebox_override("panel", lvl_style_normal)
 			cost_container.add_theme_stylebox_override("panel", cost_style)
 
 func _attempt_dive() -> void:
@@ -1727,7 +1739,7 @@ func _process(_delta: float) -> void:
 	
 		# Auto-buy logic (only if cooldown ready)
 		if _auto_buy_cooldown <= 0:
-			var game_mgr := get_tree().current_scene.find_child("GameManager", true, false) as GameManager
+			var game_mgr = get_tree().current_scene.find_child("GameManager", true, false)
 			if game_mgr != null:
 				for id in _upgrade_ui_refs.keys():
 					if _auto_buy_enabled.has(id) and _auto_buy_enabled[id] == true:

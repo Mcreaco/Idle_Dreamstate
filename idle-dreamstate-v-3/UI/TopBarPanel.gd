@@ -29,7 +29,7 @@ var piggy_value: Label
 var piggy_button: Button
 var time_warp_button: Button
 var watch_ad_button: Button
-
+var dream_current: float = 1.0
 # References
 var _run: Node = null
 var time_warp_panel: Control
@@ -266,14 +266,19 @@ func _setup_currency_displays() -> void:
 	thoughts_display = _create_currency_display("🧠", Color(1.0, 0.85, 0.4))
 	currencies_container.add_child(thoughts_display)
 	
-	# Control: 🛡️ icon + value
+	# Control: 🛡️ icon + value  
 	control_display = _create_currency_display("🛡️", Color(0.4, 0.85, 1.0))
 	currencies_container.add_child(control_display)
 	
 	# Gems: 💎 icon + value
 	gems_display = _create_currency_display("💎", Color(0.2, 0.8, 1.0))
 	currencies_container.add_child(gems_display)
-
+	
+		# DREAM CURRENT DISPLAY - Single display
+	var dream_display = _create_currency_display("🌊", Color(0.4, 0.8, 1.0))
+	dream_display.name = "DreamCurrentDisplay"
+	currencies_container.add_child(dream_display)
+	
 func _create_currency_display(icon: String, color: Color) -> HBoxContainer:
 	var container = HBoxContainer.new()
 	container.add_theme_constant_override("separation", 4)
@@ -383,7 +388,26 @@ func _process(_delta: float) -> void:
 		_update_piggy_display()
 		_update_time_warp_button()
 		_update_watch_ad_button()
-
+		
+	# In _process(), replace the whole dream current block with:
+	var dream_container = currencies_container.get_node_or_null("DreamCurrentContainer")
+	if dream_container:
+		gm = get_node_or_null("/root/Main/GameManager")
+		if gm and "dream_current" in gm:
+			var label = dream_container.get_node_or_null("DreamCurrentLabel")
+			if label:
+				# JUST SHOW THE FLAT NUMBER with /s
+				label.text = "%.1f/s" % gm.dream_current
+	
+	# Update Dream Current
+	var dream_display = currencies_container.get_node_or_null("DreamCurrentDisplay")
+	if dream_display:
+		gm = get_node_or_null("/root/Main/GameManager")
+		if gm:
+			var label = dream_display.get_node_or_null("ValueLabel")
+			if label and "dream_current" in gm:
+				label.text = "%.1f/s" % gm.dream_current
+			
 func _update_currency_display(container: HBoxContainer, value: float, rate: float, display_name: String) -> void:
 	var label = container.get_node("ValueLabel")
 	label.text = _fmt_num_compact(value)

@@ -26,6 +26,7 @@ var _control_per_sec_cached: float = 0.0
 var active_depth: int = 1
 var max_unlocked_depth: int = 1
 var _run_internal: Array[Dictionary] = []
+signal auto_dive_triggered(depth_index: int)  # CRITICAL: For panel closure
 
 var run: Array[Dictionary]:
 	get:
@@ -209,6 +210,10 @@ func _check_auto_dive() -> void:
 	# Execute dive
 	print("Auto-diving from depth ", active_depth, " (progress: ", progress_percent, "%)")
 	set_meta("last_auto_dive_time", now)
+	
+	# CRITICAL FIX: Emit signal for panel closure BEFORE diving
+	auto_dive_triggered.emit(active_depth)
+	
 	dive()
 	
 func _tick_active_depth(delta: float) -> void:
@@ -251,14 +256,18 @@ func _tick_active_depth(delta: float) -> void:
 	var depth_cry_mul := float(applied.get("cry_mul", 1.0))
 	var _rules: Dictionary = applied.get("rules", {})
 
-	# Multipliers from upgrades (RUN UPGRADES)
-	var speed_lvl := _get_local_level(d, "progress_speed")
+	# DREAM CURRENT SYSTEM: Fetch global progress rate from GameManager
+	var gm = get_node_or_null("/root/Main/GameManager")
+	var dream_current: float = 1.0
+	if gm and "dream_current" in gm:
+		dream_current = gm.dream_current
+	
+	# Multipliers for Memories/Crystals (progress uses dream_current instead)
 	var mem_lvl := _get_local_level(d, "memories_gain")
 	var cry_lvl := _get_local_level(d, "crystals_gain")
 	
-	var speed_mul: float = 1.0 + 0.25 * speed_lvl + _frozen_effect(d, "progress_speed", 0.15)
-	var mem_mul: float   = 1.0 + 0.15 * mem_lvl + _frozen_effect(d, "memories_gain", 0.15)
-	var cry_mul: float   = 1.0 + 0.12 * cry_lvl + _frozen_effect(d, "crystals_gain", 0.12)
+	var mem_mul: float = 1.0 + 0.15 * mem_lvl + _frozen_effect(d, "memories_gain", 0.15)
+	var cry_mul: float = 1.0 + 0.12 * cry_lvl + _frozen_effect(d, "crystals_gain", 0.12)
 	var game_mgr := get_node_or_null("/root/GameManager")
 	var abyss_mult: float = 1.0
 	if game_mgr != null and game_mgr.has_method("get_abyss_multiplier"):
@@ -273,7 +282,9 @@ func _tick_active_depth(delta: float) -> void:
 		if controlled_fall_level > 0:
 			var fall_def: Dictionary = get_depth_def(d).get("upgrades", {}).get("controlled_fall", {})
 			var fall_effect: float = fall_def.get("effect_per_level", 0.10)
-			speed_mul += (fall_effect * controlled_fall_level)
+			# Add to global dream_current instead of local speed_mul
+			if gm and gm.has_method("buy_dream_current_upgrade"):
+				gm.dream_current += (fall_effect * controlled_fall_level)
 	
 	# Depth 2: Ruby Focus (+12% rubies per level)
 	if d == 2:
@@ -283,9 +294,9 @@ func _tick_active_depth(delta: float) -> void:
 			var ruby_effect: float = ruby_def.get("effect_per_level", 0.12)
 			cry_mul += (ruby_effect * ruby_level)
 
-	# LENGTH / DIFFICULTY
+	# LENGTH / DIFFICULTY - USE DREAM CURRENT INSTEAD OF speed_mul
 	var length: float = get_depth_length(d)
-	var per_sec: float = (base_progress_per_sec * speed_mul * depth_prog_mul) / maxf(length, 0.0001)
+	var per_sec: float = (base_progress_per_sec * dream_current * depth_prog_mul) / maxf(length, 0.0001)
 
 	# CRITICAL FIX: Use actual cap instead of hardcoded 1.0
 	var cap: float = get_depth_progress_cap(d)
@@ -296,10 +307,8 @@ func _tick_active_depth(delta: float) -> void:
 	# Update memories and crystals
 	data["memories"] = float(data.get("memories", 0.0)) + base_memories_per_sec * mem_mul * depth_mem_mul * delta
 	data["crystals"] = float(data.get("crystals", 0.0)) + base_crystals_per_sec * cry_mul * depth_cry_mul * delta
-
-	_run_internal[d - 1] = data
 	
-	_panel.set_row_data(d, data)
+	_run_internal[d - 1] = data
 	
 	# Update panel
 	_panel.set_row_data(d, data)
@@ -470,6 +479,14 @@ func add_local_upgrade(depth_index: int, upgrade_id: String, amount: int = 1) ->
 	var dct: Dictionary = local_upgrades[depth_index]
 	dct[upgrade_id] = int(dct.get(upgrade_id, 0)) + amount
 	local_upgrades[depth_index] = dct
+	
+	# DREAM CURRENT: Buying velocity adds to global rate
+	if upgrade_id == "progress_speed":
+		var game_mgr = get_node_or_null("/root/Main/GameManager")
+		if game_mgr and game_mgr.has_method("buy_dream_current_upgrade"):
+			# Each level adds +0.2 (e.g., 1.0 → 1.2 → 1.4)
+			game_mgr.buy_dream_current_upgrade(0.2 * amount)
+	
 	if _panel != null:
 		_panel.request_refresh_details(depth_index)
 
@@ -537,6 +554,9 @@ func get_control_per_sec() -> float:
 func get_instability_per_sec() -> float:
 	return float(instability_per_sec)
 
+func get_instability_cap(depth: int) -> float:
+	# Scale with progress cap (120% of progress required)
+	return get_depth_progress_cap(depth) * 1.2
 
 func get_depth_length(depth_index: int) -> float:
 	var d: float = float(max(depth_index, 1))
