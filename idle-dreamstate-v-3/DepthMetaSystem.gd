@@ -127,15 +127,6 @@ var depth_instability_config := {
 	# ... define for all 15 depths
 }
 
-func get_instability_per_sec(depth: int) -> float:
-	var config = depth_instability_config.get(depth, {"base_per_sec": 5, "cap": 1000})
-	var base: float = config["base_per_sec"]
-	
-	# Apply global reductions from upgrades
-	base *= get_global_idle_instability_mult()
-	
-	return base
-
 func get_instability_cap(depth: int) -> float:
 	var config = depth_instability_config.get(depth, {"cap": 1000})
 	return config["cap"]

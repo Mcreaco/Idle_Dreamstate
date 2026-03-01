@@ -17,7 +17,7 @@ extends Node
 @export var dev_start_depth: int = 1
 
 var choice_modal: ChoiceModal = null
-var _current_event_timer: float = 0.0
+#var _current_event_timer: float = 0.0
 var _active_event: Dictionary = {}
 var auto_dive_enabled: bool = false  # Player toggles this via checkbox
 var _thoughts_per_sec_cached: float = 0.0
@@ -27,6 +27,10 @@ var active_depth: int = 1
 var max_unlocked_depth: int = 1
 var _run_internal: Array[Dictionary] = []
 signal auto_dive_triggered(depth_index: int)  # CRITICAL: For panel closure
+
+var _rift_choice_timer: float = 0.0
+var _rift_event_active: bool = false
+var _temp_buffs: Dictionary = {}  # Tracks temporary multipliers like "risky choice memory boost"
 
 var run: Array[Dictionary]:
 	get:
@@ -78,12 +82,10 @@ func _ready() -> void:
 		choice_modal = ChoiceModal.new()
 		choice_modal.name = "ChoiceModal"
 		get_tree().current_scene.add_child(choice_modal)
-
-	# DEV: unlock/jump for testing
-	#if dev_unlock_all_depths:
-		#max_unlocked_depth = max_depth
-	#if dev_start_depth > 1:
-		#active_depth = clampi(dev_start_depth, 1, max_depth)
+	
+	# CRITICAL: Connect the signal if not already connected
+	if not choice_modal.choice_made.is_connected(_on_rift_choice_resolved):
+		choice_modal.choice_made.connect(_on_rift_choice_resolved)
 
 	_last_depth = active_depth
 	_on_depth_changed(active_depth)
@@ -217,6 +219,8 @@ func _check_auto_dive() -> void:
 	dive()
 	
 func _tick_active_depth(delta: float) -> void:
+	if has_meta("progress_paused") and get_meta("progress_paused"):
+		return  # Skip progress while paused
 	var d: int = active_depth
 	var current_time := Time.get_ticks_msec() / 1000.0
 	
@@ -229,21 +233,10 @@ func _tick_active_depth(delta: float) -> void:
 	var data: Dictionary = _run_internal[d - 1]
 	var current_progress: float = float(data.get("progress", 0.0))
 	
-	# DETECT RESET: If progress suddenly dropped to 0 from a higher value
-	if current_progress == 0.0 and _last_progress_value > 0.1:
-		if should_print:
-			push_warning("DEPTH DATA RESET DETECTED! Progress was %.2f, now 0.0. Stack trace:" % _last_progress_value)
-			# This will print what called this function
-			print_stack()
-			_last_debug_print_time = current_time
-	
 	_last_progress_value = current_progress
-	
-	# ... rest of your calculation code ...
 	
 	# Only print normal updates once per second
 	if d == 1 and should_print:
-		print("Depth 1 Tick: stored_progress=%.2f, new_progress=%.2f" % [current_progress, data.get("progress", 0.0)])
 		_last_debug_print_time = current_time
 	
 	if _panel == null:
@@ -276,15 +269,6 @@ func _tick_active_depth(delta: float) -> void:
 	mem_mul *= abyss_mult
 	cry_mul *= abyss_mult
 	# Apply specific depth upgrade bonuses
-	# Depth 2: Controlled Fall (+10% progress per level)
-	if d == 2:
-		var controlled_fall_level := _get_local_level(d, "controlled_fall")
-		if controlled_fall_level > 0:
-			var fall_def: Dictionary = get_depth_def(d).get("upgrades", {}).get("controlled_fall", {})
-			var fall_effect: float = fall_def.get("effect_per_level", 0.10)
-			# Add to global dream_current instead of local speed_mul
-			if gm and gm.has_method("buy_dream_current_upgrade"):
-				gm.dream_current += (fall_effect * controlled_fall_level)
 	
 	# Depth 2: Ruby Focus (+12% rubies per level)
 	if d == 2:
@@ -314,6 +298,34 @@ func _tick_active_depth(delta: float) -> void:
 	_panel.set_row_data(d, data)
 	_panel.set_active_depth(active_depth)
 
+func add_local_upgrade(depth_index: int, upgrade_id: String, amount: int = 1) -> void:
+	if depth_index != active_depth:
+		return
+	if not local_upgrades.has(depth_index):
+		local_upgrades[depth_index] = {}
+	var dct: Dictionary = local_upgrades[depth_index]
+	dct[upgrade_id] = int(dct.get(upgrade_id, 0)) + amount
+	local_upgrades[depth_index] = dct
+	
+	# DREAM CURRENT HOOKS - Add effects here
+	var game_mgr = get_node_or_null("/root/Main/GameManager")
+	if game_mgr and game_mgr.has_method("buy_dream_current_upgrade"):
+		
+		# Standard progress_speed adds +0.2
+		if upgrade_id == "progress_speed":
+			game_mgr.buy_dream_current_upgrade(0.2 * amount)
+		
+		# Depth 2: Controlled Fall adds +0.1 per level
+		elif upgrade_id == "controlled_fall":
+			game_mgr.buy_dream_current_upgrade(0.1 * amount)
+		
+		# Add other depth-specific upgrades here as needed
+		# elif upgrade_id == "ruby_focus":
+		# 	pass  # Ruby focus affects crystals, not speed
+	
+	if _panel != null:
+		_panel.request_refresh_details(depth_index)
+		
 func can_transcend() -> bool:
 	if active_depth != 15:
 		return false
@@ -471,26 +483,6 @@ func dive_next_depth() -> void:
 		_panel.set_row_data(active_depth, _run_internal[active_depth - 1])
 
 
-func add_local_upgrade(depth_index: int, upgrade_id: String, amount: int = 1) -> void:
-	if depth_index != active_depth:
-		return
-	if not local_upgrades.has(depth_index):
-		local_upgrades[depth_index] = {}
-	var dct: Dictionary = local_upgrades[depth_index]
-	dct[upgrade_id] = int(dct.get(upgrade_id, 0)) + amount
-	local_upgrades[depth_index] = dct
-	
-	# DREAM CURRENT: Buying velocity adds to global rate
-	if upgrade_id == "progress_speed":
-		var game_mgr = get_node_or_null("/root/Main/GameManager")
-		if game_mgr and game_mgr.has_method("buy_dream_current_upgrade"):
-			# Each level adds +0.2 (e.g., 1.0 → 1.2 → 1.4)
-			game_mgr.buy_dream_current_upgrade(0.2 * amount)
-	
-	if _panel != null:
-		_panel.request_refresh_details(depth_index)
-
-
 # --------------------
 # Helpers
 # --------------------
@@ -549,10 +541,6 @@ func get_thoughts_per_sec() -> float:
 
 func get_control_per_sec() -> float:
 	return _control_per_sec_cached
-
-
-func get_instability_per_sec() -> float:
-	return float(instability_per_sec)
 
 func get_instability_cap(depth: int) -> float:
 	# Scale with progress cap (120% of progress required)
@@ -731,31 +719,40 @@ func _build_depth_defs() -> void:
 			"dive_unlock_requirement": {"upgrade": "manual_click", "level": 10}
 		},
 		"upgrades": {
+			"manual_click": {
+				"name": "Focused Intention",
+				"description": "Manual Think button grants +0.5s of Thoughts per level",
+				"max_level": 10,  # Exactly 10 to unlock dive
+				"base_cost": 25.0,
+				"cost_growth": 1.4,
+				"effect_per_level": 0.5,
+				"cost_currency": "thoughts"
+			},
 			"progress_speed": {
 				"name": "Velocity",
 				"description": "+20% progress speed per level",
-				"max_level": 999,
-				"base_cost": 100.0,
-				"cost_growth": 1.5,
+				"max_level": 25,  # Cap tutorial upgrades low
+				"base_cost": 50.0,
+				"cost_growth": 1.4,
 				"effect_per_level": 0.20,
 				"cost_currency": "thoughts"
 			},
 			"memories_gain": {
 				"name": "Dream Recall",
-				"description": "+12% Memory Gain per level",
-				"max_level": 999999,
-				"base_cost": 40.0,
-				"cost_growth": 1.6,
-				"effect_per_level": 0.12,
+				"description": "+15% Memory Gain per level",
+				"max_level": 20,
+				"base_cost": 75.0,
+				"cost_growth": 1.5,
+				"effect_per_level": 0.15,
 				"cost_currency": "thoughts"
 			},
 			"crystals_gain": {
 				"name": "Mnemonic Anchor",
-				"description": "+10% Crystal Gain per level",
-				"max_level": 999999,
-				"base_cost": 60.0,
-				"cost_growth": 1.8,
-				"effect_per_level": 0.10,
+				"description": "+12% Amethyst Crystal Gain per level",
+				"max_level": 15,
+				"base_cost": 100.0,
+				"cost_growth": 1.6,
+				"effect_per_level": 0.12,
 				"cost_currency": "thoughts"
 			}
 		},
@@ -771,10 +768,9 @@ func _build_depth_defs() -> void:
 		"ui_unlocks": ["instability_bar", "wake_button"],
 		"rules": {
 			"instability_enabled": true,
-			"instability_per_sec": 0.12,
 			"progress_mul": 1.0,
-			"mem_mul": 1.05,
-			"cry_mul": 1.02,
+			"mem_mul": 1.08,  # Slightly buffed from 1.05
+			"cry_mul": 1.04,  # Slightly buffed from 1.02
 			"forced_wake_at_100": true,
 			"event_enabled": false,
 			"dive_unlock_requirement": {"upgrade": "stab", "level": 10}
@@ -782,53 +778,52 @@ func _build_depth_defs() -> void:
 		"upgrades": {
 			"stabilize": {
 				"name": "Stabilize",
-				"description": "Reduce instability gain by 0.05%/sec per level.",
-				"max_level": 999999,
-				"base_cost": 40.0,
-				"cost_growth": 1.5,
-				"effect_per_level": -0.05,
+				"description": "-5% Instability gain per level (multiplicative)",
+				"max_level": 20,  # Cap at 20 = ~64% reduction max
+				"base_cost": 200.0,  # 4x Depth 1 costs
+				"cost_growth": 1.45,
+				"effect_per_level": -0.05,  # 0.95^level multiplier
 				"cost_currency": "thoughts"
 			},
 			"controlled_fall": {
 				"name": "Controlled Fall",
-				"description": "+10% Dive Progress Speed per level",
-				"max_level": 999999,
-				"base_cost": 25.0,
-				"cost_growth": 1.5,
-				"effect_per_level": 0.10,
+				"description": "+0.1 Dream Current per level (Global Speed)",
+				"max_level": 10,  # Cap at +1.0 total
+				"base_cost": 500.0,  # Expensive - affects all depths
+				"cost_growth": 1.6,
+				"effect_per_level": 0.10,  # Hooks to buy_dream_current_upgrade(0.1)
 				"cost_currency": "thoughts"
 			},
 			"trauma_inoculation": {
 				"name": "Trauma Inoculation",
-				"description": "+8% Memory retention if forced Wake",
-				"max_level": 999999,
-				"base_cost": 60.0,
-				"cost_growth": 1.8,
-				"effect_per_level": 0.08,
+				"description": "+10% Memory retention if forced Wake/Fail",
+				"max_level": 5,  # Max 50% retention bonus
+				"base_cost": 350.0,
+				"cost_growth": 1.7,
+				"effect_per_level": 0.10,
 				"cost_currency": "thoughts"
 			},
 			"ruby_focus": {
 				"name": "Ruby Focus",
-				"description": "+12% Ruby Crystal gain this run",
-				"max_level": 999999,
-				"base_cost": 35.0,
-				"cost_growth": 1.6,
-				"effect_per_level": 0.12,
+				"description": "+15% Ruby Crystal gain per level",
+				"max_level": 50,
+				"base_cost": 250.0,
+				"cost_growth": 1.55,
+				"effect_per_level": 0.15,  # Buffed from 12%
 				"cost_currency": "thoughts"
 			},
 			"breath_control": {
 				"name": "Breath Control",
-				"description": "+0.1 Max Control capacity per level",
-				"max_level": 999999,
-				"base_cost": 20.0,
-				"cost_growth": 1.4,
-				"effect_per_level": 0.1,
+				"description": "+0.2 Max Control capacity per level",
+				"max_level": 25,  # Max +5.0 control
+				"base_cost": 150.0,
+				"cost_growth": 1.5,
+				"effect_per_level": 0.2,  # Buffed from 0.1
 				"cost_currency": "thoughts"
 			}
 		},
 		"events": []
 	}
-	
 	# ============================================
 	# DEPTH 3 — PRESSURE (Slowdown mechanic - 5 upgrades)
 	# ============================================
@@ -838,129 +833,116 @@ func _build_depth_defs() -> void:
 		"ui_unlocks": ["pressure_indicator"],
 		"rules": {
 			"instability_enabled": true,
-			"instability_per_sec": 0.15,
 			"progress_mul": 1.0,
-			"mem_mul": 1.10,
-			"cry_mul": 1.05,
+			"mem_mul": 1.12,  # Buffed from 1.10
+			"cry_mul": 1.08,  # Buffed from 1.05
 			"forced_wake_at_100": true,
 			"event_enabled": false,
-			"pressure_threshold": 60.0,
-			"pressure_slow_mul": 0.60,
+			"pressure_threshold": 60.0,  # Slowdown starts at 60% instability
+			"pressure_slow_mul": 0.60,   # Base: 60% speed at high instability
 			"dive_unlock_requirement": {"upgrade": "stab", "level": 10}
 		},
 		"upgrades": {
 			"pressure_hardening": {
 				"name": "Pressure Hardening",
-				"description": "Instability reduces Progress Speed 10% less per level",
-				"max_level": 999999,
-				"base_cost": 100.0,
-				"cost_growth": 1.5,
-				"effect_per_level": 0.10,
+				"description": "Instability slows Progress 12% less per level",
+				"max_level": 5,  # Max 60% reduction of penalty (0.6 + 0.6 = 1.2 capped at 1.0)
+				"base_cost": 2000.0,  # 10x Depth 2 costs
+				"cost_growth": 1.6,
+				"effect_per_level": 0.12,
 				"cost_currency": "thoughts"
 			},
 			"crush_resistance": {
 				"name": "Crush Resistance",
-				"description": "-0.04% Instability/sec per level",
-				"max_level": 999999,
-				"base_cost": 80.0,
+				"description": "-6% Instability gain per level (multiplicative)",
+				"max_level": 15,
+				"base_cost": 1500.0,
 				"cost_growth": 1.5,
-				"effect_per_level": -0.04,
+				"effect_per_level": -0.06,  # Changed to multiplicative like Depth 2
+				"cost_currency": "thoughts"
+			},
+			"emerald_focus": {
+				"name": "Emerald Focus",
+				"description": "+18% Emerald Crystal gain per level",
+				"max_level": 50,
+				"base_cost": 1800.0,
+				"cost_growth": 1.55,
+				"effect_per_level": 0.18,
 				"cost_currency": "thoughts"
 			},
 			"risky_compression": {
 				"name": "Risky Compression",
-				"description": "+15% Thoughts, but +8% Instability gain",
-				"max_level": 999999,
-				"base_cost": 120.0,
-				"cost_growth": 1.8,
-				"effect_per_level": 0.15,
+				"description": "+20% Thoughts, +10% Instability (Trade-off)",
+				"max_level": 3,
+				"base_cost": 5000.0,
+				"cost_growth": 2.0,
+				"effect_per_level": 0.20,  # Multiplicative bonuses
 				"cost_currency": "thoughts"
 			},
 			"safety_valves": {
 				"name": "Safety Valves",
-				"description": "Instability cap reduced by 5% per level (95% max at Lv 1)",
-				"max_level": 3,
-				"base_cost": 150.0,
-				"cost_growth": 2.0,
-				"effect_per_level": -5.0,
-				"cost_currency": "thoughts"
-			},
-			"emergency_ascent": {
-				"name": "Emergency Ascent",
-				"description": "Auto-Wake at 95% instead of 100%",
-				"max_level": 1,
-				"base_cost": 500.0,
-				"cost_growth": 1.0,
-				"effect_per_level": 1.0,
+				"description": "Instability cap -8% per level (emergency buffer)",
+				"max_level": 3,  # Cap 76% of normal (safety net)
+				"base_cost": 8000.0,
+				"cost_growth": 2.2,
+				"effect_per_level": -0.08,  # Flat -8% cap reduction
 				"cost_currency": "thoughts"
 			}
 		},
 		"events": []
 	}
-	
 	# ============================================
 	# DEPTH 4 — MURK (Hidden rewards - 5 upgrades)
 	# ============================================
-	_depth_defs[4] = {
+	_depth_defs[4] = {  # <-- WAS [5], CHANGE TO [4]
 		"new_title": "Murk",
-		"desc": "Visibility drops. Rewards are uncertain until you Wake.",
-		"ui_unlocks": ["reward_ranges_hidden"],
+		"desc": "Shadows conceal truth. Adapt or be lost.",
+		"ui_unlocks": ["hidden_rewards"],
 		"rules": {
 			"instability_enabled": true,
-			"instability_per_sec": 0.18,
 			"progress_mul": 1.0,
 			"mem_mul": 1.15,
-			"cry_mul": 1.08,
+			"cry_mul": 1.10,
 			"forced_wake_at_100": true,
 			"event_enabled": true,
 			"event_timer": 45.0,
-			"murk_hidden_rewards": true,
 			"dive_unlock_requirement": {"upgrade": "stab", "level": 10}
 		},
 		"upgrades": {
 			"dark_adaptation": {
 				"name": "Dark Adaptation",
-				"description": "Reveal 10% of hidden Crystal rewards per level",
-				"max_level": 999999,
-				"base_cost": 150.0,
-				"cost_growth": 1.6,
-				"effect_per_level": 0.10,
-				"cost_currency": "thoughts"
-			},
-			"echo_navigation": {
-				"name": "Echo Navigation",
-				"description": "+10% Progress Speed per level",
-				"max_level": 999999,
-				"base_cost": 120.0,
-				"cost_growth": 1.5,
-				"effect_per_level": 0.10,
-				"cost_currency": "thoughts"
-			},
-			"whisper_harvest": {
-				"name": "Whisper Harvest",
-				"description": "+6% Thoughts when Instability >60%",
-				"max_level": 999999,
-				"base_cost": 100.0,
-				"cost_growth": 1.6,
-				"effect_per_level": 0.06,
-				"cost_currency": "thoughts"
-			},
-			"murk_diving": {
-				"name": "Murk Diving",
-				"description": "+15% Emerald Crystals per level",
-				"max_level": 999999,
-				"base_cost": 180.0,
+				"description": "Reveal 15% of hidden crystal rewards per level",
+				"max_level": 7,  # 105% total, ensures you see all hidden rewards eventually
+				"base_cost": 10000.0,  # 10x Depth 3 costs
 				"cost_growth": 1.6,
 				"effect_per_level": 0.15,
 				"cost_currency": "thoughts"
 			},
-			"instinctual_dive": {
-				"name": "Instinctual Dive",
-				"description": "+6% Progress when rewards are hidden",
-				"max_level": 999999,
-				"base_cost": 200.0,
+			"echo_navigation": {
+				"name": "Echo Navigation",
+				"description": "+12% progress speed per level",
+				"max_level": 25,
+				"base_cost": 8000.0,
+				"cost_growth": 1.5,
+				"effect_per_level": 0.12,
+				"cost_currency": "thoughts"
+			},
+			"whisper_harvest": {
+				"name": "Whisper Harvest",
+				"description": "+8% thoughts when instability >60% per level",
+				"max_level": 5,  # Max 40% bonus
+				"base_cost": 15000.0,
 				"cost_growth": 1.8,
-				"effect_per_level": 0.06,
+				"effect_per_level": 0.08,
+				"cost_currency": "thoughts"
+			},
+			"sapphire_focus": {
+				"name": "Sapphire Focus",
+				"description": "+18% Sapphire crystals per level",
+				"max_level": 50,
+				"base_cost": 12000.0,
+				"cost_growth": 1.6,
+				"effect_per_level": 0.18,
 				"cost_currency": "thoughts"
 			}
 		},
@@ -969,22 +951,23 @@ func _build_depth_defs() -> void:
 				"id": "flicker",
 				"trigger": "timer",
 				"cooldown": 45.0,
+				"pause_progress": true,
 				"choices": [
 					{
 						"id": "wait",
 						"text": "Wait it out",
-						"effect": {"type": "pause_progress", "duration": 10.0}
+						"effect": {"pause_duration": 10.0, "instability_bonus": 0.0}
 					},
 					{
-						"id": "overclock_through",
+						"id": "overclock",
 						"text": "Overclock through",
-						"effect": {"type": "cost_control", "amount": 20.0, "instability_bonus": 0.15, "bypass_pause": true}
+						"effect": {"cost_control": 20.0, "instability_bonus": 0.15, "progress_bonus": 0.05}
 					}
 				]
 			}
 		]
 	}
-	
+		
 	# ============================================
 	# DEPTH 5 — RIFT (Choice events - 5 upgrades)
 	# ============================================
@@ -994,7 +977,6 @@ func _build_depth_defs() -> void:
 		"ui_unlocks": ["choice_modal"],
 		"rules": {
 			"instability_enabled": true,
-			"instability_per_sec": 0.22,
 			"progress_mul": 1.0,
 			"mem_mul": 1.20,
 			"cry_mul": 1.12,
@@ -1083,7 +1065,6 @@ func _build_depth_defs() -> void:
 		"ui_unlocks": [],
 		"rules": {
 			"instability_enabled": true,
-			"instability_per_sec": 0.28,
 			"progress_mul": 1.0,
 			"mem_mul": 1.25,
 			"cry_mul": 1.15,
@@ -1169,7 +1150,6 @@ func _build_depth_defs() -> void:
 		"ui_unlocks": [],
 		"rules": {
 			"instability_enabled": true,
-			"instability_per_sec": 0.28,
 			"progress_mul": 1.0,
 			"mem_mul": 1.30,
 			"cry_mul": 1.18,
@@ -1256,7 +1236,6 @@ func _build_depth_defs() -> void:
 		"ui_unlocks": [],
 		"rules": {
 			"instability_enabled": true,
-			"instability_per_sec": 0.28,
 			"progress_mul": 1.0,
 			"mem_mul": 1.35,
 			"cry_mul": 1.20,
@@ -1343,7 +1322,6 @@ func _build_depth_defs() -> void:
 		"ui_unlocks": ["hidden_numbers"],
 		"rules": {
 			"instability_enabled": true,
-			"instability_per_sec": 0.28,
 			"progress_mul": 1.0,
 			"mem_mul": 1.40,
 			"cry_mul": 1.22,
@@ -1431,7 +1409,6 @@ func _build_depth_defs() -> void:
 		"ui_unlocks": [],
 		"rules": {
 			"instability_enabled": true,
-			"instability_per_sec": 0.35,
 			"progress_mul": 1.0,
 			"mem_mul": 1.45,
 			"cry_mul": 1.25,
@@ -1524,7 +1501,6 @@ func _build_depth_defs() -> void:
 		"ui_unlocks": [],
 		"rules": {
 			"instability_enabled": true,
-			"instability_per_sec": 0.35,
 			"progress_mul": 1.0,
 			"mem_mul": 1.50,
 			"cry_mul": 1.28,
@@ -1611,7 +1587,6 @@ func _build_depth_defs() -> void:
 		"ui_unlocks": ["shadow_clone"],
 		"rules": {
 			"instability_enabled": true,
-			"instability_per_sec": 0.35,
 			"progress_mul": 1.0,
 			"mem_mul": 1.55,
 			"cry_mul": 1.30,
@@ -1689,7 +1664,6 @@ func _build_depth_defs() -> void:
 		"ui_unlocks": [],
 		"rules": {
 			"instability_enabled": true,
-			"instability_per_sec": 0.45,
 			"progress_mul": 1.0,
 			"mem_mul": 1.60,
 			"cry_mul": 1.35,
@@ -1759,7 +1733,6 @@ func _build_depth_defs() -> void:
 		"ui_unlocks": [],
 		"rules": {
 			"instability_enabled": true,
-			"instability_per_sec": 0.45,
 			"progress_mul": 1.0,
 			"mem_mul": 1.65,
 			"cry_mul": 1.38,
@@ -1846,7 +1819,6 @@ func _build_depth_defs() -> void:
 		"ui_unlocks": ["abyss_challenge"],
 		"rules": {
 			"instability_enabled": true,
-			"instability_per_sec": 0.45,
 			"progress_mul": 1.0,
 			"mem_mul": 1.70,
 			"cry_mul": 1.45,
@@ -1929,8 +1901,6 @@ func _ensure_depth_runtime(depth_index: int) -> void:
 func _apply_depth_rules(d: int) -> Dictionary:
 	var def: Dictionary = get_depth_def(d)
 	var rules: Dictionary = def.get("rules", {})
-
-	var inst_enabled := bool(rules.get("instability_enabled", false))
 	
 	var base_inst_ps: float = 0.0
 	match d:
@@ -1955,13 +1925,12 @@ func _apply_depth_rules(d: int) -> Dictionary:
 	# APPLY PRESSURE HARDENING (Depth 3) - reduces slowdown from pressure
 	var prog_mul := float(rules.get("progress_mul", 1.0))
 	if rules.has("pressure_threshold") and float(instability) >= float(rules.get("pressure_threshold")):
-		var pressure_slow: float = float(rules.get("pressure_slow_mul", 0.6))
+		var pressure_slow: float = 0.6
 		# Pressure Hardening reduces the penalty
 		var hardening_level := _get_local_level(d, "pressure_hardening")
 		if hardening_level > 0:
 			var hardening_def: Dictionary = def.get("upgrades", {}).get("pressure_hardening", {})
 			var hardening_effect: float = hardening_def.get("effect_per_level", 0.10)
-			# Restore progress speed: 0.6 + (0.1 * level), capped at 1.0
 			pressure_slow = minf(1.0, pressure_slow + (hardening_effect * hardening_level))
 		prog_mul *= pressure_slow
 
@@ -1976,8 +1945,6 @@ func _apply_depth_rules(d: int) -> Dictionary:
 			var crush_effect: float = crush_def.get("effect_per_level", -0.04)
 			base_inst_ps += (crush_effect * crush_level)
 			base_inst_ps = maxf(0.01, base_inst_ps)
-
-	instability_per_sec = base_inst_ps if inst_enabled else 0.0
 	
 	return {
 		"instability_per_sec": base_inst_ps,
@@ -1987,33 +1954,131 @@ func _apply_depth_rules(d: int) -> Dictionary:
 		"rules": rules
 	}
 
+# Add helper to get upgrade level (if not already present)
+func _get_meta_upgrade_level(depth: int, upgrade_id: String) -> int:
+	var meta = get_tree().current_scene.find_child("DepthMetaSystem", true, false)
+	if meta != null and meta.has_method("get_level"):
+		return meta.call("get_level", depth, upgrade_id)
+	return 0
+
+# Calculate event interval with Temporal Sense
+func _get_event_interval() -> float:
+	if active_depth != 5:
+		return 30.0
+	
+	var temporal_lvl = _get_local_level(5, "temporal_sense")
+	var base_interval = 30.0
+	# 10% faster per level: 30 -> 27 -> 24 -> 21 -> 18
+	return base_interval * (1.0 - (temporal_lvl * 0.10))
+
+# Replace/modify _tick_depth_events to handle Depth 5
 func _tick_depth_events(d: int, delta: float, rules: Dictionary) -> void:
 	_ensure_depth_runtime(d)
 	var rt: Dictionary = _depth_runtime[d]
 	rt["time_in_depth"] = float(rt.get("time_in_depth", 0.0)) + delta
 	
-	# Handle choice events
-	if rules.get("event_enabled", false) and rules.has("event_timer"):
-		var interval := float(rules.get("event_timer", 30.0))
-		_current_event_timer += delta
+	# Handle Depth 5 Rift Choice Events
+	if d == 5 and rules.get("event_enabled", false) and not _rift_event_active:
+		if has_meta("progress_paused") and get_meta("progress_paused"):
+			return  # Don't tick timer while paused
 		
-		if _current_event_timer >= interval:
-			_current_event_timer = 0.0
-			
-			# Pick event from depth's event pool
-			var def: Dictionary = get_depth_def(d)
-			var events: Array = def.get("events", [])
-			
-			if events.size() > 0:
-				# For now, just fire first event (or random for Abyss)
-				var evt: Dictionary = events[0]
-				if evt.get("random_from_pool", false) and d == 15:
-					# Abyss logic: pick random from previous depths
-					evt = _get_random_abyss_event()
-				
-				_fire_depth_event(d, evt.get("id", ""))
+		_rift_choice_timer += delta
+		var interval = _get_event_interval()
+		
+		if _rift_choice_timer >= interval:
+			_rift_choice_timer = 0.0
+			_trigger_rift_choice()
+	
+	# Handle temporary buff expiration
+	for buff_id in _temp_buffs.keys():
+		var buff = _temp_buffs[buff_id]
+		buff.time_remaining -= delta
+		if buff.time_remaining <= 0:
+			_temp_buffs.erase(buff_id)
+			print("Buff expired: ", buff_id)
 	
 	_depth_runtime[d] = rt
+
+func _trigger_rift_choice() -> void:
+	var def = get_depth_def(5)
+	var events = def.get("events", [])
+	if events.size() == 0:
+		return
+	
+	var event_data = events[0]  # "the_choice" event
+	_rift_event_active = true
+	
+	# Pause progress if choice_paused rule is set
+	if def.get("rules", {}).get("choice_paused", true):
+		set_meta("progress_paused", true)
+	
+	# Show modal
+	if choice_modal != null:
+		# Pass risk assessment level to modal
+		var risk_assess_lvl = _get_local_level(5, "risk_assessment")
+		choice_modal.show_event(event_data, def, risk_assess_lvl > 0)
+		if not choice_modal.choice_made.is_connected(_on_rift_choice_resolved):
+			choice_modal.choice_made.connect(_on_rift_choice_resolved)
+
+func _on_rift_choice_resolved(choice_id: String, effects: Dictionary) -> void:
+	_rift_event_active = false
+	set_meta("progress_paused", false)  # Resume progress
+	
+	# Apply effects via GameManager to handle Stable Footing, Rift Mining, etc.
+	var gm = get_node_or_null("/root/Main/GameManager")
+	if gm != null and gm.has_method("apply_rift_choice"):
+		gm.apply_rift_choice(choice_id, effects, active_depth)
+	
+	# Apply immediate progress/instability locally
+	if effects.has("progress_bonus"):
+		var current = _run_internal[active_depth - 1].get("progress", 0.0)
+		var cap = get_depth_progress_cap(active_depth)
+		_run_internal[active_depth - 1]["progress"] = minf(cap, current + (cap * effects.progress_bonus))
+	
+	if effects.has("instability_bonus"):
+		var inst = _run_internal[active_depth - 1].get("instability", 0.0)
+		_run_internal[active_depth - 1]["instability"] = inst + (effects.instability_bonus * 100.0)  # Convert from 0.05 to 5%
+
+# Call this in _tick_active_depth to apply temporary multipliers
+func get_temporary_memory_multiplier() -> float:
+	var mult = 1.0
+	for buff in _temp_buffs.values():
+		if buff.type == "memory_mult":
+			mult *= buff.value
+	return mult  # <-- Return is here
+
+func _trigger_flicker_event():
+	# Pause progress
+	set_meta("progress_paused", true)
+	
+	# Show choice modal if you have one
+	if choice_modal != null:
+		choice_modal.show_choice(
+			"The Murk flickers...",
+			[
+				{"id": "wait", "text": "Wait it out (Pause 10s)"},
+				{"id": "overclock", "text": "Overclock through (-20 Control, +15% Instability)"}
+			]
+		)
+		choice_modal.choice_made.connect(_on_flicker_choice)
+
+func _on_flicker_choice(choice_id: String):
+	set_meta("progress_paused", false)
+	
+	if choice_id == "wait":
+		# Already paused for 10s by the modal, just resume
+		pass
+	elif choice_id == "overclock":
+		var gm = get_node_or_null("/root/GameManager")
+		if gm != null:
+			if gm.control >= 20:
+				gm.control -= 20
+				gm.instability += 15.0  # Add 15 instability
+			else:
+				# Not enough control, force wait
+				set_meta("progress_paused", true)
+				await get_tree().create_timer(10.0).timeout
+				set_meta("progress_paused", false)
 
 func _fire_depth_event(depth_index: int, event_id: String) -> void:
 	var def: Dictionary = get_depth_def(depth_index)

@@ -56,6 +56,12 @@ layout_mode = 2
 [node name="BigProgress" type="ProgressBar" parent="Details/DetailsVBox"]
 layout_mode = 2
 
+[node name="MemLabel" type="Label" parent="Details/DetailsVBox"]
+layout_mode = 2
+
+[node name="CryLabel" type="Label" parent="Details/DetailsVBox"]
+layout_mode = 2
+
 [node name="StatsLine" type="Label" parent="Details/DetailsVBox"]
 layout_mode = 2
 

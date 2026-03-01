@@ -6,7 +6,6 @@ signal clicked_depth(depth_index: int)
 signal request_close(depth_index: int)
 
 const COLOR_BLUE: Color = Color(0.24, 0.67, 0.94)
-
 @export var details_open_height: float = 260.0
 @export var row_height := 64.0
 @export var bar_height := 14.0
@@ -28,17 +27,14 @@ var _locked: bool = false
 var _details_open: bool = false
 var _overlay_mode: bool = false
 var _upgrade_ui_refs: Dictionary = {}  # id -> {button, cost_label, lvl_label, base_cost, growth, max_lvl}
-var _auto_buy_cooldown: float = 0.0
-const AUTO_BUY_DELAY: float = 0.5  # Half second between purchases
 var _data: Dictionary = {"progress": 0.0, "memories": 0.0, "crystals": 0.0}
 var _local_upgrades: Dictionary = {}
 var _frozen_upgrades: Dictionary = {}
 var auto_dive_enabled: bool = false
 var _run: Node = null
 var auto_dive_checkbox: CheckBox = null
-var _purchase_cooldown: float = 0.0
-const PURCHASE_COOLDOWN: float = 0.3  # 300ms between purchases
-
+var mem_label: Label = null
+var cry_label: Label = null
 # Scene nodes
 var progress_bar: ProgressBar = null
 var percent_label: Label = null
@@ -126,7 +122,6 @@ func _ready() -> void:
 		print("GameManager object ID:", gm.get_instance_id())
 	else:
 		print("GameManager is null")
-	print("abyss_shop value:", gm.get_abyss_shop() if gm and gm.has_method("get_abyss_shop") else "null")
 
 	if details != null:
 		details.visible = false
@@ -200,15 +195,48 @@ func _ready() -> void:
 	# Ensure all interactive elements can receive input
 	call_deferred("_setup_input_handling")
 	
-	# DEBUG: Check if confirmation function exists
-	if has_method("_show_dive_confirmation"):
-		print("CONFIRMATION METHOD EXISTS")
-	else:
-		push_error("MISSING: _show_dive_confirmation method!")
-	
 	# Check current connections after arrangement
 	call_deferred("_debug_dive_connections")
 	
+	# Defer the Murk setup to ensure scene is fully loaded
+	call_deferred("_setup_murk_labels")
+
+	
+func _setup_murk_labels():
+	# Look inside DetailsVBox where they actually are
+	var details_vbox = find_child("DetailsVBox", true, false)
+	if details_vbox:
+		mem_label = details_vbox.find_child("MemLabel", false, false)
+		cry_label = details_vbox.find_child("CryLabel", false, false)
+	
+	# If not found there, try direct children
+	if mem_label == null:
+		mem_label = find_child("MemLabel", true, false)
+	if cry_label == null:
+		cry_label = find_child("CryLabel", true, false)
+	
+	# CRITICAL: Hide by default, only show for Depth 4
+	if mem_label != null:
+		mem_label.visible = (depth_index == 4)
+	if cry_label != null:
+		cry_label.visible = (depth_index == 4)
+
+func _update_murk_display():
+	# Skip if labels weren't found
+	if mem_label == null or cry_label == null:
+		return
+	
+	# Only show for Depth 4 (Murk)
+	if depth_index != 4:
+		mem_label.visible = false
+		cry_label.visible = false
+		return
+	
+	# Show labels for Murk
+	mem_label.visible = true
+	cry_label.visible = true
+
+
 	# CRITICAL FIX: Connect to run controller's upgrade signal if available
 	if _run != null and _run.has_signal("local_upgrade_added"):
 		if not _run.is_connected("local_upgrade_added", Callable(self, "_on_external_upgrade_added")):
@@ -287,22 +315,14 @@ func _update_auto_dive_visibility():
 		auto_dive_checkbox.visible = false
 		return
 	
-	# Check ownership via GameManager's cache OR shop node
+	# Check ownership
 	var has_auto_dive = false
-	
-	# Method 1: Check GameManager's cached data
 	if "abyss_shop_unlocked" in gm:
 		has_auto_dive = "auto_dive" in gm.abyss_shop_unlocked
 	
-	# Method 2: Fallback to shop node
-	if not has_auto_dive:
-		var shop = gm.get_abyss_shop() if gm.has_method("get_abyss_shop") else null
-		if shop != null and shop.has_method("has_item"):
-			has_auto_dive = shop.has_item("auto_dive")
+	# SHOW on active depth (whether expanded or collapsed)
+	auto_dive_checkbox.visible = has_auto_dive and _active
 	
-	auto_dive_checkbox.visible = has_auto_dive
-	
-	# Sync checkbox state with GameManager
 	if has_auto_dive and "auto_dive_enabled" in gm:
 		auto_dive_checkbox.button_pressed = gm.auto_dive_enabled
 	
@@ -593,7 +613,16 @@ func _build_layout_bar_then_bottom_text() -> void:
 	_reward_label.add_theme_color_override("font_color", Color(0.92, 0.96, 1.0, 0.95))
 	_reward_label.add_theme_font_size_override("font_size", reward_font)
 	bottom.add_child(_reward_label)
-
+	
+	# AUTO-DIVE CHECKBOX (on collapsed bar)
+	auto_dive_checkbox = CheckBox.new()
+	auto_dive_checkbox.name = "AutoDiveCheckBox"
+	auto_dive_checkbox.text = "Auto"
+	auto_dive_checkbox.tooltip_text = "Auto-dive when complete"
+	auto_dive_checkbox.visible = false
+	auto_dive_checkbox.toggled.connect(_on_auto_dive_toggled)
+	bottom.add_child(auto_dive_checkbox)
+	
 	# Put back other original nodes (Details, etc.)
 	for c in old_children:
 		if c is ProgressBar:
@@ -1622,14 +1651,8 @@ func _attempt_purchase(id: String, data: Dictionary) -> bool:
 	var depth_multiplier := pow(float(depth_index), 2.5) * 3.0
 	var current_cost := base_cost * depth_multiplier * pow(growth, current_lvl)
 	
-	if _purchase_cooldown > 0:
-		return false
-	
 	if game_mgr.thoughts >= current_cost:
 		game_mgr.thoughts -= current_cost
-		_purchase_cooldown = PURCHASE_COOLDOWN
-		
-		_local_upgrades[id] = current_lvl + 1
 		
 		if _run != null and _run.has_method("add_local_upgrade"):
 			_run.call("add_local_upgrade", depth_index, id, 1)
@@ -1661,13 +1684,55 @@ func _update_upgrade_row_ui(id: String) -> void:
 	if gm != null:
 		current_thoughts = gm.thoughts
 	
-	var lvl := int(_local_upgrades.get(id, 0))
+	var run_locals = _run.get("local_upgrades") if _run != null else {}
+	var depth_locals = run_locals.get(depth_index, {}) if run_locals is Dictionary else {}
+	var lvl := int(depth_locals.get(id, 0))
 	
 	# CRITICAL FIX: Declare variables here so they're accessible in both blocks
 	var cost: float = 0.0
 	var depth_multiplier: float = 0.0
 	var effective_base: float = 0.0
-	
+
+	# Skip if labels don't exist in scene
+	if mem_label == null or cry_label == null:
+		return
+
+	var murk_level = 0
+	if depth_index == 4:
+		var drc = get_node_or_null("/root/DepthRunController")
+		if drc != null and drc.has_method("_get_local_level"):
+			murk_level = drc.call("_get_local_level", 4, "dark_adaptation")
+
+	var reveal_percent = murk_level * 0.15  # 15% per level
+
+	# Get values from run data
+	var memories = 0.0
+	var crystals = 0.0
+	if _run != null:
+		var run_data = _run.get("run")
+		if run_data is Array and depth_index <= run_data.size():
+			var depth_data = run_data[depth_index - 1]
+			if depth_data is Dictionary:
+				memories = depth_data.get("memories", 0.0)
+				crystals = depth_data.get("crystals", 0.0)
+
+	if reveal_percent >= 1.0 or depth_index != 4:
+		# Fully revealed or not in Murk - show exact values
+		mem_label.text = _fmt_num(memories)
+		cry_label.text = _fmt_num(crystals)
+		mem_label.modulate = Color(1, 1, 1)
+	else:
+		# Hidden - show ranges
+		var variance = (1.0 - reveal_percent) * 0.5
+		var mem_min = memories * (1.0 - variance)
+		var mem_max = memories * (1.0 + variance)
+		var cry_min = crystals * (1.0 - variance)
+		var cry_max = crystals * (1.0 + variance)
+		
+		mem_label.text = "%s - %s" % [_fmt_num(mem_min), _fmt_num(mem_max)]
+		cry_label.text = "%s - %s" % [_fmt_num(cry_min), _fmt_num(cry_max)]
+		mem_label.modulate = Color(0.5, 0.5, 0.5)  # Grey out
+		
 	if lvl < max_lvl:
 		depth_multiplier = pow(float(depth_index), 2.5) * 3.0
 		effective_base = base_cost * depth_multiplier
@@ -1712,60 +1777,58 @@ func _attempt_dive() -> void:
 		drc.dive()
 		
 func _process(_delta: float) -> void:
-	# CRITICAL: Always update visuals every frame regardless of details_open state
+	# Always update visuals
 	_apply_visuals()
 	
-	# Only process auto-buy when details are open
+	# Only process when details are open and this is active depth
 	if not _details_open:
 		return
-	
-	# Only process for active depth
+		
 	if _run != null:
 		var active_depth = _run.get("active_depth")
 		if active_depth != depth_index:
 			return
 	
-	# Update cooldown
-	if _auto_buy_cooldown > 0:
-		_auto_buy_cooldown -= _delta
-	# Update cooldown
-	if _purchase_cooldown > 0:
-		_purchase_cooldown -= _delta
-	# Check if we should auto-dive
-	if _details_open and upgrades_box != null and upgrades_box.visible:
-		# Update UI states
-		for id in _upgrade_ui_refs.keys():
-			_update_upgrade_row_ui(id)
+	# Update UI states every frame
+	for id in _upgrade_ui_refs.keys():
+		_update_upgrade_row_ui(id)
 	
-		# Auto-buy logic (only if cooldown ready)
-		if _auto_buy_cooldown <= 0:
-			var game_mgr = get_tree().current_scene.find_child("GameManager", true, false)
-			if game_mgr != null:
-				for id in _upgrade_ui_refs.keys():
-					if _auto_buy_enabled.has(id) and _auto_buy_enabled[id] == true:
-						var current_lvl := int(_local_upgrades.get(id, 0))
-						
-						if _run != null and _run.has_method("get_run_upgrade_data"):
-							var upg_data: Dictionary = _run.call("get_run_upgrade_data", depth_index, id)
-							var max_lvl: int = upg_data.get("max_level", 1)
-							
-							if current_lvl < max_lvl:
-								var base_cost: float = upg_data.get("base_cost", 100.0)
-								var growth: float = upg_data.get("cost_growth", 1.5)
-								var depth_multiplier := pow(float(depth_index), 2.5) * 3.0
-								var cost := (base_cost * depth_multiplier) * pow(growth, current_lvl)
-								
-								if game_mgr.thoughts >= cost:
-									if _attempt_purchase(id, upg_data):
-										_auto_buy_cooldown = AUTO_BUY_DELAY
-										break
-
-	# Update visibility every second (in case purchase happens while panel is open)
-	if Engine.get_process_frames() % 60 == 0:
-		_update_auto_dive_visibility()
-	# CRITICAL FIX: Refresh dive button state every frame when expanded
-	if _details_open and dive_button != null:
-		_refresh_dive_button_state()
+	# AUTO-BUY: Check every frame, no delays, no cooldowns
+	var game_mgr = get_tree().current_scene.find_child("GameManager", true, false)
+	if game_mgr == null:
+		return
+		
+	for id in _upgrade_ui_refs.keys():
+		
+		if not (_auto_buy_enabled.has(id) and _auto_buy_enabled[id] == true):
+			continue
+			
+			
+		# Get current level from authoritative source
+		var run_locals = _run.get("local_upgrades") if _run != null else {}
+		var depth_locals = run_locals.get(depth_index, {}) if run_locals is Dictionary else {}
+		var current_lvl := int(depth_locals.get(id, 0))
+		
+		if not _run.has_method("get_run_upgrade_data"):
+			continue
+			
+		var upg_data: Dictionary = _run.call("get_run_upgrade_data", depth_index, id)
+		var max_lvl: int = upg_data.get("max_level", 1)
+		
+		if current_lvl >= max_lvl:
+			continue
+			
+		# Calculate cost
+		var base_cost: float = upg_data.get("base_cost", 100.0)
+		var growth: float = upg_data.get("cost_growth", 1.5)
+		var depth_multiplier := pow(float(depth_index), 2.5) * 3.0
+		var cost := (base_cost * depth_multiplier) * pow(growth, current_lvl)
+		
+		# Buy only if affordable
+		if game_mgr.thoughts >= cost:
+			var success = _attempt_purchase(id, upg_data)
+			if success:
+				break  # One purchase per frame
 		
 func _update_auto_dive_checkbox():
 	if auto_dive_checkbox == null:

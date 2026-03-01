@@ -13,7 +13,7 @@ const COLOR_BAR_RED: Color = Color(0.85, 0.18, 0.18)
 @onready var inst_title: Label = $TopBar/InstabilityCenter/InstabilityVBox/InstabilityTitle
 @onready var inst_bar: ProgressBar = $TopBar/InstabilityCenter/InstabilityVBox/InstabilityBar
 @onready var inst_hint: Label = $TopBar/InstabilityCenter/InstabilityVBox/InstabilityHint
-
+@export var instability_per_sec: float = 0.0
 # Layout containers
 var left_buttons_container: HBoxContainer
 var currencies_container: HBoxContainer
@@ -362,10 +362,14 @@ func _process(_delta: float) -> void:
 		max_depth = int(_run.get("max_unlocked_depth"))
 
 	set_depth_ui(active_depth, max_depth)
-
 	var inst_gain: float = 0.0
 	if _run != null:
-		inst_gain = float(_run.get("instability_per_sec"))
+		var raw = _run.get("instability_per_sec")
+		if raw != null:
+			inst_gain = float(raw)
+
+	if inst_title:
+		inst_title.text = "Instability (+%s/s)" % _fmt_num(inst_gain)
 	
 	# Update currency displays with tooltips
 	_update_currency_display(thoughts_display, thoughts, thoughts_ps, "Thoughts")
@@ -389,20 +393,9 @@ func _process(_delta: float) -> void:
 		_update_time_warp_button()
 		_update_watch_ad_button()
 		
-	# In _process(), replace the whole dream current block with:
-	var dream_container = currencies_container.get_node_or_null("DreamCurrentContainer")
-	if dream_container:
-		gm = get_node_or_null("/root/Main/GameManager")
-		if gm and "dream_current" in gm:
-			var label = dream_container.get_node_or_null("DreamCurrentLabel")
-			if label:
-				# JUST SHOW THE FLAT NUMBER with /s
-				label.text = "%.1f/s" % gm.dream_current
-	
 	# Update Dream Current
 	var dream_display = currencies_container.get_node_or_null("DreamCurrentDisplay")
 	if dream_display:
-		gm = get_node_or_null("/root/Main/GameManager")
 		if gm:
 			var label = dream_display.get_node_or_null("ValueLabel")
 			if label and "dream_current" in gm:
@@ -467,6 +460,10 @@ func _update_watch_ad_button() -> void:
 		watch_ad_button.modulate = Color(1, 1, 1)
 
 func _fmt_num_compact(v: float) -> String:
+	if v >= 1e15:
+		var exponent := int(floor(log(v) / log(10)))
+		var mantissa := snappedf(v / pow(10, exponent), 0.01)
+		return str(mantissa) + "e+" + str(exponent)
 	if v >= 1e12:
 		return "%.1fT" % (v / 1e12)
 	if v >= 1e9:
@@ -475,7 +472,7 @@ func _fmt_num_compact(v: float) -> String:
 		return "%.1fM" % (v / 1e6)
 	if v >= 1e3:
 		return "%.1fK" % (v / 1e3)
-	return str(int(v))
+	return "%.1f" % v
 
 func _fmt_num(v: float) -> String:
 	if v == INF or v == -INF:
@@ -495,7 +492,7 @@ func _fmt_num(v: float) -> String:
 		return "%.2fM" % (v / 1e6)
 	if v >= 1e3:
 		return "%.2fK" % (v / 1e3)
-	return str(int(v))
+	return "%.1f" % v
 
 func _resolve_depth_label() -> Label:
 	if depth_label_path != NodePath(""):

@@ -25,9 +25,9 @@ func apply_offline_progress() -> void:
 		return
 
 	# ----- APPLY IDLE GAINS -----
-	var thoughts_gain := gm.idle_thoughts_rate * offline_time
-	var control_gain := gm.idle_control_rate * offline_time
-	var instability_gain := gm.idle_instability_rate * offline_time
+	var thoughts_gain: float = gm.idle_thoughts_rate * offline_time
+	var control_gain: float = gm.idle_control_rate * offline_time
+	var instability_gain: float = gm.dream_current * 0.5 * offline_time
 
 	gm.thoughts += thoughts_gain
 	gm.control += control_gain

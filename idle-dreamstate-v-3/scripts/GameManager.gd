@@ -64,7 +64,6 @@ var abyss_shop_unlocked: Array[String] = []
 var abyss_shop_active: Dictionary = {}
 var idle_thoughts_rate: float = 0.8
 var idle_control_rate: float = 0.5
-var idle_instability_rate: float = 0.12
 var dive_thoughts_gain: float = 18.0
 var dive_control_gain: float = 6.0
 var dream_current: float = 1.0  # Global progress multiplier
@@ -76,13 +75,13 @@ var depth_instab_step: float = 0.08
 
 var wake_guard_seconds: float = 0.35
 var wake_guard_timer: float = 0.0
-
+const INSTABILITY_GLOBAL_MULT: float = 1.3
 const MAX_OFFLINE_SECONDS: float = 3600.0
 var offline_seconds: float = 0.0
 
 var autosave_timer: float = 0.0
 var autosave_interval: float = 10.0
-
+var _active_temp_buffs: Array[Dictionary] = []
 #var _crack_sync_timer: float = 0.0
 
 var _rate_sample_timer: float = 0.0
@@ -298,11 +297,6 @@ func _connect_click_buttons_debug() -> void:
 		var btn := get_tree().current_scene.find_child(btn_name, true, false) as Button
 		if btn != null:
 			found_any = true
-			print("FOUND button: ", btn_name, " at path: ", btn.get_path())
-			print("  - disabled: ", btn.disabled)
-			print("  - visible: ", btn.visible)
-			print("  - mouse_filter: ", btn.mouse_filter)
-			print("  - size: ", btn.size)
 			
 			# Force enable and connect
 			btn.disabled = false
@@ -673,7 +667,7 @@ func _refresh_top_ui() -> void:
 	if current_depth >= 2:
 		# Get from depth meta system
 		if depth_meta_system != null:
-			inst_gain = depth_meta_system.get_instability_per_sec(current_depth)
+			inst_gain = get_idle_instability_gain_per_sec()
 		
 		# Apply multipliers (same as in _process)
 		var instability_mult: float = _safe_mult(upgrade_manager.get_instability_mult()) * _safe_mult(perk_system.get_instability_mult())
@@ -1087,7 +1081,10 @@ func _close_expanded_depth_bars() -> void:
 		overlay.visible = false
 		
 func do_fail() -> void:
-	push_warning("do_fail() WAS CALLED - this resets all depth progress!")
+	# Prevent multiple rapid fail calls
+	if has_meta("failing"):
+		return
+	set_meta("failing", true)
 	print_stack()  # This shows what triggered the fail
 	if ad_service != null and ad_service.can_show(AdService.AD_FAIL_SAVE) and not _fail_save_prompt_shown:
 		_show_fail_save_prompt()
@@ -1114,11 +1111,17 @@ func do_fail() -> void:
 				accumulated_memories = float(depth_data.get("memories", 0.0))
 				accumulated_crystals = float(depth_data.get("crystals", 0.0))
 		
-		var result = drc.call("wake_cashout", 1.0, true)
-		if result is Dictionary:
+		var result = drc.call("wake_cashout", 1.0, true)  # ADD THIS LINE
+
+		var trauma_bonus: float = 1.0
+		if drc != null and drc.has_method("_get_local_level"):
+			var trauma_lvl = drc.call("_get_local_level", 2, "trauma_inoculation")
+			trauma_bonus += trauma_lvl * 0.10
+
+		if result is Dictionary:  # Now this works
 			var gained_memories = float(result.get("memories", 0.0))
-			# CRITICAL FIX: Add accumulated memories from offline progress
-			gained_memories += accumulated_memories
+			gained_memories += accumulated_memories  # ADD THIS LINE
+			gained_memories *= trauma_bonus
 			memories += gained_memories
 			
 			var crystals = result.get("crystals_by_name", {})
@@ -1135,7 +1138,7 @@ func do_fail() -> void:
 						if depth_meta_system != null:
 							depth_meta_system.currency[i] += amount
 						break
-	
+						
 	# ACCUMULATE LIFETIME STATS (same as wake)
 	lifetime_thoughts += total_thoughts_earned
 	lifetime_control += control
@@ -1329,6 +1332,7 @@ func reset_run() -> void:
 	total_thoughts_earned = 0.0
 	max_instability = 0.0
 	frozen_depth_multipliers = {}
+	dream_current = 1.0
 	
 	# Apply starting perks
 	if perm_perk_system != null:
@@ -1433,7 +1437,7 @@ func get_idle_instability_gain_per_sec() -> float:
 		return float(drc.get("instability_per_sec"))
 	
 	# Fallback if DRC not found
-	return 0.0
+	return dream_current * 1.3
 
 
 func get_seconds_until_fail() -> float:
@@ -1509,7 +1513,7 @@ func _apply_offline_progress() -> void:
 		
 		instability = risk_system.add_risk(
 			instability,
-			(idle_instability_rate * instability_mult * depth_instab_mult * offline_seconds) * abyss_instab_mult
+			(dream_current * 1.3 * instability_mult * depth_instab_mult * offline_seconds) * abyss_instab_mult
 		)
 		instability = minf(instability, 99.9)
 	
@@ -2468,24 +2472,71 @@ func _process(delta: float) -> void:
 	if depth_meta_system == null:
 		push_error("depth_meta_system is null!")
 		return
+		
 	var current_depth := get_current_depth()
 	
-	# Only process instability for depth 2+ (Depth 1 has no instability mechanic)
+	# DECLARE variables here so they're available throughout the function
+	var drc := get_node_or_null("/root/DepthRunController")
+	var instability_mult: float = 1.0
+	var cap: float = 1000.0
+	if depth_meta_system != null and depth_meta_system.has_method("get_instability_cap"):
+		cap = depth_meta_system.get_instability_cap(current_depth)
+
+	# ADD SAFETY VALVES HERE:
+	if drc != null and drc.has_method("_get_local_level"):
+		var safety_lvl = drc.call("_get_local_level", 3, "safety_valves")
+		if safety_lvl > 0:
+			cap *= (1.0 - safety_lvl * 0.08)  # -8% per level
+
+	# Ensure cap never goes below 50% of base
+	cap = maxf(cap, depth_meta_system.get_instability_cap(current_depth) * 0.5)
+
+	
+	var stabilizer_mult: float = 1.0
+	var crush_mult: float = 1.0
+	if drc != null and drc.has_method("_get_local_level"):
+		var crush_lvl = drc.call("_get_local_level", 3, "crush_resistance")
+		if crush_lvl > 0:
+			crush_mult = pow(0.94, crush_lvl)  # -6% per level
+
+	var inst_rate: float = dream_current * 0.5 * instability_mult * stabilizer_mult * crush_mult
+
 	if current_depth >= 2:
-		var _instab_per_sec := depth_meta_system.get_instability_per_sec(current_depth)
-		var _instability_mult: float = _safe_mult(upgrade_manager.get_instability_mult()) * _safe_mult(perk_system.get_instability_mult())
+		if depth_meta_system != null and depth_meta_system.has_method("get_instability_cap"):
+			cap = depth_meta_system.get_instability_cap(current_depth)
 		
-		if perm_perk_system != null:
-			_instability_mult *= _safe_mult(perm_perk_system.get_instability_mult())
+		# Ensure cap isn't 0
+		if cap <= 0:
+			cap = 1000.0 * current_depth
 		
-		instability += _instab_per_sec * delta * _instability_mult
+		print("Fail check: instability=", instability, " cap=", cap)
 		
-		# Check for death/fail
-		if depth_meta_system != null:
-			var cap := depth_meta_system.get_instability_cap(current_depth)
-			if instability >= cap:
-				do_fail()
-				return
+		if instability >= cap:
+			do_fail()
+			return
+	# Calculate multipliers (if you want upgrade bonuses)
+	if upgrade_manager != null:
+		instability_mult *= _safe_mult(upgrade_manager.get_instability_mult())
+	if perk_system != null:
+		instability_mult *= _safe_mult(perk_system.get_instability_mult())
+	if perm_perk_system != null:
+		instability_mult *= _safe_mult(perm_perk_system.get_instability_mult())
+	
+	# HARDCoded instability rate calculation
+	if current_depth >= 2:
+		
+		if drc != null and drc.has_method("_get_local_level"):
+			var stab_lvl = drc.call("_get_local_level", current_depth, "stabilize")
+			if stab_lvl > 0:
+				# Multiplicative: 0.95^level
+				stabilizer_mult = pow(0.95, stab_lvl)
+		
+		instability += inst_rate * delta
+		
+		if drc != null:
+			drc.set("instability_per_sec", inst_rate)
+			drc.set("instability", instability)
+			print("INST CALC: dream_current=", dream_current, " instability_mult=", instability_mult, " expected=", dream_current * 1.3 * instability_mult, " inst_rate=", inst_rate)
 	
 	run_time += delta
 	_update_click_combo(delta)
@@ -2546,6 +2597,7 @@ func _process(delta: float) -> void:
 		thoughts_mult *= _safe_mult(abyss_perk_system.get_thoughts_mult())
 		control_mult *= _safe_mult(abyss_perk_system.get_control_mult())
 	
+	
 	var deep_bonus_per_depth: float = upgrade_manager.get_deep_dives_thoughts_bonus_per_depth()
 	var depth_thoughts_mult: float = 1.0 + (float(current_depth) * (depth_thoughts_step + deep_bonus_per_depth))
 	
@@ -2568,17 +2620,36 @@ func _process(delta: float) -> void:
 	thoughts += thoughts_to_add
 	control += idle_control_rate * control_mult * delta
 	
+	var whisper_mult = 1.0
+	if current_depth == 4 and instability >= 60.0:  # 60% threshold
+		if drc != null:
+			var whisper_lvl = drc.call("_get_local_level", 4, "whisper_harvest")
+			whisper_mult += whisper_lvl * 0.08
+
+	thoughts_to_add *= whisper_mult
+
+	var risky_mult: float = 1.0
+	var risky_instab_mult: float = 1.0
+	if drc != null:
+		var risky_lvl = drc.call("_get_local_level", 3, "risky_compression")
+		risky_mult = 1.0 + (risky_lvl * 0.20)      # +20% thoughts
+		risky_instab_mult = 1.0 + (risky_lvl * 0.10) # +10% instability
+		
+	thoughts_to_add *= risky_mult
+	inst_rate *= risky_instab_mult
+
 	# Instability calculation
-	var instab_per_sec := depth_meta_system.get_instability_per_sec(current_depth)
-	var instability_mult: float = _safe_mult(upgrade_manager.get_instability_mult()) * _safe_mult(perk_system.get_instability_mult()) * _safe_mult(nightmare_system.get_thoughts_mult())
+	instability_mult = _safe_mult(upgrade_manager.get_instability_mult()) * _safe_mult(perk_system.get_instability_mult()) * _safe_mult(nightmare_system.get_thoughts_mult())
 	if perm_perk_system != null:
 		instability_mult *= _safe_mult(perm_perk_system.get_instability_mult())
 	
-	instability += instab_per_sec * delta * instability_mult
+	cap = depth_meta_system.get_instability_cap(current_depth)
+	if instability >= cap:
+		do_fail()
+		return
 	
 	# Check for death
 	if depth_meta_system != null:
-		var cap := depth_meta_system.get_instability_cap(current_depth)
 		if current_depth >= 2 and instability >= cap:  # Only fail for depth 2+
 			do_fail()
 			return
@@ -2601,11 +2672,16 @@ func _process(delta: float) -> void:
 	
 	var thoughts_ps_display := idle_thoughts_rate * thoughts_mult * depth_thoughts_mult * _get_shop_boost()
 	var control_ps_display := idle_control_rate * control_mult
+	
+	for i in range(_active_temp_buffs.size() - 1, -1, -1):
+		var buff = _active_temp_buffs[i]
+		buff.time_remaining -= delta
+		if buff.time_remaining <= 0:
+			_active_temp_buffs.remove_at(i)
+			print("Temporary buff expired: ", buff.source)
 
-	var drc := get_node_or_null("/root/DepthRunController")
 	if drc != null:
 		drc.instability = instability
-		drc.instability_per_sec = get_idle_instability_gain_per_sec()
 		drc.set("thoughts", thoughts)
 		drc.set("control", control)
 		drc.set("thoughts_per_sec", thoughts_ps_display)
@@ -2616,7 +2692,8 @@ func _process(delta: float) -> void:
 	_update_buttons_ui()
 	_force_cooldown_texts()
 	_update_overclock_flash(delta)
-	
+	run_time += delta
+	_update_click_combo(delta)
 	if _debug_visible:
 		_update_debug_overlay()
 
@@ -3230,28 +3307,28 @@ func fix_depth1_text_color() -> void:
 			desc_label.add_theme_color_override("font_color", Color(0.1, 0.1, 0.15, 1.0))  # Dark blue-black
 			desc_label.add_theme_color_override("font_shadow_color", Color(1, 1, 1, 0.5))  # White shadow for contrast
 
+# In GameManager.on_manual_focus_clicked()
 func on_manual_focus_clicked() -> void:
+	var drc := get_node_or_null("/root/DepthRunController")
+	var click_bonus := 0.0
+	
+	# Get manual_click level from Depth 1
+	if drc != null and drc.has_method("_get_local_level"):
+		var manual_lvl = drc.call("_get_local_level", 1, "manual_click")
+		click_bonus = float(manual_lvl) * 0.5  # +0.5s per level
+	
 	var base_power := get_click_power()
 	var combo_mult := get_combo_multiplier()
 	var idle_bonus := get_click_idle_bonus()
-	var idle_portion := get_idle_thoughts_per_second() * idle_bonus
-	var thoughts_gained := (base_power * combo_mult) + idle_portion
+	
+	# Add the manual click bonus
+	var thoughts_gained := (base_power * combo_mult) + idle_bonus + (get_idle_thoughts_per_second() * click_bonus)
 	
 	thoughts += thoughts_gained
 	total_thoughts_earned += thoughts_gained
-	control += click_control_gain * combo_mult
-	
-	# REMOVED: Instability reduction - only Stabilize button should do this
-	# if click_instability_reduction > 0:
-	# 	instability = maxf(0.0, instability - click_instability_reduction)
-	
 	_register_click_for_combo()
 	_show_click_feedback(thoughts_gained, "thoughts")
 	_refresh_top_ui()
-	
-	var tm = get_node_or_null("/root/TutorialManage")
-	if tm and tm.has_method("on_ui_element_clicked"):
-		tm.on_ui_element_clicked("FocusButton")
 
 func get_click_power() -> float:
 	var base := 10.0 * pow(10.0, float(click_power_level) / 3.0)
@@ -4099,3 +4176,85 @@ func has_auto_dive_enabled() -> bool:
 	if shop == null or not shop.has_method("has_item") or not shop.has_item("auto_dive"):
 		return false
 	return auto_dive_enabled
+
+func apply_rift_choice(choice_id: String, effects: Dictionary, _depth: int) -> void:
+	print("Applying Rift choice: ", choice_id)
+	
+	var drc = get_node_or_null("/root/DepthRunController")
+	if drc == null:
+		return
+	
+	# 1. Check Stable Footing (avoid negative outcomes)
+	if choice_id == "risk":
+		var stable_lvl = 0
+		if drc.has_method("_get_local_level"):
+			stable_lvl = drc.call("_get_local_level", 5, "stable_footing")
+		
+		var avoid_chance = stable_lvl * 0.12  # 12% per level
+		if randf() < avoid_chance:
+			# Negate the negative effects!
+			print("Stable Footing prevented negative outcomes!")
+			effects = _get_safe_risk_effects(effects)
+			_show_floating_text("Stable Footing Protected!", Color(0.2, 0.9, 0.3))
+	
+	# 2. Apply Rift Mining (+8% thoughts per level)
+	var rift_mining_lvl = 0
+	if drc.has_method("_get_local_level"):
+		rift_mining_lvl = drc.call("_get_local_level", 5, "rift_mining")
+	
+	if rift_mining_lvl > 0:
+		var bonus_thoughts = thoughts * (rift_mining_lvl * 0.08)
+		thoughts += bonus_thoughts
+		_show_floating_text("Rift Mining: +%s Thoughts" % _fmt_num(bonus_thoughts), Color(0.9, 0.7, 0.2))
+	
+	# 3. Handle Risky Choice temporary memory multiplier
+	if effects.has("mem_mul") and effects.has("duration"):
+		var buff = {
+			"type": "memory_mult",
+			"value": effects.mem_mul,
+			"time_remaining": effects.duration,
+			"source": "risky_choice"
+		}
+		_active_temp_buffs.append(buff)
+		_show_floating_text("Risk Boost: +%.0f%% Memories for %ds" % [(effects.mem_mul-1)*100, effects.duration], Color(1.0, 0.4, 0.4))
+	
+	# 4. Apply immediate instability
+	if effects.has("instability_bonus"):
+		var inst_gain = effects.instability_bonus * 100.0  # Convert from 0.20 to 20%
+		instability = minf(instability + inst_gain, depth_meta_system.get_instability_cap(get_current_depth()))
+		_sync_cracks()
+	
+	# 5. Apply immediate progress jump (optional visual feedback)
+	if effects.has("progress_bonus"):
+		var progress_pct = effects.progress_bonus * 100.0
+		_show_floating_text("Progress Jump: +%.0f%%" % progress_pct, Color(0.4, 0.8, 1.0))
+
+# Helper to convert risky effects to safe versions when Stable Footing procs
+func _get_safe_risk_effects(original: Dictionary) -> Dictionary:
+	var safe = original.duplicate()
+	# Remove negative components
+	safe.erase("instability_bonus")  # Remove the +20% instability
+	# Keep the positive: progress_bonus and mem_mul/duration
+	return safe
+
+func _show_floating_text(text: String, color: Color) -> void:
+	var label = Label.new()
+	label.text = text
+	label.add_theme_color_override("font_color", color)
+	label.add_theme_font_size_override("font_size", 18)
+	label.position = get_viewport().get_mouse_position() if get_viewport() else Vector2(500, 300)
+	add_child(label)
+	
+	# Animate up and fade
+	var tween = create_tween()
+	tween.tween_property(label, "position:y", label.position.y - 50, 1.5)
+	tween.parallel().tween_property(label, "modulate:a", 0.0, 1.5)
+	tween.tween_callback(label.queue_free)
+
+# Modify your existing memory calculation to include temp buffs
+func _get_temporary_memory_mult() -> float:
+	var mult = 1.0
+	for buff in _active_temp_buffs:
+		if buff.type == "memory_mult":
+			mult *= buff.value
+	return mult
