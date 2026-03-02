@@ -94,7 +94,74 @@ func _fmt_num(v: float) -> String:
 		return "%.2fk" % (v / 1_000.0)
 	
 	return str(int(v))
+
+func update_crystal_display(_depth_idx: int, _visible: float, _hidden: float):
+	var drc = get_node_or_null("/root/DepthRunController")
+	var da_lvl = drc.call("_get_local_level", 4, "dark_adaptation") if drc else 0
 	
+	var total = _visible + _hidden
+	
+	# Left label (guide) - always shows actual for reference, hide when fully revealed
+	$LeftLabel.visible = da_lvl < 7
+	$LeftLabel.text = "%d / %d" % [_visible, _hidden]
+	
+	# Right label (main display) - show ??? until fully revealed (7/7)
+	if da_lvl >= 7:
+		# Fully revealed
+		$RightLabel.text = "+%s" % _fmt_num(total)
+		$RightLabel.modulate = Color(1, 1, 1, 1)
+	else:
+		# Hidden - show ??? regardless of partial reveal percentage
+		$RightLabel.text = "+%s (???)" % _fmt_num(_visible)
+		$RightLabel.modulate = Color(0.5, 0.5, 0.5, 0.7)
+
+func _fmt(v: float) -> String:
+	if v >= 1_000_000:
+		return "%.2fM" % (v / 1_000_000)
+	if v >= 1_000:
+		return "%.2fk" % (v / 1_000)
+	return str(int(v))
+	
+func update_depth_display(_depth_index: int, data: Dictionary):
+	var crystals: float = data.get("crystals", 0.0)
+	var hidden_crystals: float = data.get("hidden_crystals", 0.0)
+	
+	# Get currency name from the depth definition
+	var currency_name := ""
+	var drc = get_node_or_null("/root/DepthRunController")
+	if drc != null and drc.has_method("get_depth_def"):
+		# Use _depth_index here (the parameter)
+		var _def = drc.call("get_depth_def", _depth_index)  # Prefix with _ since we don't use it yet
+		# You'll need to determine currency name from depth, or store it in the row
+		currency_name = DepthMetaSystem.get_depth_currency_name(_depth_index)
+	
+	# Get the crystal label node - assuming you have it as a class member or need to find it
+	var crystal_label = $CrystalLabel  # Or whatever the node path is
+	if crystal_label == null:
+		push_warning("Crystal label not found in DepthBarRow")
+		return
+	var reveal_pct: float = 0.0
+	if drc != null and drc.has_method("_get_local_level"):
+		var da_lvl = drc.call("_get_local_level", 4, "dark_adaptation")
+		reveal_pct = float(da_lvl) * 0.15  # 15% per level
+	
+	# Calculate revealed amount
+	var total_crystals: float = crystals + hidden_crystals
+	var revealed_amount: float = crystals + (hidden_crystals * reveal_pct)
+	
+	# Update UI labels
+	if reveal_pct >= 1.0:
+		# Fully revealed - show exact number
+		crystal_label.text = "+%s %s" % [_fmt_num(total_crystals), currency_name]
+		crystal_label.modulate = Color(1, 1, 1, 1)
+	else:
+		# Partially hidden - show approximate range or "???"
+		if reveal_pct > 0:
+			crystal_label.text = "+%s (~%s) %s" % [_fmt_num(revealed_amount), _fmt_num(total_crystals), currency_name]
+		else:
+			crystal_label.text = "+%s %s (???)" % [_fmt_num(crystals), currency_name]
+		crystal_label.modulate = Color(0.7, 0.7, 0.7, 0.8)  # Faded for hidden
+		
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	custom_minimum_size.y = row_height

@@ -1,115 +1,253 @@
-# PauseMenu.gd
-# Fixes the remaining issue in your screenshot:
-# - Resume button was showing the engine's "disabled/invalid" visual (white block)
-# This script forces Resume/Quit to always use your blue-outline style in ALL states.
-
 extends CanvasLayer
-
-@export var enable_escape_toggle: bool = true
 
 @onready var center: Control = $CenterContainer
 @onready var panel: Control = $CenterContainer/Panel
-@onready var title_label: Label = $CenterContainer/Panel/MarginContainer/VBox/TitleLabel
-@onready var resume_button: Button = $CenterContainer/Panel/MarginContainer/VBox/ResumeButton
-@onready var menu_button: Button = $CenterContainer/Panel/MarginContainer/VBox/MenuButton
-@onready var quit_button: Button = $CenterContainer/Panel/MarginContainer/VBox/QuitButton
-@onready var reset_button: Button = $CenterContainer/Panel/MarginContainer/VBox/ResetSaveButton
 
-var _open: bool = false
+var is_open: bool = false
+var save_panel: Control = null
 
-func _ready() -> void:
-	layer = 100
+func _ready():
 	process_mode = Node.PROCESS_MODE_ALWAYS
-
-	# Text
-	if is_instance_valid(title_label):
-		title_label.text = "PAUSED"
-	if is_instance_valid(resume_button):
-		resume_button.text = "Resume"
-	if is_instance_valid(quit_button):
-		quit_button.text = "Quit"
-
-	# Remove unused buttons + collapse their space
-	_hide_and_collapse(menu_button)
-	_hide_and_collapse(reset_button)
-
-	# HARD force these to behave/paint as enabled buttons
-	_force_enabled_button(resume_button)
-	_force_enabled_button(quit_button)
-
-	# Style
+	layer = 100
+	
+	# Style the main panel
 	_apply_panel_style(panel)
-	_apply_button_style(resume_button)
-	_apply_button_style(quit_button)
+	
+	var vbox = panel.find_child("VBox", true, false)
+	if vbox:
+		vbox.add_theme_constant_override("separation", 12)
+		# Remove any remaining blank buttons
+		_remove_blank_buttons(vbox)
+	
+	# CRITICAL: Style Resume with delay to override any editor theme
+	var resume_btn = vbox.find_child("ResumeButton", false, false) as Button
+	if resume_btn:
+		resume_btn.text = "Resume"
+		# Clear any existing theme resource
+		resume_btn.theme = null
+		# Force style immediately and after a frame
+		_force_button_style(resume_btn)
+		if not resume_btn.pressed.is_connected(_on_resume):
+			resume_btn.pressed.connect(_on_resume)
+		# Double-check styling after frame render
+		call_deferred("_force_button_style", resume_btn)
+	
+	var quit_btn = vbox.find_child("QuitButton", false, false) as Button
+	if quit_btn:
+		quit_btn.text = "Quit"
+		quit_btn.theme = null
+		_force_button_style(quit_btn)
+		if not quit_btn.pressed.is_connected(_on_quit):
+			quit_btn.pressed.connect(_on_quit)
+	
+	# Add Save/Load between Resume and Quit
+	_add_save_load_buttons(vbox)
+	
+	# Start hidden
+	center.visible = false
+	call_deferred("_create_save_panel")
 
-	# Signals
-	if is_instance_valid(resume_button) and not resume_button.pressed.is_connected(_on_resume):
-		resume_button.pressed.connect(_on_resume)
-	if is_instance_valid(quit_button) and not quit_button.pressed.is_connected(_on_quit):
-		quit_button.pressed.connect(_on_quit)
+func _remove_blank_buttons(vbox: VBoxContainer):
+	"""Remove any buttons with no text or no name"""
+	for child in vbox.get_children():
+		if child is Button and child.name != "ResumeButton" and child.name != "QuitButton":
+			if child.text == "" or child.name == "":
+				child.queue_free()
 
-	_set_open(false)
+func _add_save_load_buttons(vbox: VBoxContainer):
+	# Remove any existing Save/Load first to prevent duplicates
+	for child in vbox.get_children():
+		if child.name in ["SaveButton", "LoadButton"]:
+			child.queue_free()
+	
+	var resume_btn = vbox.find_child("ResumeButton", false, false)
+	var insert_index = 1
+	if resume_btn:
+		insert_index = resume_btn.get_index() + 1
+	
+	# Save Button
+	var save_btn = Button.new()
+	save_btn.name = "SaveButton"
+	save_btn.text = "Save Game"
+	save_btn.custom_minimum_size = Vector2(200, 50)
+	_force_button_style(save_btn)
+	save_btn.pressed.connect(_show_save_panel.bind(true))
+	vbox.add_child(save_btn)
+	vbox.move_child(save_btn, insert_index)
+	
+	# Load Button
+	var load_btn = Button.new()
+	load_btn.name = "LoadButton"
+	load_btn.text = "Load Game"
+	load_btn.custom_minimum_size = Vector2(200, 50)
+	_force_button_style(load_btn)
+	load_btn.pressed.connect(_show_save_panel.bind(false))
+	vbox.add_child(load_btn)
+	vbox.move_child(load_btn, insert_index + 1)
 
-func _input(event: InputEvent) -> void:
-	if not enable_escape_toggle:
+func _create_save_panel():
+	save_panel = PanelContainer.new()
+	save_panel.name = "SaveLoadPanel"
+	save_panel.visible = false
+	save_panel.z_index = 200
+	
+	_apply_panel_style(save_panel)
+	save_panel.custom_minimum_size = Vector2(350, 400)
+	
+	var margin = MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 20)
+	margin.add_theme_constant_override("margin_right", 20)
+	margin.add_theme_constant_override("margin_top", 20)
+	margin.add_theme_constant_override("margin_bottom", 20)
+	save_panel.add_child(margin)
+	
+	var vbox = VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 10)
+	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	margin.add_child(vbox)
+	
+	var title = Label.new()
+	title.name = "TitleLabel"
+	title.text = "Save Game"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 24)
+	title.add_theme_color_override("font_color", Color(0.35, 0.8, 0.95))
+	vbox.add_child(title)
+	
+	var slots = VBoxContainer.new()
+	slots.name = "Slots"
+	slots.add_theme_constant_override("separation", 8)
+	vbox.add_child(slots)
+	
+	get_tree().current_scene.add_child(save_panel)
+	save_panel.set_meta("title", title)
+	save_panel.set_meta("slots", slots)
+
+func _show_save_panel(is_save: bool):
+	print("Opening panel, is_save: ", is_save)
+	
+	if not save_panel:
 		return
-	if event is InputEventKey:
-		var k := event as InputEventKey
-		if k.pressed and not k.echo and k.keycode == KEY_ESCAPE:
-			_set_open(not _open)
-			get_viewport().set_input_as_handled()
+	
+	# Toggle visibility
+	save_panel.visible = !save_panel.visible
+	if not save_panel.visible:
+		return  # Just closed it
+	
+	var title = save_panel.get_meta("title")
+	var slots = save_panel.get_meta("slots")
+	title.text = "Save Game" if is_save else "Load Game"
+	
+	# Clear all children properly
+	while slots.get_child_count() > 0:
+		var child = slots.get_child(0)
+		slots.remove_child(child)
+		child.queue_free()
+	
+	# Create slots
+	for i in range(1, 4):
+		var btn = Button.new()
+		var has_data = SaveSystem.has_slot(i)
+		
+		if has_data:
+			var preview = SaveSystem.get_slot_preview(i)
+			var depth = preview.get("depth", 1) if preview is Dictionary else 1
+			btn.text = "Slot %d - Depth %d" % [i, depth]
+		else:
+			btn.text = "Slot %d [Empty]" % i
+		
+		btn.custom_minimum_size = Vector2(300, 60)
+		_force_button_style(btn)
+		
+		# Direct connection with bind
+		if is_save:
+			btn.pressed.connect(_on_save_slot_pressed.bind(i))
+		else:
+			if has_data:
+				btn.pressed.connect(_on_load_slot_pressed.bind(i))
+			else:
+				btn.disabled = true
+		
+		slots.add_child(btn)
+	
+	# Cancel button
+	var cancel = Button.new()
+	cancel.text = "Cancel"
+	cancel.custom_minimum_size = Vector2(300, 50)
+	cancel.pressed.connect(_on_cancel_pressed)
+	_force_button_style(cancel)
+	slots.add_child(cancel)
 
-func _set_open(v: bool) -> void:
-	_open = v
-	if is_instance_valid(center):
-		center.visible = v
+func _on_save_slot_pressed(slot: int):
+	print("SAVING TO SLOT ", slot)
+	var gm = get_tree().get_first_node_in_group("game_manager")
+	if gm and gm.has_method("get_save_data"):
+		var data = gm.get_save_data()
+		SaveSystem.save_to_slot(slot, data)
+		print("Saved!")
+	save_panel.visible = false
 
-	# Re-assert (some themes flip visuals when tree pauses/unpauses)
-	_force_enabled_button(resume_button)
-	_force_enabled_button(quit_button)
-	_apply_button_style(resume_button)
-	_apply_button_style(quit_button)
+func _on_load_slot_pressed(slot: int):
+	print("LOADING FROM SLOT ", slot)
+	var data = SaveSystem.load_from_slot(slot)
+	if not data.is_empty():
+		var gm = get_tree().get_first_node_in_group("game_manager")
+		if gm and gm.has_method("load_game_data"):
+			gm.load_game_data(data)
+			print("Loaded!")
+	save_panel.visible = false
+	get_tree().paused = false
 
-	get_tree().paused = v
-	if v:
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+func _on_cancel_pressed():
+	if save_panel:
+		save_panel.visible = false
+		
+func _force_button_style(btn: Button):
+	# CRITICAL: Clear theme resource if any
+	btn.theme = null
+	
+	# Remove all existing style overrides
+	for state in ["normal", "hover", "pressed", "disabled", "focus"]:
+		btn.remove_theme_stylebox_override(state)
+		btn.remove_theme_color_override("font_color")
+		btn.remove_theme_color_override("font_hover_color")
+		btn.remove_theme_color_override("font_pressed_color")
+		btn.remove_theme_color_override("font_disabled_color")
+	
+	# Apply fresh style
+	var normal = StyleBoxFlat.new()
+	normal.bg_color = Color(0.08, 0.10, 0.14, 0.95)
+	normal.border_color = Color(0.24, 0.67, 0.94, 1.0)
+	normal.border_width_left = 2
+	normal.border_width_top = 2
+	normal.border_width_right = 2
+	normal.border_width_bottom = 2
+	normal.corner_radius_top_left = 10
+	normal.corner_radius_top_right = 10
+	normal.corner_radius_bottom_left = 10
+	normal.corner_radius_bottom_right = 10
+	normal.content_margin_left = 14
+	normal.content_margin_right = 14
+	normal.content_margin_top = 10
+	normal.content_margin_bottom = 10
+	btn.add_theme_stylebox_override("normal", normal)
+	
+	var hover = normal.duplicate()
+	hover.bg_color = Color(0.15, 0.18, 0.25, 0.98)
+	hover.border_color = Color(0.40, 0.80, 1.00, 1.0)
+	btn.add_theme_stylebox_override("hover", hover)
+	
+	var pressed = normal.duplicate()
+	pressed.bg_color = Color(0.05, 0.07, 0.10, 0.95)
+	btn.add_theme_stylebox_override("pressed", pressed)
+	
+	btn.add_theme_color_override("font_color", Color(0.92, 0.96, 1.0, 1.0))
+	btn.add_theme_color_override("font_hover_color", Color(1.0, 1.0, 1.0, 1.0))
+	btn.add_theme_color_override("font_pressed_color", Color(0.92, 0.96, 1.0, 1.0))
+	btn.add_theme_color_override("font_disabled_color", Color(0.50, 0.55, 0.60, 0.80))
 
-func _on_resume() -> void:
-	_set_open(false)
-
-func _on_quit() -> void:
-	get_tree().quit()
-
-func _hide_and_collapse(c: Control) -> void:
-	if c == null or not is_instance_valid(c):
-		return
-	c.visible = false
-	if c is BaseButton:
-		(c as BaseButton).disabled = true
-	c.custom_minimum_size = Vector2.ZERO
-	c.size_flags_horizontal = 0
-	c.size_flags_vertical = 0
-	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
-
-func _force_enabled_button(b: Button) -> void:
-	if b == null or not is_instance_valid(b):
-		return
-	b.disabled = false
-	b.visible = true
-	b.mouse_filter = Control.MOUSE_FILTER_STOP
-	b.focus_mode = Control.FOCUS_ALL
-	b.modulate = Color(1, 1, 1, 1)
-
-	# Prevent "disabled" palette from ever bleeding through
-	b.add_theme_color_override("font_color", Color(0.92, 0.96, 1.0, 1.0))
-	b.add_theme_color_override("font_hover_color", Color(1.0, 1.0, 1.0, 1.0))
-	b.add_theme_color_override("font_pressed_color", Color(0.92, 0.96, 1.0, 1.0))
-	b.add_theme_color_override("font_disabled_color", Color(0.92, 0.96, 1.0, 1.0))
-
-func _apply_panel_style(p: Control) -> void:
-	if p == null or not is_instance_valid(p):
-		return
-	var sb := StyleBoxFlat.new()
+func _apply_panel_style(p: Control):
+	var sb = StyleBoxFlat.new()
 	sb.bg_color = Color(0.05, 0.07, 0.12, 0.95)
 	sb.border_color = Color(0.24, 0.67, 0.94, 1.0)
 	sb.border_width_left = 2
@@ -126,36 +264,23 @@ func _apply_panel_style(p: Control) -> void:
 	sb.content_margin_bottom = 14
 	p.add_theme_stylebox_override("panel", sb)
 
-func _mk_btn(bg: Color, border: Color) -> StyleBoxFlat:
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = bg
-	sb.border_color = border
-	sb.border_width_left = 2
-	sb.border_width_top = 2
-	sb.border_width_right = 2
-	sb.border_width_bottom = 2
-	sb.corner_radius_top_left = 10
-	sb.corner_radius_top_right = 10
-	sb.corner_radius_bottom_left = 10
-	sb.corner_radius_bottom_right = 10
-	sb.content_margin_left = 14
-	sb.content_margin_right = 14
-	sb.content_margin_top = 10
-	sb.content_margin_bottom = 10
-	return sb
+func _input(event):
+	if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+		if save_panel and save_panel.visible:
+			save_panel.visible = false
+			return
+		toggle_pause()
+		get_viewport().set_input_as_handled()
 
-func _apply_button_style(b: Button) -> void:
-	if b == null or not is_instance_valid(b):
-		return
+func toggle_pause():
+	is_open = !is_open
+	center.visible = is_open
+	get_tree().paused = is_open
+	if is_open:
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
-	var normal := _mk_btn(Color(0.08, 0.10, 0.16, 0.95), Color(0.24, 0.67, 0.94, 1.0))
-	var hover := _mk_btn(Color(0.10, 0.12, 0.19, 0.98), Color(0.34, 0.77, 1.00, 1.0))
-	var pressed := _mk_btn(Color(0.06, 0.08, 0.12, 0.95), Color(0.20, 0.60, 0.90, 1.0))
-	var disabled := _mk_btn(Color(0.08, 0.10, 0.16, 0.95), Color(0.24, 0.67, 0.94, 1.0)) # never white
+func _on_resume():
+	toggle_pause()
 
-	# Cover ALL states so nothing falls back to default theme
-	b.add_theme_stylebox_override("normal", normal)
-	b.add_theme_stylebox_override("hover", hover)
-	b.add_theme_stylebox_override("pressed", pressed)
-	b.add_theme_stylebox_override("disabled", disabled)
-	b.add_theme_stylebox_override("focus", hover)
+func _on_quit():
+	get_tree().quit()

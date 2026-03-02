@@ -2,7 +2,6 @@ extends Node
 class_name GameManager
 
 signal abyss_unlocked
-
 @onready var pillar_stack: Node = get_tree().current_scene.find_child("Segments", true, false)
 @onready var risk_system: RiskSystem = $"../Systems/RiskSystem"
 @onready var overclock_system: OverclockSystem = $"../Systems/OverclockSystem"
@@ -69,7 +68,6 @@ var dive_control_gain: float = 6.0
 var dream_current: float = 1.0  # Global progress multiplier
 var wake_bonus_mult: float = 1.35
 var fail_penalty_mult: float = 0.60
-
 var depth_thoughts_step: float = 0.05
 var depth_instab_step: float = 0.08
 
@@ -162,7 +160,7 @@ var last_milestone_check: Dictionary = {}
 
 var gems: int = 0  # Or call it "shards", "essence", etc.
 var times_broken: int = 0
-
+var _autosave_timer: float = 0.0
 # ============================================
 # F2P MONETIZATION & ABYSS SYSTEM
 # ============================================
@@ -436,8 +434,10 @@ func _force_recreate_click_row() -> void:
 	print("ClickRow rect: ", click_row.get_global_rect())
 	for btn in click_row.get_children():
 		print("  ", btn.name, " rect: ", (btn as Control).get_global_rect())
-		
+
+
 func _ready() -> void:
+	add_to_group("game_manager")
 	# DEBUG: Connect click buttons
 	_connect_click_buttons_debug()
 	_warn_missing_nodes_once()
@@ -518,7 +518,6 @@ func _ready() -> void:
 	_refresh_top_ui()
 	_update_buttons_ui()
 	_force_cooldown_texts()
-	save_game()
 	
 	_debug_visible = _persist_debug_visible
 	if _debug_visible:
@@ -533,13 +532,6 @@ func _ready() -> void:
 		print("  Calm Mind: ", perm_perk_system.calm_mind_level)
 		print("  Thoughts Mult: ", perm_perk_system.get_thoughts_mult())
 		
-		# Verify they match saved data
-		var data = SaveSystem.load_game()
-		if data.has("perm_memory_engine_level"):
-			var saved = data["perm_memory_engine_level"]
-			var current = perm_perk_system.memory_engine_level
-			if saved != current:
-				push_error("MISMATCH: Saved ME=", saved, " but loaded ME=", current)
 		
 	# Sync auto-buy unlocks from meta system
 	var meta = get_tree().current_scene.find_child("DepthMetaSystem", true, false)
@@ -574,7 +566,7 @@ func _ready() -> void:
 	
 	# Then create new one
 	call_deferred("_create_click_upgrade_sidebar")
-
+	
 func _on_auto_dive_triggered(_depth_index: int) -> void:
 	# Close expanded depth panels when auto-dive triggers
 	var panel = get_tree().current_scene.find_child("DepthBarsPanel", true, false)
@@ -665,9 +657,7 @@ func _refresh_top_ui() -> void:
 	# CRITICAL FIX: Calculate actual instability gain per second
 	var inst_gain: float = 0.0
 	if current_depth >= 2:
-		# Get from depth meta system
-		if depth_meta_system != null:
-			inst_gain = get_idle_instability_gain_per_sec()
+		inst_gain = get_idle_instability_gain_per_sec()
 		
 		# Apply multipliers (same as in _process)
 		var instability_mult: float = _safe_mult(upgrade_manager.get_instability_mult()) * _safe_mult(perk_system.get_instability_mult())
@@ -1431,14 +1421,20 @@ func calc_memories_gain() -> float:
 	return sqrt(t) * (1.0 + r) * time_mult * depth_mult
 
 func get_idle_instability_gain_per_sec() -> float:
-	var drc := get_node_or_null("/root/DepthRunController")
-	if drc != null:
-		# Get the ACTUAL rate from DepthRunController
-		return float(drc.get("instability_per_sec"))
+	var current_depth := get_current_depth()
+	if current_depth < 2:
+		return 0.0
+		
+	var base_rate: float = dream_current * 0.12
 	
-	# Fallback if DRC not found
-	return dream_current * 1.3
-
+	# Apply Stabilize upgrade from Depth 2
+	var drc := get_node_or_null("/root/DepthRunController")
+	if drc != null and drc.has_method("_get_local_level"):
+		var stab_lvl = drc.call("_get_local_level", 2, "stabilize")
+		if stab_lvl > 0:
+			base_rate *= pow(0.95, stab_lvl)
+	
+	return base_rate
 
 func get_seconds_until_fail() -> float:
 	var current_depth := get_current_depth()
@@ -1671,11 +1667,22 @@ func _update_depth_data_offline(mem_gained: float, cry_gained: float, progress_g
 	
 	run_data[idx] = depth_data
 	drc.set("run", run_data)
-	
 
 func save_game() -> void:
-	var data: Dictionary = {}
+	var data = get_save_data()
+	# Debug: See what's in data already
+	if data.has("last_play_time"):
+		print("Incoming last_play_time: ", data["last_play_time"])
 	
+	SaveSystem.save_game(data)
+	var check = SaveSystem.load_game()
+	print("SAVE VERIFY: last_play_time = ", check.get("last_play_time"))
+	
+	# Print stack trace to see who called this
+	print("SAVE CALLED FROM: ", get_stack())
+	
+func get_save_data() -> Dictionary:
+	var data: Dictionary = {}  # Initialize empty dict, not recursive call
 	# Current run stats
 	data["memories"] = memories
 	data["thoughts"] = thoughts
@@ -1725,6 +1732,7 @@ func save_game() -> void:
 		data["depth_thoughts"] = drc.get("thoughts")
 		data["depth_control"] = drc.get("control")
 		data["depth_instability"] = drc.get("instability")
+	
 	
 	if abyss_perk_system != null:
 		data["abyss_echoed_descent_level"] = abyss_perk_system.echoed_descent_level
@@ -1807,9 +1815,19 @@ func save_game() -> void:
 		var shop_data = shop_node.call("get_shop_data")
 		data["abyss_shop_unlocked"] = shop_data.unlocked
 		data["abyss_shop_active"] = shop_data.active
-		
-	SaveSystem.save_game(data)
-	print("Game Saved - Shop items: ", abyss_shop_unlocked.size())
+
+	# CRITICAL: Save depth controller state
+	if drc:
+		data["depth_run_controller"] = {
+			"active_depth": drc.active_depth,
+			"run": drc.run,
+			"local_upgrades": drc.local_upgrades
+		}
+		print("Saving DRC: depth=", drc.active_depth)
+	
+	data["last_play_time"] = Time.get_unix_time_from_system()
+	return data
+	
 	
 func load_game() -> void:
 	var data: Dictionary = SaveSystem.load_game()
@@ -2457,9 +2475,9 @@ func _update_debug_overlay() -> void:
 		
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
-		print("QUIT: Saving game...")
-		save_game()
-		await get_tree().create_timer(0.1).timeout
+		var data = get_save_data()
+		data["last_play_time"] = Time.get_unix_time_from_system()  # Only on quit!
+		SaveSystem.save_game(data)
 		get_tree().quit()
 
 # When buying velocity/progress upgrades:
@@ -2474,7 +2492,8 @@ func _process(delta: float) -> void:
 		return
 		
 	var current_depth := get_current_depth()
-	
+	var _inst_rate: float = 0.0
+
 	# DECLARE variables here so they're available throughout the function
 	var drc := get_node_or_null("/root/DepthRunController")
 	var instability_mult: float = 1.0
@@ -2492,14 +2511,25 @@ func _process(delta: float) -> void:
 	cap = maxf(cap, depth_meta_system.get_instability_cap(current_depth) * 0.5)
 
 	
-	var stabilizer_mult: float = 1.0
-	var crush_mult: float = 1.0
+	var _stabilizer_mult: float = 1.0
+	var _crush_mult: float = 1.0
 	if drc != null and drc.has_method("_get_local_level"):
 		var crush_lvl = drc.call("_get_local_level", 3, "crush_resistance")
 		if crush_lvl > 0:
-			crush_mult = pow(0.94, crush_lvl)  # -6% per level
+			_crush_mult = pow(0.94, crush_lvl)
 
-	var inst_rate: float = dream_current * 0.5 * instability_mult * stabilizer_mult * crush_mult
+	if current_depth >= 2:
+		var inst_rate: float = dream_current * 0.12  # Base rate
+		
+		# Apply Stabilize upgrade reduction
+		if drc != null:
+			var stab_lvl = drc.call("_get_local_level", 2, "stabilize")
+			if stab_lvl > 0:
+				inst_rate *= pow(0.95, stab_lvl)
+		
+		# THIS IS THE FIX - Actually add to instability:
+		instability += inst_rate * delta * _crush_mult
+		instability = minf(instability, depth_meta_system.get_instability_cap(current_depth))
 
 	if current_depth >= 2:
 		if depth_meta_system != null and depth_meta_system.has_method("get_instability_cap"):
@@ -2509,7 +2539,6 @@ func _process(delta: float) -> void:
 		if cap <= 0:
 			cap = 1000.0 * current_depth
 		
-		print("Fail check: instability=", instability, " cap=", cap)
 		
 		if instability >= cap:
 			do_fail()
@@ -2524,19 +2553,30 @@ func _process(delta: float) -> void:
 	
 	# HARDCoded instability rate calculation
 	if current_depth >= 2:
+		# Calculate base instability gain
+		var base_inst_gain: float = dream_current * 0.12
 		
+		# Get stabilize level from Depth 2 run upgrades
+		var stabilize_lvl: int = 0
 		if drc != null and drc.has_method("_get_local_level"):
-			var stab_lvl = drc.call("_get_local_level", current_depth, "stabilize")
-			if stab_lvl > 0:
-				# Multiplicative: 0.95^level
-				stabilizer_mult = pow(0.95, stab_lvl)
+			stabilize_lvl = drc.call("_get_local_level", 2, "stabilize")
 		
-		instability += inst_rate * delta
+		# Apply multiplicative reduction: 0.95^level
+		if stabilize_lvl > 0:
+			base_inst_gain *= pow(0.95, stabilize_lvl)
 		
+		# Apply other multipliers
+		if upgrade_manager != null:
+			instability_mult *= _safe_mult(upgrade_manager.get_instability_mult())
+		if perk_system != null:
+			instability_mult *= _safe_mult(perk_system.get_instability_mult())
+		
+		# THIS WAS MISSING - Actually add to instability:
+		instability += base_inst_gain * instability_mult * delta
+		
+		# Push to DRC for display
 		if drc != null:
-			drc.set("instability_per_sec", inst_rate)
-			drc.set("instability", instability)
-			print("INST CALC: dream_current=", dream_current, " instability_mult=", instability_mult, " expected=", dream_current * 1.3 * instability_mult, " inst_rate=", inst_rate)
+			drc.instability = instability
 	
 	run_time += delta
 	_update_click_combo(delta)
@@ -2636,7 +2676,7 @@ func _process(delta: float) -> void:
 		risky_instab_mult = 1.0 + (risky_lvl * 0.10) # +10% instability
 		
 	thoughts_to_add *= risky_mult
-	inst_rate *= risky_instab_mult
+	_inst_rate *= risky_instab_mult
 
 	# Instability calculation
 	instability_mult = _safe_mult(upgrade_manager.get_instability_mult()) * _safe_mult(perk_system.get_instability_mult()) * _safe_mult(nightmare_system.get_thoughts_mult())
@@ -2688,6 +2728,15 @@ func _process(delta: float) -> void:
 		drc.set("control_per_sec", control_ps_display)
 		drc.set("dream_current", dream_current)
 	
+	_autosave_timer += delta
+	if _autosave_timer >= 5.0:
+		_autosave_timer = 0.0
+		# Only save time, don't overwrite last_play_time with regular save
+		var data = SaveSystem.load_game()
+		data["last_play_time"] = Time.get_unix_time_from_system()
+		SaveSystem.save_game(data)
+		print("AUTO-SAVE TIME")
+		
 	_refresh_top_ui()
 	_update_buttons_ui()
 	_force_cooldown_texts()
@@ -2697,6 +2746,12 @@ func _process(delta: float) -> void:
 	if _debug_visible:
 		_update_debug_overlay()
 
+func _quick_save_time():
+	# Lightweight save - just the timestamp for offline tracking
+	var data = SaveSystem.load_game()
+	data["last_play_time"] = Time.get_unix_time_from_system()
+	SaveSystem.save_game(data)
+	
 func _update_depth_progress(delta: float, current_depth: int) -> void:
 	var drc := get_node_or_null("/root/DepthRunController")
 	if drc == null:
@@ -3307,27 +3362,33 @@ func fix_depth1_text_color() -> void:
 			desc_label.add_theme_color_override("font_color", Color(0.1, 0.1, 0.15, 1.0))  # Dark blue-black
 			desc_label.add_theme_color_override("font_shadow_color", Color(1, 1, 1, 0.5))  # White shadow for contrast
 
-# In GameManager.on_manual_focus_clicked()
+
 func on_manual_focus_clicked() -> void:
 	var drc := get_node_or_null("/root/DepthRunController")
-	var click_bonus := 0.0
+	var manual_lvl = 0
 	
-	# Get manual_click level from Depth 1
 	if drc != null and drc.has_method("_get_local_level"):
-		var manual_lvl = drc.call("_get_local_level", 1, "manual_click")
-		click_bonus = float(manual_lvl) * 0.5  # +0.5s per level
+		manual_lvl = drc.call("_get_local_level", 1, "manual_click")
 	
-	var base_power := get_click_power()
-	var combo_mult := get_combo_multiplier()
-	var idle_bonus := get_click_idle_bonus()
+	var click_bonus = float(manual_lvl) * 0.5
+	var base_power = get_click_power()
+	var combo_mult = get_combo_multiplier()
+	var idle_bonus = get_click_idle_bonus()
+	var idle_thoughts = get_idle_thoughts_per_second()
 	
-	# Add the manual click bonus
-	var thoughts_gained := (base_power * combo_mult) + idle_bonus + (get_idle_thoughts_per_second() * click_bonus)
+	# DEBUG PRINT
+	print("THINK CLICK DEBUG:")
+	print("  manual_click level: ", manual_lvl)
+	print("  click_bonus (seconds): ", click_bonus)
+	print("  idle_thoughts/sec: ", idle_thoughts)
+	print("  bonus from manual: ", idle_thoughts * click_bonus)
+	print("  base_power: ", base_power)
+	
+	var thoughts_gained = (base_power * combo_mult) + idle_bonus + (idle_thoughts * click_bonus)
 	
 	thoughts += thoughts_gained
 	total_thoughts_earned += thoughts_gained
 	_register_click_for_combo()
-	_show_click_feedback(thoughts_gained, "thoughts")
 	_refresh_top_ui()
 
 func get_click_power() -> float:

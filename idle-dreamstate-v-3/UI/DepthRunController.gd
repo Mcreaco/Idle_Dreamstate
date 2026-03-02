@@ -27,8 +27,6 @@ var active_depth: int = 1
 var max_unlocked_depth: int = 1
 var _run_internal: Array[Dictionary] = []
 signal auto_dive_triggered(depth_index: int)  # CRITICAL: For panel closure
-
-var _rift_choice_timer: float = 0.0
 var _rift_event_active: bool = false
 var _temp_buffs: Dictionary = {}  # Tracks temporary multipliers like "risky choice memory boost"
 
@@ -135,6 +133,13 @@ func _process(delta: float) -> void:
 			wake_cashout(1.0, true)
 			return
 	
+# Call this for the active depth (make sure this is OUTSIDE any if blocks that might skip it)
+	if active_depth >= 4:
+		var def = get_depth_def(active_depth)
+		var rules = def.get("rules", {})
+		if rules.get("event_enabled", false):
+			_tick_depth_events(active_depth, delta, rules)
+			
 	# CRITICAL FIX: Auto-Dive Check (moved outside depth 2+ block, runs for all depths)
 	_check_auto_dive()
 
@@ -254,13 +259,45 @@ func _tick_active_depth(delta: float) -> void:
 	var dream_current: float = 1.0
 	if gm and "dream_current" in gm:
 		dream_current = gm.dream_current
+
+	# Apply Echo Navigation (Depth 4 progress speed upgrade)
+	if d == 4:
+		var echo_lvl := _get_local_level(d, "echo_navigation")
+		if echo_lvl > 0:
+			var echo_def: Dictionary = get_depth_def(d).get("upgrades", {}).get("echo_navigation", {})
+			var echo_effect: float = echo_def.get("effect_per_level", 0.12)
+			dream_current *= (1.0 + (echo_effect * echo_lvl))  # +12% per level
+
+	# LENGTH / DIFFICULTY - USE DREAM CURRENT
+	var length: float = get_depth_length(d)
+	var per_sec: float = (base_progress_per_sec * dream_current * depth_prog_mul) / maxf(length, 0.0001)
 	
 	# Multipliers for Memories/Crystals (progress uses dream_current instead)
 	var mem_lvl := _get_local_level(d, "memories_gain")
 	var cry_lvl := _get_local_level(d, "crystals_gain")
+
+	# Get the specific crystal focus for this depth (e.g., "ruby_focus", "emerald_focus", "sapphire_focus")
+	var crystal_focus_id := ""
+	match d:
+		2: crystal_focus_id = "ruby_focus"
+		3: crystal_focus_id = "emerald_focus"
+		4: crystal_focus_id = "sapphire_focus"
+		5: crystal_focus_id = "diamond_focus"  # if you have this
+
+	var crystal_focus_lvl := _get_local_level(d, crystal_focus_id)
+
+	var mem_mul: float = 1.0 + (0.15 * mem_lvl) + _frozen_effect(d, "memories_gain", 0.15)
+	var cry_mul: float = 1.0 + (0.12 * cry_lvl) + _frozen_effect(d, "crystals_gain", 0.12)
+
+	# Add crystal focus bonus
+	if crystal_focus_lvl > 0 and crystal_focus_id != "":
+		var focus_def: Dictionary = get_depth_def(d).get("upgrades", {}).get(crystal_focus_id, {})
+		var focus_effect: float = focus_def.get("effect_per_level", 0.15)  # Default 15%
+		cry_mul += (focus_effect * crystal_focus_lvl)
+
+	# Then apply to crystal generation:
+	data["crystals"] = float(data.get("crystals", 0.0)) + base_crystals_per_sec * cry_mul * depth_cry_mul * delta
 	
-	var mem_mul: float = 1.0 + 0.15 * mem_lvl + _frozen_effect(d, "memories_gain", 0.15)
-	var cry_mul: float = 1.0 + 0.12 * cry_lvl + _frozen_effect(d, "crystals_gain", 0.12)
 	var game_mgr := get_node_or_null("/root/GameManager")
 	var abyss_mult: float = 1.0
 	if game_mgr != null and game_mgr.has_method("get_abyss_multiplier"):
@@ -277,10 +314,6 @@ func _tick_active_depth(delta: float) -> void:
 			var ruby_def: Dictionary = get_depth_def(d).get("upgrades", {}).get("ruby_focus", {})
 			var ruby_effect: float = ruby_def.get("effect_per_level", 0.12)
 			cry_mul += (ruby_effect * ruby_level)
-
-	# LENGTH / DIFFICULTY - USE DREAM CURRENT INSTEAD OF speed_mul
-	var length: float = get_depth_length(d)
-	var per_sec: float = (base_progress_per_sec * dream_current * depth_prog_mul) / maxf(length, 0.0001)
 
 	# CRITICAL FIX: Use actual cap instead of hardcoded 1.0
 	var cap: float = get_depth_progress_cap(d)
@@ -317,7 +350,9 @@ func add_local_upgrade(depth_index: int, upgrade_id: String, amount: int = 1) ->
 		
 		# Depth 2: Controlled Fall adds +0.1 per level
 		elif upgrade_id == "controlled_fall":
-			game_mgr.buy_dream_current_upgrade(0.1 * amount)
+			var current_dc = game_mgr.dream_current
+			var bonus = 0.1 * amount
+			game_mgr.dream_current = current_dc * (1.0 + bonus)  # Multiplicative: 1.0 -> 1.1 -> 1.21 etc
 		
 		# Add other depth-specific upgrades here as needed
 		# elif upgrade_id == "ruby_focus":
@@ -791,7 +826,7 @@ func _build_depth_defs() -> void:
 				"max_level": 10,  # Cap at +1.0 total
 				"base_cost": 500.0,  # Expensive - affects all depths
 				"cost_growth": 1.6,
-				"effect_per_level": 0.10,  # Hooks to buy_dream_current_upgrade(0.1)
+				"effect_per_level": 0.2,  # Hooks to buy_dream_current_upgrade(0.1)
 				"cost_currency": "thoughts"
 			},
 			"trauma_inoculation": {
@@ -990,7 +1025,7 @@ func _build_depth_defs() -> void:
 			"temporal_sense": {
 				"name": "Temporal Sense",
 				"description": "Choice events trigger 10% faster per level",
-				"max_level": 999999,
+				"max_level": 5,
 				"base_cost": 200.0,
 				"cost_growth": 1.8,
 				"effect_per_level": 0.10,
@@ -1017,7 +1052,7 @@ func _build_depth_defs() -> void:
 			"fractured_mirage": {
 				"name": "Fractured Mirage",
 				"description": "+0.15 Max Control per level",
-				"max_level": 999999,
+				"max_level": 999,
 				"base_cost": 120.0,
 				"cost_growth": 1.5,
 				"effect_per_level": 0.15,
@@ -1026,7 +1061,7 @@ func _build_depth_defs() -> void:
 			"rift_mining": {
 				"name": "Rift Mining",
 				"description": "Choices grant +8% Thoughts per level",
-				"max_level": 999999,
+				"max_level": 50,
 				"base_cost": 180.0,
 				"cost_growth": 1.6,
 				"effect_per_level": 0.08,
@@ -1043,12 +1078,18 @@ func _build_depth_defs() -> void:
 					{
 						"id": "steady",
 						"text": "Steady path",
-						"effect": {"progress_bonus": 0.10, "instability_bonus": 0.05}
+						"effect": {"progress_bonus": 0.15, "instability_bonus": 0.05}
 					},
 					{
 						"id": "risk",
 						"text": "Risky leap",
-						"effect": {"progress_bonus": 0.25, "instability_bonus": 0.20, "mem_mul": 1.50, "duration": 10.0}
+						"effect": {
+							"progress_bonus": 0.40,      # Big jump
+							"instability_bonus": 0.35,   # High risk
+							"mem_mul": 2.0,              # Double memories
+							"duration": 15.0,            # 15 seconds
+							"cost_control": 50.0         # Also costs control
+						}
 					}
 				],
 				"upgrade_bonus": "rift_mastery"
@@ -1919,7 +1960,7 @@ func _apply_depth_rules(d: int) -> Dictionary:
 		if stabilizer_level > 0:
 			var def_data: Dictionary = def.get("upgrades", {}).get("stabilize", {})
 			var effect_per_level: float = def_data.get("effect_per_level", -0.05)
-			base_inst_ps += (effect_per_level * stabilizer_level)  # effect is negative
+			base_inst_ps *= pow(1.0 + effect_per_level, stabilizer_level)
 			base_inst_ps = maxf(0.01, base_inst_ps)  # Floor at 0.01 so it never goes negative
 	
 	# APPLY PRESSURE HARDENING (Depth 3) - reduces slowdown from pressure
@@ -1971,54 +2012,55 @@ func _get_event_interval() -> float:
 	# 10% faster per level: 30 -> 27 -> 24 -> 21 -> 18
 	return base_interval * (1.0 - (temporal_lvl * 0.10))
 
-# Replace/modify _tick_depth_events to handle Depth 5
 func _tick_depth_events(d: int, delta: float, rules: Dictionary) -> void:
 	_ensure_depth_runtime(d)
 	var rt: Dictionary = _depth_runtime[d]
-	rt["time_in_depth"] = float(rt.get("time_in_depth", 0.0)) + delta
 	
-	# Handle Depth 5 Rift Choice Events
-	if d == 5 and rules.get("event_enabled", false) and not _rift_event_active:
-		if has_meta("progress_paused") and get_meta("progress_paused"):
-			return  # Don't tick timer while paused
-		
-		_rift_choice_timer += delta
-		var interval = _get_event_interval()
-		
-		if _rift_choice_timer >= interval:
-			_rift_choice_timer = 0.0
-			_trigger_rift_choice()
+	# FIX: Initialize event_timer if missing
+	if not rt.has("event_timer"):
+		rt["event_timer"] = 0.0
 	
-	# Handle temporary buff expiration
-	for buff_id in _temp_buffs.keys():
-		var buff = _temp_buffs[buff_id]
-		buff.time_remaining -= delta
-		if buff.time_remaining <= 0:
-			_temp_buffs.erase(buff_id)
-			print("Buff expired: ", buff_id)
+	# FIX: Get interval with Temporal Sense check for Depth 5
+	var interval: float = rules.get("event_timer", 30.0)
+	if d == 5:
+		var temp_sense = _get_local_level(5, "temporal_sense")
+		interval *= (1.0 - (temp_sense * 0.10))  # 10% faster per level
+	
+	rt["event_timer"] = float(rt["event_timer"]) + delta
+	
+	# DEBUG: Print timer progress
+	if Engine.get_process_frames() % 60 == 0:
+		print("Depth ", d, " event timer: ", rt["event_timer"], " / ", interval)
+	
+	if rt["event_timer"] >= interval:
+		rt["event_timer"] = 0.0
+		
+		# Trigger specific events based on depth
+		if d == 4:
+			_trigger_flicker_event({})
+			print("TRIGGERED: Flicker event at Depth 4")
+		elif d == 5:
+			_trigger_rift_choice({})
+			print("TRIGGERED: Rift choice at Depth 5")
 	
 	_depth_runtime[d] = rt
-
-func _trigger_rift_choice() -> void:
-	var def = get_depth_def(5)
-	var events = def.get("events", [])
+	
+func _trigger_depth_event(d: int) -> void:
+	var def: Dictionary = get_depth_def(d)
+	var events: Array = def.get("events", [])
+	
 	if events.size() == 0:
 		return
 	
-	var event_data = events[0]  # "the_choice" event
-	_rift_event_active = true
+	var event_data: Dictionary = events[0]  # Get first event for now
 	
-	# Pause progress if choice_paused rule is set
-	if def.get("rules", {}).get("choice_paused", true):
-		set_meta("progress_paused", true)
-	
-	# Show modal
-	if choice_modal != null:
-		# Pass risk assessment level to modal
-		var risk_assess_lvl = _get_local_level(5, "risk_assessment")
-		choice_modal.show_event(event_data, def, risk_assess_lvl > 0)
-		if not choice_modal.choice_made.is_connected(_on_rift_choice_resolved):
-			choice_modal.choice_made.connect(_on_rift_choice_resolved)
+	# For Depth 4: Flicker event
+	if d == 4:
+		_trigger_flicker_event(event_data)
+	# For Depth 5: Rift Choice event
+	elif d == 5:
+		_trigger_rift_choice(event_data)
+
 
 func _on_rift_choice_resolved(choice_id: String, effects: Dictionary) -> void:
 	_rift_event_active = false
@@ -2047,7 +2089,7 @@ func get_temporary_memory_multiplier() -> float:
 			mult *= buff.value
 	return mult  # <-- Return is here
 
-func _trigger_flicker_event():
+func _trigger_flicker_event(_event_data: Dictionary = {}) -> void:
 	# Pause progress
 	set_meta("progress_paused", true)
 	
@@ -2062,23 +2104,47 @@ func _trigger_flicker_event():
 		)
 		choice_modal.choice_made.connect(_on_flicker_choice)
 
-func _on_flicker_choice(choice_id: String):
+func _on_flicker_choice(choice_id: String, _effects: Dictionary) -> void:
 	set_meta("progress_paused", false)
 	
-	if choice_id == "wait":
-		# Already paused for 10s by the modal, just resume
-		pass
-	elif choice_id == "overclock":
-		var gm = get_node_or_null("/root/GameManager")
-		if gm != null:
-			if gm.control >= 20:
-				gm.control -= 20
-				gm.instability += 15.0  # Add 15 instability
-			else:
-				# Not enough control, force wait
-				set_meta("progress_paused", true)
-				await get_tree().create_timer(10.0).timeout
-				set_meta("progress_paused", false)
+	var gm = get_node_or_null("/root/Main/GameManager")
+	if gm == null:
+		return
+	
+	if choice_id == "overclock":
+		if gm.control >= 20:
+			gm.control -= 20
+			
+			# CRITICAL FIX: Add 15% of instability cap, not 15 points
+			var inst_cap = 1000.0
+			if gm.depth_meta_system != null:
+				inst_cap = gm.depth_meta_system.get_instability_cap(gm.get_current_depth())
+			
+			gm.instability += inst_cap * 0.15  # 15% of cap, not 15 points
+			
+			# Add 5% progress
+			var current = _run_internal[active_depth - 1].get("progress", 0.0)
+			var cap = get_depth_progress_cap(active_depth)
+			_run_internal[active_depth - 1]["progress"] = minf(cap, current + (cap * 0.05))
+		else:
+			# Not enough control - penalty?
+			pass
+			
+func _trigger_rift_choice(_event_data: Dictionary = {}) -> void:
+	set_meta("progress_paused", true)
+	var def = get_depth_def(5)
+	var events = def.get("events", [])
+	if events.size() == 0:
+		return
+	
+	var evt = events[0]  # "the_choice" event
+	_rift_event_active = true
+	
+	if choice_modal != null:
+		var risk_assess_lvl = _get_local_level(5, "risk_assessment")
+		choice_modal.show_event(evt, def, risk_assess_lvl > 0)
+		if not choice_modal.choice_made.is_connected(_on_rift_choice_resolved):
+			choice_modal.choice_made.connect(_on_rift_choice_resolved)
 
 func _fire_depth_event(depth_index: int, event_id: String) -> void:
 	var def: Dictionary = get_depth_def(depth_index)

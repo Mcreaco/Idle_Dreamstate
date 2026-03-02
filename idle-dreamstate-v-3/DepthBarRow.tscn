@@ -8,6 +8,14 @@ offset_right = 32.0
 offset_bottom = 78.0
 size_flags_horizontal = 3
 script = ExtResource("1_3n1db")
+details_open_height = null
+row_height = null
+bar_height = null
+title_font = null
+reward_font = null
+percent_font = null
+top_bottom_padding = null
+v_separation = null
 
 [node name="Hbox" type="HBoxContainer" parent="."]
 layout_mode = 2

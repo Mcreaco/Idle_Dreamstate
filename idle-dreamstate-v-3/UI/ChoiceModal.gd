@@ -11,20 +11,88 @@ var _gm: GameManager
 var _drc: Node
 var _pending_effects: Dictionary = {}
 
+func show_choice(title_text: String, choices_array: Array) -> void:
+	visible = true
+	
+	# Clear existing
+	for child in get_children():
+		child.queue_free()
+	
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 16)
+	add_child(vbox)
+	
+	# Title
+	var title := Label.new()
+	title.text = title_text
+	title.add_theme_font_size_override("font_size", title_font_size)
+	title.add_theme_color_override("font_color", Color(0.35, 0.8, 0.95))
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(title)
+	
+	vbox.add_child(HSeparator.new())
+	
+	# Choice buttons
+	for choice in choices_array:
+		var btn := Button.new()
+		btn.text = choice.get("text", "???")
+		btn.custom_minimum_size = Vector2(300, 60)
+		
+		var choice_id = choice.get("id", "")
+		var effects = choice.get("effect", {})
+		
+		btn.pressed.connect(func(): 
+			choice_made.emit(choice_id, effects)
+			visible = false
+		)
+		
+		_style_button(btn, choice_id == "overclock")  # true if risky
+		vbox.add_child(btn)
+	
+	# Center it
+	set_anchors_preset(Control.PRESET_CENTER)
+	custom_minimum_size = Vector2(500, 300)
+
+func _style_button(btn: Button, is_risky: bool) -> void:
+	var sb := StyleBoxFlat.new()
+	if is_risky:
+		sb.bg_color = Color(0.3, 0.1, 0.1, 0.9)
+		sb.border_color = Color(0.9, 0.3, 0.3, 1.0)
+	else:
+		sb.bg_color = Color(0.1, 0.25, 0.4, 0.9)
+		sb.border_color = Color(0.3, 0.7, 0.9, 1.0)
+	
+	sb.border_width_left = 2
+	sb.border_width_top = 2
+	sb.border_width_right = 2
+	sb.border_width_bottom = 2
+	btn.add_theme_stylebox_override("normal", sb)
+	
 func _ready() -> void:
 	_gm = get_tree().current_scene.find_child("GameManager", true, false) as GameManager
 	_drc = get_node_or_null("/root/DepthRunController")
 	visible = false
-	z_index = 300
+	
+	# CRITICAL: Make sure it's on top of everything including depth bars
+	z_index = 400  # Higher than depth bars (usually 100-300)
+	z_as_relative = false  # Use absolute z-index
+	
+	# Stop mouse events from passing through
 	mouse_filter = Control.MOUSE_FILTER_STOP
+	
+	# Instead, set anchor to center
+	set_anchors_preset(Control.PRESET_CENTER)
 
 # Modify show_event signature to accept risk_assessment_unlocked
 func show_event(event_data: Dictionary, depth_def: Dictionary, risk_assessment_unlocked: bool = false) -> void:
+	# Remove the full_rect anchor preset - it's conflicting!
+	# Keep only the z-index and mouse filter settings from _ready
+	
 	visible = true
 	
 	# Pause the run
 	if _drc != null:
-		_drc.set_process(false)
+		_drc.set_meta("progress_paused", true)
 	
 	# Clear existing children
 	for child in get_children():
@@ -100,7 +168,16 @@ func show_event(event_data: Dictionary, depth_def: Dictionary, risk_assessment_u
 			
 		vbox.add_child(btn)
 	
+	# CRITICAL FIX: Center properly
 	set_anchors_preset(Control.PRESET_CENTER)
+	set_size(Vector2(500, 300))  # Force size first
+	custom_minimum_size = Vector2(500, 300)
+	
+	# Center on screen
+	if get_viewport_rect().size.x > 0:
+		position = (get_viewport_rect().size - custom_minimum_size) / 2
+	
+	visible = true
 	_fade_in()
 
 func _on_choice_selected(id: String, effects: Dictionary) -> void:

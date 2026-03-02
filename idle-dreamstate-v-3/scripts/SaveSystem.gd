@@ -1,7 +1,44 @@
 extends Node
 
 const SAVE_PATH: String = "user://savegame.json"
+const MAX_SLOTS = 3
 
+func save_to_slot(slot: int, data: Dictionary) -> void:
+	if slot < 1 or slot > MAX_SLOTS:
+		return
+	var path = "user://save_slot_%d.json" % slot
+	var file = FileAccess.open(path, FileAccess.WRITE)
+	if file:
+		file.store_string(JSON.stringify(data))
+		file.close()
+
+func load_from_slot(slot: int) -> Dictionary:
+	var path = "user://save_slot_%d.json" % slot
+	if not FileAccess.file_exists(path):
+		return {}
+	var file = FileAccess.open(path, FileAccess.READ)
+	if file:
+		var text = file.get_as_text()
+		file.close()
+		var parsed = JSON.parse_string(text)
+		if parsed is Dictionary:
+			return parsed
+	return {}
+
+func has_slot(slot: int) -> bool:
+	return FileAccess.file_exists("user://save_slot_%d.json" % slot)
+
+func get_slot_preview(slot: int) -> Dictionary:
+	var data = load_from_slot(slot)
+	if data.is_empty():
+		return {"empty": true}
+	return {
+		"empty": false,
+		"depth": data.get("depth", 1),
+		"thoughts": data.get("thoughts", 0),
+		"time_played": data.get("time_in_run", 0)
+	}
+	
 func save_game(data: Dictionary) -> void:
 	var file: FileAccess = FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	file.store_string(JSON.stringify(data))
