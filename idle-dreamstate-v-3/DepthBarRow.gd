@@ -270,23 +270,30 @@ func _ready() -> void:
 
 	
 func _setup_murk_labels():
-	# Look inside DetailsVBox where they actually are
+	"""Find and cache references to Murk display labels"""
+	# Look in DetailsVBox first
 	var details_vbox = find_child("DetailsVBox", true, false)
 	if details_vbox:
 		mem_label = details_vbox.find_child("MemLabel", false, false)
 		cry_label = details_vbox.find_child("CryLabel", false, false)
 	
-	# If not found there, try direct children
+	# Fallback to direct children
 	if mem_label == null:
 		mem_label = find_child("MemLabel", true, false)
 	if cry_label == null:
 		cry_label = find_child("CryLabel", true, false)
 	
-	# CRITICAL: Hide by default, only show for Depth 4
 	if mem_label != null:
 		mem_label.visible = (depth_index == 4)
 	if cry_label != null:
 		cry_label.visible = (depth_index == 4)
+	
+	# If still null, try to create them or log error
+	if mem_label == null or cry_label == null:
+		push_warning("DepthBarRow %d: Could not find MemLabel or CryLabel" % depth_index)
+		return
+	
+	print("Murk labels found for Depth 4: mem=%s, cry=%s" % [mem_label != null, cry_label != null])
 
 func _update_murk_display():
 	# Skip if labels weren't found
@@ -866,6 +873,9 @@ func _apply_visuals() -> void:
 		if _overlay_mode or _details_open:
 			a = 1.0
 		_row_bg.modulate = Color(1, 1, 1, a)
+	
+	if depth_index == 4 and _details_open:
+		update_murk_display()
 
 # NEW: Calculate upgrade completion % for this depth
 func _get_upgrade_completion_percent() -> float:
@@ -1759,46 +1769,6 @@ func _update_upgrade_row_ui(id: String) -> void:
 	var cost: float = 0.0
 	var depth_multiplier: float = 0.0
 	var effective_base: float = 0.0
-
-	# Skip if labels don't exist in scene
-	if mem_label == null or cry_label == null:
-		return
-
-	var murk_level = 0
-	if depth_index == 4:
-		var drc = get_node_or_null("/root/DepthRunController")
-		if drc != null and drc.has_method("_get_local_level"):
-			murk_level = drc.call("_get_local_level", 4, "dark_adaptation")
-
-	var reveal_percent = murk_level * 0.15  # 15% per level
-
-	# Get values from run data
-	var memories = 0.0
-	var crystals = 0.0
-	if _run != null:
-		var run_data = _run.get("run")
-		if run_data is Array and depth_index <= run_data.size():
-			var depth_data = run_data[depth_index - 1]
-			if depth_data is Dictionary:
-				memories = depth_data.get("memories", 0.0)
-				crystals = depth_data.get("crystals", 0.0)
-
-	if reveal_percent >= 1.0 or depth_index != 4:
-		# Fully revealed or not in Murk - show exact values
-		mem_label.text = _fmt_num(memories)
-		cry_label.text = _fmt_num(crystals)
-		mem_label.modulate = Color(1, 1, 1)
-	else:
-		# Hidden - show ranges
-		var variance = (1.0 - reveal_percent) * 0.5
-		var mem_min = memories * (1.0 - variance)
-		var mem_max = memories * (1.0 + variance)
-		var cry_min = crystals * (1.0 - variance)
-		var cry_max = crystals * (1.0 + variance)
-		
-		mem_label.text = "%s - %s" % [_fmt_num(mem_min), _fmt_num(mem_max)]
-		cry_label.text = "%s - %s" % [_fmt_num(cry_min), _fmt_num(cry_max)]
-		mem_label.modulate = Color(0.5, 0.5, 0.5)  # Grey out
 		
 	if lvl < max_lvl:
 		depth_multiplier = pow(float(depth_index), 2.5) * 3.0
@@ -1838,6 +1808,51 @@ func _update_upgrade_row_ui(id: String) -> void:
 				cost_style.border_color = Color(0.8, 0.4, 0.4, 0.8)
 			cost_container.add_theme_stylebox_override("panel", cost_style)
 
+func update_murk_display():
+	"""Update the Memory/Crystal display for Depth 4 based on Dark Adaptation level"""
+	if depth_index != 4:
+		return
+	
+	# Find labels if not cached
+	if mem_label == null or cry_label == null:
+		_setup_murk_labels()
+	
+	if mem_label == null or cry_label == null:
+		return
+	
+	# Get Dark Adaptation level
+	var da_lvl = 0
+	var drc = get_node_or_null("/root/DepthRunController")
+	if drc != null and drc.has_method("_get_local_level"):
+		da_lvl = drc.call("_get_local_level", 4, "dark_adaptation")
+	
+	var reveal_pct = float(da_lvl) * 0.15
+	if reveal_pct > 1.0:
+		reveal_pct = 1.0
+	
+	# Get actual values from data
+	var memories = float(_data.get("memories", 0.0))
+	var crystals = float(_data.get("crystals", 0.0))
+	var hidden_crystals = float(_data.get("hidden_crystals", 0.0))
+	var total_crystals = crystals + hidden_crystals
+	
+	# Update display based on reveal level
+	if da_lvl >= 7:
+		# Fully revealed - show exact values (like your screenshot 3)
+		mem_label.text = _fmt_num(memories)
+		cry_label.text = _fmt_num(total_crystals)
+		mem_label.modulate = Color(1, 1, 1, 1.0)
+		cry_label.modulate = Color(1, 1, 1, 1.0)
+	else:
+		# Hidden - show ??? until max level (like your screenshots 1 & 2)
+		mem_label.text = "???"
+		cry_label.text = "???"
+		mem_label.modulate = Color(0.5, 0.5, 0.5, 0.7)
+		cry_label.modulate = Color(0.5, 0.5, 0.5, 0.7)
+	
+	mem_label.visible = true
+	cry_label.visible = true
+	
 func _attempt_dive() -> void:
 	var drc := get_node_or_null("/root/DepthRunController")
 	if drc != null and drc.has_method("dive"):

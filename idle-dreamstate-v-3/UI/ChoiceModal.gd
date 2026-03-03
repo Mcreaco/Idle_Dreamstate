@@ -183,12 +183,6 @@ func show_event(event_data: Dictionary, depth_def: Dictionary, risk_assessment_u
 func _on_choice_selected(id: String, effects: Dictionary) -> void:
 	_pending_effects = effects
 	
-	# Apply immediate effects
-	if effects.has("instability_bonus"):
-		var amt := float(effects["instability_bonus"]) * 100.0
-		if _gm != null:
-			_gm.instability = clampf(_gm.instability + amt, 0.0, 100.0)
-	
 	if effects.has("cost_control"):
 		var cost := float(effects["cost_control"])
 		if _gm != null:

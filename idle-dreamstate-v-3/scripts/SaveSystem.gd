@@ -38,7 +38,27 @@ func get_slot_preview(slot: int) -> Dictionary:
 		"thoughts": data.get("thoughts", 0),
 		"time_played": data.get("time_in_run", 0)
 	}
-	
+
+func _debug_check_save_file():
+	var file_path = "user://savegame.json"
+	if FileAccess.file_exists(file_path):
+		var file = FileAccess.open(file_path, FileAccess.READ)
+		var text = file.get_as_text()
+		file.close()
+		
+		# Check if it contains meta data
+		if text.find("depth_currency_") != -1:
+			print("SAVE FILE CONTAINS META CURRENCY DATA")
+		else:
+			print("WARNING: Save file missing meta currency data!")
+			
+		if text.find("depth_1_upg") != -1:
+			print("SAVE FILE CONTAINS UPGRADE DATA")
+		else:
+			print("WARNING: Save file missing upgrade data!")
+	else:
+		print("No save file found")
+		
 func save_game(data: Dictionary) -> void:
 	var file: FileAccess = FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	file.store_string(JSON.stringify(data))

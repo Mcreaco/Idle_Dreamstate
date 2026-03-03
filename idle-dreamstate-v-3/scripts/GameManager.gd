@@ -564,6 +564,12 @@ func _ready() -> void:
 		old.queue_free()
 		print("Removed old ClickUpgradesContainer")
 	
+	await get_tree().create_timer(2.0).timeout
+	if drc:
+		var run = drc.get("run")
+		if run is Array and run.size() > 0:
+			print("2s after load: Depth 1 progress = ", run[0].get("progress", "N/A"))
+		
 	# Then create new one
 	call_deferred("_create_click_upgrade_sidebar")
 	
@@ -579,6 +585,21 @@ func _on_auto_dive_triggered(_depth_index: int) -> void:
 	print("Auto-dive triggered - closed expanded panels")
 		
 func _input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed:
+		if event.keycode == KEY_F4:
+			# Give 1B of each crystal
+			for i in range(1, 16):
+				if depth_meta_system != null:
+					depth_meta_system.currency[i] += 1000000000.0
+			print("F4: Added 1B to all crystals")
+			_refresh_top_ui()
+			
+		if event.keycode == KEY_F5:  # Debug save/load
+			print("=== MANUAL SAVE DEBUG ===")
+			var test_data = get_save_data()
+			print("Current progress: ", test_data.get("depth_run_data", [{}])[0].get("progress", "N/A"))
+			SaveSystem.save_to_slot(99, test_data)
+			print("Saved to slot 99")
 	if event is InputEventKey and event.pressed:
 		if event.keycode == KEY_F7:
 			abyss_points += 1000
@@ -650,9 +671,17 @@ func _force_rate_sample() -> void:
 	_thoughts_ps = 0.0
 	_control_ps = 0.0
 
+func _force_display_reset():
+	# Hard reset display values
+	_thoughts_ps = 0.0
+	_control_ps = 0.0
+	thoughts = perm_perk_system.get_starting_thoughts() if perm_perk_system != null else 0.0
+	_bind_ui_mainui()
+	_refresh_top_ui()
+
+
 func _refresh_top_ui() -> void:
 	var current_depth := get_current_depth()
-	var hide_numbers := false
 	
 	# CRITICAL FIX: Calculate actual instability gain per second
 	var inst_gain: float = 0.0
@@ -666,90 +695,74 @@ func _refresh_top_ui() -> void:
 		
 		inst_gain *= instability_mult
 	
+	# Safety: Re-find label if null or freed
+	if thoughts_label == null or not is_instance_valid(thoughts_label):
+		thoughts_label = get_tree().current_scene.find_child("ThoughtsLabel", true, false) as Label
+		if thoughts_label != null:
+			print("DEBUG: Re-bound thoughts_label")
 	
-	if instability_bar != null:
-		instability_bar.visible = (current_depth >= 2)
+	# CRITICAL FIX: Set thoughts label text ONCE with rate included
+	if thoughts_label != null:
+		var hide_numbers := false
+		
+		# Check depth 9 hide logic
+		if current_depth == 9:
+			var rules := {}
+			var drc = get_node_or_null("/root/DepthRunController")
+			if drc != null and drc.has_method("get_depth_def"):
+				var def = drc.call("get_depth_def", 9)
+				if def is Dictionary:
+					rules = def.get("rules", {})
+			
+			if rules.get("hide_all_numbers", false):
+				var inner_eye_lvl := 0
+				if drc.has_method("_get_local_level"):
+					inner_eye_lvl = drc.call("_get_local_level", 9, "inner_eye")
+				if inner_eye_lvl == 0:
+					hide_numbers = true
+		
+		if hide_numbers:
+			thoughts_label.text = "Thoughts: ???"
+			thoughts_label.modulate = Color(0.5, 0.5, 0.5, 0.3)
+		else:
+			var rate_str := _fmt_num(_thoughts_ps)
+			thoughts_label.text = "Thoughts %s +%s/s" % [_fmt_num(thoughts), rate_str]
+			thoughts_label.modulate = Color(1, 1, 1, 1)
+			
+		# Force redraw
+		thoughts_label.queue_redraw()
 	
+	# Control label
+	if control_label == null or not is_instance_valid(control_label):
+		control_label = get_tree().current_scene.find_child("ControlLabel", true, false) as Label
+	
+	if control_label != null:
+		control_label.text = "Control: %s" % _fmt_num(control)
 	
 	# CRITICAL FIX: Get proper instability cap
 	var cap: float = 1000.0
 	var drc = get_node_or_null("/root/DepthRunController")
 	if drc != null and drc.has_method("get_instability_cap"):
 		cap = drc.get_instability_cap(current_depth)
+	elif depth_meta_system != null:
+		cap = depth_meta_system.get_instability_cap(current_depth)
 	
+	# Instability bar setup
 	if instability_bar != null:
+		instability_bar.custom_minimum_size = Vector2(700, 32)
+		instability_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		instability_bar.min_value = 0.0
 		instability_bar.max_value = cap
 		instability_bar.value = clampf(instability, 0.0, cap)
+		instability_bar.show_percentage = false
+		instability_bar.visible = (current_depth >= 2)
 		
+		# Update value label inside bar
 		var label = instability_bar.get_node_or_null("ValueLabel")
 		if label != null:
 			label.text = "%s / %s" % [_fmt_num(instability), _fmt_num(cap)]
 	
-	if top_bar_panel == null:
-		if not _warned_missing_top_bar:
-			_warned_missing_top_bar = true
-		return
-
-	# In _refresh_top_ui, ensure this line uses proper formatting:
-	if thoughts_label != null:
-		hide_numbers = false  # Just assign, don't redeclare with 'var'
-		
-		if hide_numbers:
-			thoughts_label.text = "Thoughts: ???"
-		else:
-			# Show the rate properly
-			var rate_str := _fmt_num(_thoughts_ps)
-			thoughts_label.text = "Thoughts %s +%s/s" % [_fmt_num(thoughts), rate_str]
-	if control_label != null:
-		control_label.text = "Control: %s" % _fmt_num(control)
-		
-		# MAKE BAR WIDER AND THICKER
-		instability_bar.custom_minimum_size = Vector2(700, 32)  # 700px wide, 32px tall
-		instability_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL  # Fill available space
-		
-		instability_bar.min_value = 0.0
-		instability_bar.max_value = cap
-		instability_bar.value = clampf(instability, 0.0, cap)
-		if instability_bar != null:
-			instability_bar.max_value = cap
-		instability_bar.show_percentage = false	
-	# Get or create label (NOW INSIDE THE NULL CHECK)
-	if instability_bar != null:  # ADD THIS LINE
-		var label := instability_bar.get_node_or_null("ValueLabel") as Label
-		if label == null:
-			label = Label.new()
-			label.name = "ValueLabel"
-			instability_bar.add_child(label)
-		
-		# CENTER TEXT PROPERLY
-		label.set_anchors_preset(Control.PRESET_FULL_RECT)
-		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		label.add_theme_font_size_override("font_size", 18)
-		label.add_theme_color_override("font_color", Color(1, 1, 1, 1))
-		label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.9))
-		label.add_theme_constant_override("shadow_offset_x", 2)
-		label.add_theme_constant_override("shadow_offset_y", 2)
-		
-		# Ensure text is centered with proper margins
-		label.offset_left = 0
-		label.offset_right = 0
-		label.offset_top = 0
-		label.offset_bottom = 0
-		
-		label.text = "%s / %s" % [_fmt_num(instability), _fmt_num(cap)]
-		label.visible = true
-		
-		instability_bar.visible = (current_depth >= 2)
-	# endif  (the closing bracket for the if instability_bar != null check)
-	
-	# CRITICAL FIX: Use proper instability cap scaling
-	drc = get_node_or_null("/root/DepthRunController")
-	if drc != null and drc.has_method("get_instability_cap"):
-		cap = drc.get_instability_cap(current_depth)
-	elif depth_meta_system != null:
-		cap = depth_meta_system.get_instability_cap(current_depth)
-		
+	# Instability text label
 	if instability_label != null:
 		if current_depth == 1:
 			instability_label.text = ""
@@ -757,26 +770,22 @@ func _refresh_top_ui() -> void:
 		else:
 			var ttf := get_seconds_until_fail()
 			var ttf_str := _fmt_time_ui(ttf)
-			
-			# Show absolute value: "Instability: 230 / 1000 (TTF 2:30)"
 			instability_label.text = "Instability: %.0f / %.0f (TTF %s)" % [instability, cap, ttf_str]
 			instability_label.visible = true
 
-	if top_bar_panel.has_method("update_top_bar"):
+	# Top bar panel update
+	if top_bar_panel != null and top_bar_panel.has_method("update_top_bar"):
 		var inst_pct: float = clampf(instability, 0.0, 100.0)
 		var overclock_time_left: float = 0.0
 		if overclock_system != null and overclock_system.active:
 			overclock_time_left = maxf(overclock_system.timer, 0.0)
 		var ttf: float = get_seconds_until_fail()
 
-		var disp_thoughts_ps := maxf(_thoughts_ps, 0.0)
-		var disp_control_ps := maxf(_control_ps, 0.0)
-
 		top_bar_panel.update_top_bar(
 			thoughts,
-			disp_thoughts_ps,
+			maxf(_thoughts_ps, 0.0),
 			control,
-			disp_control_ps,
+			maxf(_control_ps, 0.0),
 			inst_pct,
 			overclock_system != null and overclock_system.active,
 			overclock_time_left,
@@ -784,29 +793,6 @@ func _refresh_top_ui() -> void:
 			inst_gain
 		)
 	
-	if current_depth == 9:
-		var rules := {}
-		if drc != null and drc.has_method("get_depth_def"):
-			var def = drc.call("get_depth_def", 9)
-			if def is Dictionary:
-				rules = def.get("rules", {})
-		
-		if rules.get("hide_all_numbers", false):
-				# Check if player bought Inner Eye upgrade
-				var inner_eye_lvl := 0
-				if drc.has_method("_get_local_level"):
-					inner_eye_lvl = drc.call("_get_local_level", 9, "inner_eye")
-				if inner_eye_lvl == 0:
-					hide_numbers = true  # This now works because hide_numbers is declared above
-	
-	if thoughts_label != null:
-		if hide_numbers:
-			thoughts_label.text = "Thoughts: ???"
-			thoughts_label.modulate = Color(0.5, 0.5, 0.5, 0.3)
-		else:
-			thoughts_label.text = "Thoughts: %s" % _fmt_num(thoughts)
-			thoughts_label.modulate = Color(1, 1, 1, 1)
-
 	_update_depth_ui()
 
 func _set_button_dim(btn: Button, enabled: bool) -> void:
@@ -975,6 +961,14 @@ func _on_wake_pressed() -> void:
 	tm = get_node_or_null("/root/TutorialManage")  # Remove 'var' here
 	if tm and tm.has_method("on_ui_element_clicked"):
 		tm.on_ui_element_clicked("WakeButton")
+		
+	# After prestige_panel.open_with_depth(), force refresh
+	_force_rate_sample()
+	_refresh_top_ui()
+	
+	# Add this: Reset display immediately when wake panel opens
+	if thoughts_label != null:
+		thoughts_label.text = "Thoughts 0 +0/s"  # Force show 0
 
 # Connect button clicks to tutorial manager
 func _connect_tutorial_signals() -> void:
@@ -1324,10 +1318,20 @@ func reset_run() -> void:
 	frozen_depth_multipliers = {}
 	dream_current = 1.0
 	
+	# CRITICAL FIX: Reset rate calculation variables
+	_thoughts_ps = 0.0
+	_control_ps = 0.0
+	_last_thoughts_sample = 0.0  # Must match the reset thoughts value
+	_last_control_sample = 0.0   # Must match the reset control value
+	_rate_sample_timer = 0.0
+	
 	# Apply starting perks
 	if perm_perk_system != null:
 		thoughts = perm_perk_system.get_starting_thoughts()
 		instability = maxf(0.0, instability - perm_perk_system.get_starting_instability_reduction())
+		# CRITICAL: Update sample to match starting thoughts so rate calculates as 0
+		_last_thoughts_sample = thoughts
+		_last_control_sample = control
 	
 	run_start_depth = 1
 	
@@ -1395,7 +1399,54 @@ func reset_run() -> void:
 	_sync_meta_progress()
 	_force_rate_sample()
 	
+	# CRITICAL: Re-bind UI references in case panel was rebuilt
+	# CRITICAL: Re-bind GameManager's references
+	_bind_ui_mainui()
+	
+	# CRITICAL: Force TopBarPanel to re-find its own label references
+	if top_bar_panel != null:
+		# Option 1: If TopBarPanel has a bind function, call it
+		if top_bar_panel.has_method("bind_ui_references"):
+			top_bar_panel.bind_ui_references()
+		
+		# Option 2: Force update with current values (this might fail if it uses stale refs)
+		top_bar_panel.update_top_bar(thoughts, 0.0, control, 0.0, 0.0, false, 0.0, 999.0, 0.0)
+	
 	_refresh_top_ui()
+	
+	# Force multiple refreshes over next few frames as UI settles
+	for i in range(3):
+		await get_tree().process_frame
+		_bind_ui_mainui()
+		if top_bar_panel != null and top_bar_panel.has_method("update_top_bar"):
+			top_bar_panel.update_top_bar(thoughts, 0.0, control, 0.0, 0.0, false, 0.0, 999.0, 0.0)
+		_refresh_top_ui()
+	
+func _force_complete_reset_refresh() -> void:
+	print("DEBUG: Force reset refresh")
+	
+	# Reset thoughts display
+	_refresh_top_ui()
+	
+	# Reset depth panel
+	var panel = get_tree().current_scene.find_child("DepthBarsPanel", true, false)
+	if panel:
+		if panel.has_method("refresh_all"):
+			panel.refresh_all()
+		elif panel.has_method("_refresh_all_rows"):
+			panel._refresh_all_rows()
+		
+		# Force refresh all upgrade UIs
+		for i in range(1, 16):
+			if panel.has_method("refresh_row_upgrades"):
+				panel.call("refresh_row_upgrades", i)
+	
+	# Reset DRC sync
+	var drc = get_node_or_null("/root/DepthRunController")
+	if drc and drc.has_method("_sync_all_to_panel"):
+		drc._sync_all_to_panel()
+	
+	print("DEBUG: Reset refresh complete - thoughts: ", thoughts)
 	
 func _check_abyss_unlock() -> void:
 	if abyss_unlocked_flag:
@@ -1721,7 +1772,7 @@ func get_save_data() -> Dictionary:
 	data["abyss_shop_active"] = abyss_shop_active
 	data["auto_dive_enabled"] = auto_dive_enabled
 	
-	# SAVE DepthRunController data (fixes the "not saving" bug)
+	# SAVE DepthRunController data (this is the only one you need)
 	var drc := get_node_or_null("/root/DepthRunController")
 	if drc != null:
 		data["depth_run_data"] = drc.get("run")
@@ -1732,13 +1783,14 @@ func get_save_data() -> Dictionary:
 		data["depth_thoughts"] = drc.get("thoughts")
 		data["depth_control"] = drc.get("control")
 		data["depth_instability"] = drc.get("instability")
-	
-	
-	if abyss_perk_system != null:
-		data["abyss_echoed_descent_level"] = abyss_perk_system.echoed_descent_level
-		data["abyss_abyssal_focus_level"] = abyss_perk_system.abyssal_focus_level
-		data["abyss_dark_insight_level"] = abyss_perk_system.dark_insight_level
-		data["abyss_veil_level"] = abyss_perk_system.abyss_veil_level
+		print("Saving DRC: depth=", drc.get("active_depth"), " progress=", drc.get("run")[0].get("progress") if drc.get("run") is Array and drc.get("run").size() > 0 else "N/A")
+		
+		
+		if abyss_perk_system != null:
+			data["abyss_echoed_descent_level"] = abyss_perk_system.echoed_descent_level
+			data["abyss_abyssal_focus_level"] = abyss_perk_system.abyssal_focus_level
+			data["abyss_dark_insight_level"] = abyss_perk_system.dark_insight_level
+			data["abyss_veil_level"] = abyss_perk_system.abyss_veil_level
 	
 	if perm_perk_system != null:
 		data["perm_memory_engine_level"] = perm_perk_system.memory_engine_level
@@ -1815,15 +1867,6 @@ func get_save_data() -> Dictionary:
 		var shop_data = shop_node.call("get_shop_data")
 		data["abyss_shop_unlocked"] = shop_data.unlocked
 		data["abyss_shop_active"] = shop_data.active
-
-	# CRITICAL: Save depth controller state
-	if drc:
-		data["depth_run_controller"] = {
-			"active_depth": drc.active_depth,
-			"run": drc.run,
-			"local_upgrades": drc.local_upgrades
-		}
-		print("Saving DRC: depth=", drc.active_depth)
 	
 	data["last_play_time"] = Time.get_unix_time_from_system()
 	return data
@@ -1831,6 +1874,7 @@ func get_save_data() -> Dictionary:
 	
 func load_game() -> void:
 	var data: Dictionary = SaveSystem.load_game()
+	print("Data loaded, keys: ", data.keys())
 	
 	if data.is_empty():
 		return
@@ -1841,6 +1885,7 @@ func load_game() -> void:
 	total_dives = int(data.get(LT_DIVES, 0))
 	total_playtime = float(data.get(LT_PLAYTIME, 0.0))
 	max_depth_reached = int(data.get(LT_DEEPEST, 1))
+	
 	# Load basic stats first
 	memories = float(data.get("memories", 0.0))
 	thoughts = float(data.get("thoughts", 0.0))
@@ -1849,14 +1894,17 @@ func load_game() -> void:
 	time_in_run = float(data.get("time_in_run", 0.0))
 	total_thoughts_earned = float(data.get("total_thoughts_earned", 0.0))
 	max_instability = float(data.get("max_instability", 0.0))
-		# Load frozen multipliers
+	
+	# Load frozen multipliers
 	frozen_depth_multipliers = data.get("frozen_depth_multipliers", {})
 	if not (frozen_depth_multipliers is Dictionary):
 		frozen_depth_multipliers = {}
+	
 	var loaded_depth = int(data.get("depth", 1))
 	max_depth_reached = int(data.get("max_depth_reached", 1))
 	abyss_unlocked_flag = bool(data.get("abyss_unlocked", false))
 	run_start_depth = int(data.get("run_start_depth", loaded_depth))
+	
 	# Load F2P data
 	gems = int(data.get("gems", 0))
 	abyss_tier = int(data.get("abyss_tier", 0))
@@ -1868,7 +1916,8 @@ func load_game() -> void:
 	last_purchase_reset_timestamp = int(data.get("last_purchase_reset_timestamp", 0))
 	has_supporter_pack = bool(data.get("has_supporter_pack", false))
 	dream_current = float(data.get("dream_current", 1.0))
-	# Load Abyss Shop data - SINGLE ROBUST BLOCK
+	
+	# Load Abyss Shop data - KEEP ONLY THIS BLOCK (DELETE THE SECOND ONE)
 	var _loaded_shop = data.get("abyss_shop_unlocked", [])
 	var _loaded_active = data.get("abyss_shop_active", {})
 	
@@ -1885,7 +1934,7 @@ func load_game() -> void:
 	
 	print("Game Loaded - Shop items: ", abyss_shop_unlocked.size())
 	
-		# Restore DepthRunController state
+	# Restore DepthRunController state
 	var drc := get_node_or_null("/root/DepthRunController")
 	if drc != null:
 		# RESTORE RUN DATA with proper type casting (fixes TypedArray error)
@@ -1907,9 +1956,14 @@ func load_game() -> void:
 					typed_run.append({"depth": typed_run.size() + 1, "progress": 0.0, "memories": 0.0, "crystals": 0.0})
 			
 			drc.set("run", typed_run)
+			print("LOAD: Restored run data with ", typed_run.size(), " depths")
+			if typed_run.size() > 0:
+				print("LOAD: Depth 1 progress = ", typed_run[0].get("progress", 0))
 		else:
 			# Initialize fresh if no save data
 			drc.call("_init_run")
+			print("LOAD: No run data found, initialized fresh")
+		
 		# Set other values
 		if data.has("max_unlocked_depth"):
 			drc.set("max_unlocked_depth", int(data["max_unlocked_depth"]))
@@ -1932,35 +1986,24 @@ func load_game() -> void:
 		if data.has("depth_instability"):
 			drc.set("instability", float(data["depth_instability"]))
 		
-		# Set active depth LAST (and only if different)
-	var current_active: int = drc.get("active_depth")
-	if data.has("active_depth"):
-		var saved_active: int = int(data["active_depth"])
-		# CRITICAL FIX: Clamp to valid range
-		saved_active = clampi(saved_active, 1, 15)
-		
-		if saved_active != current_active:
-			drc.call("set_active_depth", saved_active)
-		else:
-			drc.set("active_depth", saved_active)
-		_depth_cache = saved_active
-		
-		# Update UI visibility based on depth
-		_on_depth_changed_from_controller(saved_active)
-		# ABYSS SHOP - SINGLE LOADING BLOCK (replaces all scattered assignments)
-	var _raw_shop = data.get("abyss_shop_unlocked", [])
-	var _raw_active = data.get("abyss_shop_active", {})
+		# Set active depth LAST (and only if different) - MOVED INSIDE THE IF BLOCK
+		var current_active: int = drc.get("active_depth")
+		if data.has("active_depth"):
+			var saved_active: int = int(data["active_depth"])
+			# CRITICAL FIX: Clamp to valid range
+			saved_active = clampi(saved_active, 1, 15)
+			
+			if saved_active != current_active:
+				drc.call("set_active_depth", saved_active)
+			else:
+				drc.set("active_depth", saved_active)
+			_depth_cache = saved_active
+			
+			# Update UI visibility based on depth
+			_on_depth_changed_from_controller(saved_active)
 	
-	# Clear and rebuild with proper typing (handles untyped Arrays from save)
-	abyss_shop_unlocked.clear()
-	if _raw_shop is Array:
-		for _item in _raw_shop:
-			abyss_shop_unlocked.append(str(_item))
+	# DELETE THE SECOND ABYSS SHOP BLOCK THAT WAS HERE (lines 1940-1950 in your code)
 	
-	abyss_shop_active = Dictionary(_raw_active) if _raw_active is Dictionary else {}
-	auto_dive_enabled = bool(data.get("auto_dive_enabled", false))
-	
-	print("Game Loaded - Shop items: ", abyss_shop_unlocked.size())
 	if abyss_perk_system != null:
 		abyss_perk_system.echoed_descent_level = int(data.get("abyss_echoed_descent_level", 0))
 		abyss_perk_system.abyssal_focus_level = int(data.get("abyss_abyssal_focus_level", 0))
@@ -1986,18 +2029,53 @@ func load_game() -> void:
 		perm_perk_system.oneiromancy_level = int(data.get("perm_oneiromancy_level", 0))
 	
 	if depth_meta_system != null:
-		depth_meta_system.ensure_ready()
-		for i in range(1, DepthMetaSystem.MAX_DEPTH + 1):
-			depth_meta_system.currency[i] = float(data.get("depth_currency_%d" % i, 0.0))
-			
-			# LOAD ALL UPGRADE LEVELS FOR THIS DEPTH
-			var upgrades = depth_meta_system.get_depth_upgrade_defs(i)
-			for upgrade in upgrades:
-				var uid = String(upgrade.get("id", ""))
-				if uid != "":
-					var level = int(data.get("depth_%d_upg_%s" % [i, uid], 0))
-					if level > 0:
-						depth_meta_system.set_level(i, uid, level)
+		print("Loading DepthMetaSystem...")
+		
+		# BRUTE FORCE: Load all currency keys directly from save data
+		var currency_count = 0
+		for key in data.keys():
+			if key.begins_with("depth_currency_"):
+				var parts = key.split("_")
+				if parts.size() >= 3:
+					var depth_num = int(parts[2])
+					if depth_num >= 1 and depth_num <= 15:
+						var val = float(data[key])
+						depth_meta_system.currency[depth_num] = val
+						currency_count += 1
+						if currency_count <= 5:  # Only print first 5 to avoid spam
+							print("Loaded currency ", depth_num, ": ", val)
+		
+		print("Total currencies loaded: ", currency_count)
+		
+		# BRUTE FORCE: Load all upgrade keys
+		var upgrade_count = 0
+		for key in data.keys():
+			if key.begins_with("depth_") and key.find("_upg_") != -1:
+				# Parse "depth_3_upg_automated_mind_1" -> depth 3, upgrade "automated_mind_1"
+				var parts = key.split("_")
+				if parts.size() >= 4:
+					var d = int(parts[1])
+					var uid_parts = []
+					# Reconstruct the upgrade ID (handles multi-part IDs)
+					for i in range(3, parts.size()):
+						uid_parts.append(parts[i])
+					var uid = "_".join(uid_parts)
+					
+					var lvl = int(data[key])
+					if lvl > 0 and d >= 1 and d <= 15:
+						depth_meta_system.set_level(d, uid, lvl)
+						upgrade_count += 1
+						if upgrade_count <= 10:  # Only print first 10
+							print("Loaded upgrade ", key, " = ", lvl)
+		
+		print("Total upgrades loaded: ", upgrade_count)
+		
+		# Only initialize defaults if we found NOTHING
+		if currency_count == 0 and upgrade_count == 0:
+			depth_meta_system.ensure_ready()
+			print("WARNING: No meta data found in save, initialized defaults")
+	else:
+		push_error("depth_meta_system is NULL! Cannot load meta data.")
 	
 	upgrade_manager.thoughts_level = int(data.get("thoughts_level", 0))
 	upgrade_manager.stability_level = int(data.get("stability_level", 0))
@@ -2039,39 +2117,36 @@ func load_game() -> void:
 	# Sync panel at end (only once)
 	call_deferred("_sync_panel_after_load")
 	
-		# Ensure instability bar visibility is correct after loading
-		# CRITICAL: If loaded at Depth 1, instability must be 0 (no mechanic at Shallows)
+	# Ensure instability bar visibility is correct after loading
 	if get_current_depth() == 1:
 		instability = 0.0
 		print("LOAD: Reset instability to 0 (Depth 1)")
-		
-	# MIGRATE: Convert old 0-1 progress to new fixed scale
-	drc = get_node_or_null("/root/DepthRunController")
-	if drc != null:
-		var run_data = drc.get("run")
-		if run_data == null or not (run_data is Array):
-			run_data = []
-		
-		if run_data.size() > 0:
-			for i in range(run_data.size()):
-				var depth_data: Dictionary = run_data[i]
-				var old_progress: float = float(depth_data.get("progress", 0.0))
-				
-				# If progress is between 0 and 1 (old format), convert to cap
-				if old_progress > 0.0 and old_progress < 1.0:
-					var cap: float = drc.get_depth_progress_cap(i + 1)
-					depth_data["progress"] = old_progress * cap
-					run_data[i] = depth_data
-					print("Migrated depth ", i + 1, " progress from ", old_progress, " to ", depth_data["progress"])
-			
-			drc.set("run", run_data)
 	
-	# Final UI refresh to ensure bar visibility is correct
-	_refresh_top_ui()
+	# If you have a depth panel, refresh it
+	var depth_panel = get_tree().current_scene.find_child("DepthBarsPanel", true, false)
+	if depth_panel and depth_panel.has_method("refresh_all"):
+		depth_panel.refresh_all()
+	
 	# Load Abyss Shop items (call after a delay to ensure scene is ready)
 	call_deferred("_load_abyss_shop")
 	# CRITICAL: Defer shop sync to ensure scene is ready
 	call_deferred("_sync_abyss_shop_to_scene")
+	
+	call_deferred("_final_load_refresh")
+
+func _final_load_refresh():
+	_refresh_top_ui()
+	
+	var depth_panel = get_tree().current_scene.find_child("DepthBarsPanel", true, false)
+	if depth_panel and depth_panel.has_method("refresh_all"):
+		depth_panel.refresh_all()
+	
+	# Force sync DRC to panel
+	var drc = get_node_or_null("/root/DepthRunController")
+	if drc and drc.has_method("_sync_all_to_panel"):
+		drc._sync_all_to_panel()
+	
+	print("Load refresh complete")
 	
 func _sync_abyss_shop_to_scene():
 	var shop = get_abyss_shop()
@@ -2087,8 +2162,16 @@ func _load_abyss_shop():
 
 func _sync_panel_after_load() -> void:
 	var drc := get_node_or_null("/root/DepthRunController")
-	if drc != null and drc.has_method("_sync_all_to_panel"):
-		drc.call("_sync_all_to_panel")
+	if drc != null:
+		if drc.has_method("_sync_all_to_panel"):
+			drc.call("_sync_all_to_panel")
+			print("Panel synced after load")
+		
+		# Verify the data actually loaded
+		var run_data = drc.get("run")
+		if run_data is Array and run_data.size() > 0:
+			var d1 = run_data[0]
+			print("VERIFY: Depth 1 progress after sync: ", d1.get("progress", "ERROR"))
 			
 func _bind_ui_mainui() -> void:
 	thoughts_label = _ui_find("ThoughtsLabel") as Label

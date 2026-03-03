@@ -90,7 +90,7 @@ func _create_save_panel():
 	save_panel.name = "SaveLoadPanel"
 	save_panel.visible = false
 	save_panel.z_index = 200
-	
+	save_panel.process_mode = Node.PROCESS_MODE_ALWAYS
 	_apply_panel_style(save_panel)
 	save_panel.custom_minimum_size = Vector2(350, 400)
 	
@@ -129,16 +129,19 @@ func _show_save_panel(is_save: bool):
 	if not save_panel:
 		return
 	
-	# Toggle visibility
-	save_panel.visible = !save_panel.visible
-	if not save_panel.visible:
-		return  # Just closed it
-	
+	# Get references
 	var title = save_panel.get_meta("title")
 	var slots = save_panel.get_meta("slots")
+	
+	# Set mode using meta (create if doesn't exist)
+	save_panel.set_meta("is_save_mode", is_save)
+	
 	title.text = "Save Game" if is_save else "Load Game"
 	
-	# Clear all children properly
+	# Always show panel when called
+	save_panel.visible = true
+	
+	# Clear existing slots
 	while slots.get_child_count() > 0:
 		var child = slots.get_child(0)
 		slots.remove_child(child)
@@ -159,7 +162,7 @@ func _show_save_panel(is_save: bool):
 		btn.custom_minimum_size = Vector2(300, 60)
 		_force_button_style(btn)
 		
-		# Direct connection with bind
+		# Connect based on mode
 		if is_save:
 			btn.pressed.connect(_on_save_slot_pressed.bind(i))
 		else:
@@ -179,22 +182,69 @@ func _show_save_panel(is_save: bool):
 	slots.add_child(cancel)
 
 func _on_save_slot_pressed(slot: int):
-	print("SAVING TO SLOT ", slot)
+	print("DEBUG: _on_save_slot_pressed called with slot: ", slot)  # Add this
 	var gm = get_tree().get_first_node_in_group("game_manager")
+	print("DEBUG: GameManager found: ", gm != null)  # Add this
 	if gm and gm.has_method("get_save_data"):
 		var data = gm.get_save_data()
+		print("DEBUG: Save data retrieved, calling SaveSystem")  # Add this
 		SaveSystem.save_to_slot(slot, data)
-		print("Saved!")
+		print("Saved to slot %d!" % slot)
+	else:
+		push_error("GameManager not found or missing get_save_data method")
 	save_panel.visible = false
 
 func _on_load_slot_pressed(slot: int):
 	print("LOADING FROM SLOT ", slot)
 	var data = SaveSystem.load_from_slot(slot)
-	if not data.is_empty():
-		var gm = get_tree().get_first_node_in_group("game_manager")
-		if gm and gm.has_method("load_game_data"):
-			gm.load_game_data(data)
-			print("Loaded!")
+	
+	if data.is_empty():
+		push_error("No data in slot %d" % slot)
+		return
+	
+	print("Data loaded, keys: ", data.keys())
+	
+	# Try multiple ways to find GameManager
+	var gm = null
+	
+	# Method 1: By group
+	var managers = get_tree().get_nodes_in_group("game_manager")
+	if managers.size() > 0:
+		gm = managers[0]
+		print("Found GameManager via group")
+	
+	# Method 2: By path
+	if gm == null:
+		gm = get_node_or_null("/root/Main/GameManager")
+		if gm:
+			print("Found GameManager via path")
+	
+	# Method 3: Current scene
+	if gm == null:
+		var current = get_tree().current_scene
+		if current:
+			gm = current.find_child("GameManager", true, false)
+			if gm:
+				print("Found GameManager via current_scene")
+	
+	if gm == null:
+		push_error("GameManager not found!")
+		return
+	
+	print("GameManager found, checking for load_game_data...")
+	
+	# Check for method
+	if gm.has_method("load_game_data"):
+		print("Calling load_game_data...")
+		gm.load_game_data(data)
+		print("Loaded successfully!")
+	elif gm.has_method("load_game"):
+		print("Calling load_game (alternative)...")
+		gm.load_game()
+	else:
+		push_error("GameManager missing load_game_data method! Available methods: ", gm.get_method_list())
+		return
+	
 	save_panel.visible = false
 	get_tree().paused = false
 

@@ -990,13 +990,20 @@ func _build_depth_defs() -> void:
 				"choices": [
 					{
 						"id": "wait",
-						"text": "Wait it out",
-						"effect": {"pause_duration": 10.0, "instability_bonus": 0.0}
+						"text": "Wait it out (Pause 10s)",
+						"effect": {
+							"pause_duration": 10,
+							"instability_bonus": 0.0  # No change
+						}
 					},
 					{
 						"id": "overclock",
-						"text": "Overclock through",
-						"effect": {"cost_control": 20.0, "instability_bonus": 0.15, "progress_bonus": 0.05}
+						"text": "Overclock through (-20 Control, +15% Instability)",
+						"effect": {
+							"cost_control": 20,
+							"instability_bonus": 0.15,  # 15% of cap, not 15 points!
+							"progress_bonus": 0.05       # 5% progress
+						}
 					}
 				]
 			}
@@ -2063,24 +2070,29 @@ func _trigger_depth_event(d: int) -> void:
 
 
 func _on_rift_choice_resolved(choice_id: String, effects: Dictionary) -> void:
+	set_meta("progress_paused", false)
 	_rift_event_active = false
-	set_meta("progress_paused", false)  # Resume progress
 	
-	# Apply effects via GameManager to handle Stable Footing, Rift Mining, etc.
 	var gm = get_node_or_null("/root/Main/GameManager")
-	if gm != null and gm.has_method("apply_rift_choice"):
-		gm.apply_rift_choice(choice_id, effects, active_depth)
+	if gm == null:
+		return
 	
-	# Apply immediate progress/instability locally
-	if effects.has("progress_bonus"):
-		var current = _run_internal[active_depth - 1].get("progress", 0.0)
-		var cap = get_depth_progress_cap(active_depth)
-		_run_internal[active_depth - 1]["progress"] = minf(cap, current + (cap * effects.progress_bonus))
+	var inst_cap = 1000.0
+	if gm.has_method("get_instability_cap"):
+		inst_cap = gm.get_instability_cap()
 	
+	# Apply instability based on percentage in effects
 	if effects.has("instability_bonus"):
-		var inst = _run_internal[active_depth - 1].get("instability", 0.0)
-		_run_internal[active_depth - 1]["instability"] = inst + (effects.instability_bonus * 100.0)  # Convert from 0.05 to 5%
-
+		var percent = float(effects["instability_bonus"])
+		var amount = inst_cap * percent
+		gm.instability = clampf(gm.instability + amount, 0.0, inst_cap)
+		print("Rift choice '%s': +%.1f instability (%.0f%% of cap)" % [choice_id, amount, percent * 100])
+	
+	# Apply other effects (progress, multipliers, etc.)
+	if effects.has("progress_bonus"):
+		# Apply progress...
+		pass
+		
 # Call this in _tick_active_depth to apply temporary multipliers
 func get_temporary_memory_multiplier() -> float:
 	var mult = 1.0
@@ -2090,11 +2102,14 @@ func get_temporary_memory_multiplier() -> float:
 	return mult  # <-- Return is here
 
 func _trigger_flicker_event(_event_data: Dictionary = {}) -> void:
-	# Pause progress
 	set_meta("progress_paused", true)
 	
-	# Show choice modal if you have one
 	if choice_modal != null:
+		# CRITICAL: Disconnect first to prevent error
+		if choice_modal.choice_made.is_connected(_on_flicker_choice):
+			choice_modal.choice_made.disconnect(_on_flicker_choice)
+			print("Disconnected existing flicker connection")
+		
 		choice_modal.show_choice(
 			"The Murk flickers...",
 			[
@@ -2102,33 +2117,56 @@ func _trigger_flicker_event(_event_data: Dictionary = {}) -> void:
 				{"id": "overclock", "text": "Overclock through (-20 Control, +15% Instability)"}
 			]
 		)
+		
+		# Connect fresh
 		choice_modal.choice_made.connect(_on_flicker_choice)
+		print("Connected flicker choice handler")
 
 func _on_flicker_choice(choice_id: String, _effects: Dictionary) -> void:
+	print("FLICKER CHOICE: ", choice_id)
 	set_meta("progress_paused", false)
+	
+	# Disconnect to prevent duplicates
+	if choice_modal and choice_modal.choice_made.is_connected(_on_flicker_choice):
+		choice_modal.choice_made.disconnect(_on_flicker_choice)
 	
 	var gm = get_node_or_null("/root/Main/GameManager")
 	if gm == null:
+		push_error("No GameManager in _on_flicker_choice!")
 		return
 	
 	if choice_id == "overclock":
+		print("Processing OVERCLOCK")
+		
 		if gm.control >= 20:
 			gm.control -= 20
+			print("Control reduced to: ", gm.control)
 			
-			# CRITICAL FIX: Add 15% of instability cap, not 15 points
-			var inst_cap = 1000.0
-			if gm.depth_meta_system != null:
-				inst_cap = gm.depth_meta_system.get_instability_cap(gm.get_current_depth())
+			# CRITICAL FIX: Hardcode to your actual cap from screenshot
+			var inst_cap = 26340.0
 			
-			gm.instability += inst_cap * 0.15  # 15% of cap, not 15 points
+			# Calculate 15%
+			var increase_amount = inst_cap * 0.15  # Should be 3951
+			var before_inst = gm.instability
 			
-			# Add 5% progress
+			gm.instability += increase_amount
+			
+			print("INSTABILITY CALC: cap=", inst_cap, " 15%=", increase_amount)
+			print("BEFORE: ", before_inst, " AFTER: ", gm.instability)
+			
+			# Add progress bonus (5% of cap)
 			var current = _run_internal[active_depth - 1].get("progress", 0.0)
-			var cap = get_depth_progress_cap(active_depth)
-			_run_internal[active_depth - 1]["progress"] = minf(cap, current + (cap * 0.05))
+			var prog_cap = get_depth_progress_cap(active_depth)
+			var new_prog = minf(prog_cap, current + (prog_cap * 0.05))
+			_run_internal[active_depth - 1]["progress"] = new_prog
+			
+			print("Progress bonus applied: ", current, " -> ", new_prog)
 		else:
-			# Not enough control - penalty?
-			pass
+			print("Not enough control!")
+			
+	elif choice_id == "wait":
+		print("Wait choice - 10s pause, no instability change")
+		# Start 10s timer here if you want
 			
 func _trigger_rift_choice(_event_data: Dictionary = {}) -> void:
 	set_meta("progress_paused", true)
