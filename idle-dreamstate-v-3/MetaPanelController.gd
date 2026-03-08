@@ -11,10 +11,8 @@ var tab_abyss: Button
 var page_perm: Control
 var page_depth: Control
 var page_abyss: Control
-
 var depth_tabs: Control
 var depth_pages: Control
-
 var dim: Control
 var close_btn: Button
 

@@ -25,7 +25,7 @@ func _get_effective_dive_cooldown() -> float:
 var auto_buy_unlocked_depths: Array[int] = []
 var _last_wake_depth_for_meta: int = 1
 var thoughts_label: Label
-var control_label: Label
+var dreamcloud_label: Label
 var instability_label: Label
 var instability_bar: Range
 var overclock_button: Button
@@ -38,7 +38,27 @@ var _fail_save_popup: Node = null
 var meta_panel: MetaPanelController
 var prestige_panel: PrestigePanel
 var thoughts: float = 0.0
-var control: float = 0.0
+var _is_resetting_run: bool = false
+# NEW: Dream Cloud economy
+var dreamcloud: float = 0.0
+var lifetime_cloud: float = 0.0
+
+# NEW: Combat & Equipment systems
+var combat_engine: CombatEngine
+var equipment_manager: EquipmentManager
+var dream_encounter: DreamEncountercontroller
+
+# NEW: Player combat stats (modified by gear)
+var base_attack: float = 10.0
+var base_hp: float = 100.0
+var base_defense: float = 5.0
+
+# NEW: Current run combat state
+var current_gear_score: float = 0.0
+var combats_won: int = 0
+var combats_lost: int = 0
+var perfect_combats: int = 0
+
 var instability: float = 0.0
 var time_in_run: float = 0.0
 var total_thoughts_earned: float = 0.0
@@ -49,11 +69,11 @@ var abyss_unlocked_flag: bool = false
 var run_start_depth: int = 0
 var abyss_target_depth: int = 15
 var lifetime_thoughts: float = 0.0
-var lifetime_control: float = 0.0
+var lifetime_dreamcloud: float = 0.0
 var total_dives: int = 0
 var total_playtime: float = 0.0
 const LT_THOUGHTS := "lifetime_thoughts"
-const LT_CONTROL := "lifetime_control"
+const LT_dreamcloud := "lifetime_dreamcloud"
 const LT_DIVES := "total_dives"
 const LT_DEEPEST := "deepest_depth"
 const LT_PLAYTIME := "total_playtime"
@@ -62,9 +82,9 @@ var memories: float = 0.0
 var abyss_shop_unlocked: Array[String] = []
 var abyss_shop_active: Dictionary = {}
 var idle_thoughts_rate: float = 0.8
-var idle_control_rate: float = 0.5
+var idle_dreamcloud_rate: float = 0.5
 var dive_thoughts_gain: float = 18.0
-var dive_control_gain: float = 6.0
+var dive_dreamcloud_gain: float = 6.0
 var dream_current: float = 1.0  # Global progress multiplier
 var wake_bonus_mult: float = 1.35
 var fail_penalty_mult: float = 0.60
@@ -84,11 +104,10 @@ var _active_temp_buffs: Array[Dictionary] = []
 
 var _rate_sample_timer: float = 0.0
 var _last_thoughts_sample: float = 0.0
-var _last_control_sample: float = 0.0
+var _last_dreamcloud_sample: float = 0.0
 var _thoughts_ps: float = 0.0
-var _control_ps: float = 0.0
+var _dreamcloud_ps: float = 0.0
 
-var _warned_missing_top_bar: bool = false
 var _warned_missing_pillar: bool = false
 var _warned_missing_sound: bool = false
 
@@ -113,12 +132,12 @@ var max_depth_tier_reached: int = 1  # Track highest depth unlocked
 
 var click_combo_window: float = 0.0  # Combo timing window
 var click_power: float = 5.0  # Base thoughts per click
-var click_control_gain: float = 0.0
+var click_dreamcloud_gain: float = 0.0
 var click_instability_reduction: float = 0.0
 
 # Click upgrade levels (saved with run)
 var click_power_level: int = 0
-var click_control_level: int = 0  
+var click_dreamcloud_level: int = 0  
 var click_stability_level: int = 0
 var click_flow_level: int = 0
 var click_resonance_level: int = 0
@@ -139,14 +158,14 @@ var click_upgrade_expanded: bool = false
 
 # Evolution System
 var click_power_evolution: int = 0
-var click_control_evolution: int = 0
+var click_dreamcloud_evolution: int = 0
 var click_stability_evolution: int = 0
 var click_flow_evolution: int = 0
 var click_resonance_evolution: int = 0
 
 # Sacrifice Penalties (-0.5 = -50%, stacks multiplicatively)
 var power_sacrifice_penalty: float = 1.0
-var control_sacrifice_penalty: float = 1.0
+var dreamcloud_sacrifice_penalty: float = 1.0
 var stability_sacrifice_penalty: float = 1.0
 var flow_sacrifice_penalty: float = 1.0
 var resonance_sacrifice_penalty: float = 1.0
@@ -288,7 +307,7 @@ func _warn_missing_nodes_once() -> void:
 
 func _connect_click_buttons_debug() -> void:
 	# Find the click buttons
-	var click_names := ["Think", "Control", "Stabilize", "ClickThough", "ClickControl", "ClickInstabili"]
+	var click_names := ["Think", "dreamcloud", "Stabilize", "ClickThough", "Clickdreamcloud", "ClickInstabili"]
 	var found_any := false
 	
 	for btn_name in click_names:
@@ -309,9 +328,9 @@ func _connect_click_buttons_debug() -> void:
 			if "Think" in btn_name or "Though" in btn_name:
 				btn.pressed.connect(on_manual_focus_clicked)
 				print("  -> Connected to on_manual_focus_clicked")
-			elif "Control" in btn_name:
-				btn.pressed.connect(_on_click_control)
-				print("  -> Connected to _on_click_control")
+			elif "dreamcloud" in btn_name:
+				btn.pressed.connect(_on_click_dreamcloud)
+				print("  -> Connected to _on_click_dreamcloud")
 			elif "Stabil" in btn_name or "Instab" in btn_name:
 				btn.pressed.connect(_on_click_instability)
 				print("  -> Connected to _on_click_instability")
@@ -320,8 +339,8 @@ func _connect_click_buttons_debug() -> void:
 		push_error("NO CLICK BUTTONS FOUND! Check node names in scene tree.")
 
 
-func _fix_control_button() -> void:
-	var btn := get_tree().current_scene.find_child("ClickControl", true, false) as Button
+func _fix_dreamcloud_button() -> void:
+	var btn := get_tree().current_scene.find_child("Clickdreamcloud", true, false) as Button
 	if btn == null:
 		return
 	
@@ -371,7 +390,7 @@ func _check_for_duplicate_buttons() -> void:
 			names[btn.name] = btn.get_path()
 
 func _check_button_parents() -> void:
-	for btn_name in ["Think", "Control", "Stabilize"]:
+	for btn_name in ["Think", "dreamcloud", "Stabilize"]:
 		var btn := get_tree().current_scene.find_child(btn_name, true, false)
 		if btn:
 			print(btn_name, " parent: ", btn.get_parent().name, " | path: ", btn.get_path())
@@ -400,7 +419,7 @@ func _force_recreate_click_row() -> void:
 	# Create 3 fresh buttons
 	var configs := [
 		{"name": "Think", "text": "🧠 Think"},
-		{"name": "Control", "text": "🛡️ Control"},
+		{"name": "dreamcloud", "text": "🛡️ dreamcloud"},
 		{"name": "Stabilize", "text": "❄️ Stabilize"}
 	]
 	
@@ -418,8 +437,8 @@ func _force_recreate_click_row() -> void:
 		match cfg["name"]:
 			"Think":
 				btn.pressed.connect(on_manual_focus_clicked)
-			"Control":
-				btn.pressed.connect(_on_click_control)
+			"dreamcloud":
+				btn.pressed.connect(_on_click_dreamcloud)
 			"Stabilize":
 				btn.pressed.connect(_on_click_instability)
 		
@@ -446,6 +465,23 @@ func _ready() -> void:
 	# Wait for next frame to ensure DepthRunController is ready
 	await get_tree().process_frame
 	
+	# Initialize new systems
+	combat_engine = CombatEngine.new()
+	combat_engine.name = "CombatEngine"
+	add_child(combat_engine)
+	
+	equipment_manager = EquipmentManager.new()
+	equipment_manager.name = "EquipmentManager"
+	add_child(equipment_manager)
+	
+	dream_encounter = DreamEncountercontroller.new()
+	dream_encounter.name = "DreamEncountercontroller"
+	add_child(dream_encounter)
+	
+	# Connect signals
+	dream_encounter.encounter_started.connect(_on_dream_encounter_started)
+	dream_encounter.encounter_completed.connect(_on_dream_encounter_completed)
+	
 	# Now load game
 	load_game()
 	_load_monetization_data()
@@ -455,7 +491,7 @@ func _ready() -> void:
 	_bind_ui_mainui()
 	
 	_last_thoughts_sample = thoughts
-	_last_control_sample = control
+	_last_dreamcloud_sample = dreamcloud
 	
 	_sync_meta_progress()
 	
@@ -627,13 +663,13 @@ func _input(event: InputEvent) -> void:
 		print("\n=== CLICK DEBUG ===")
 		print("Mouse at: ", mouse_pos)
 		
-		# Check the ClickControl button specifically
-		var btn := get_tree().current_scene.find_child("ClickControl", true, false) as Button
+		# Check the Clickdreamcloud button specifically
+		var btn := get_tree().current_scene.find_child("Clickdreamcloud", true, false) as Button
 		if btn:
 			var btn_rect := btn.get_global_rect()
-			print("ClickControl global rect: ", btn_rect)
-			print("ClickControl position: ", btn.global_position)
-			print("ClickControl size: ", btn.size)
+			print("Clickdreamcloud global rect: ", btn_rect)
+			print("Clickdreamcloud position: ", btn.global_position)
+			print("Clickdreamcloud size: ", btn.size)
 			print("Mouse inside button? ", btn_rect.has_point(mouse_pos))
 			
 			# Check parent containers
@@ -646,11 +682,11 @@ func _input(event: InputEvent) -> void:
 				if parent.name == "Root":
 					break
 		
-		# Force print all controls under mouse
-		print("\n--- All controls under mouse ---")
-		_print_controls_under_mouse(get_tree().current_scene, mouse_pos, 0)
+		# Force print all dreamclouds under mouse
+		print("\n--- All dreamclouds under mouse ---")
+		_print_dreamclouds_under_mouse(get_tree().current_scene, mouse_pos, 0)
 
-func _print_controls_under_mouse(node: Node, mouse_pos: Vector2, depth: int) -> void:
+func _print_dreamclouds_under_mouse(node: Node, mouse_pos: Vector2, depth: int) -> void:
 	if not (node is Control):
 		return
 	var c := node as Control
@@ -662,19 +698,19 @@ func _print_controls_under_mouse(node: Node, mouse_pos: Vector2, depth: int) -> 
 		var indent := "  ".repeat(depth)
 		print(indent, node.name, " (", node.get_class(), ") at ", rect)
 		for child in node.get_children():
-			_print_controls_under_mouse(child, mouse_pos, depth + 1)
+			_print_dreamclouds_under_mouse(child, mouse_pos, depth + 1)
 		
 func _force_rate_sample() -> void:
 	_last_thoughts_sample = thoughts
-	_last_control_sample = control
+	_last_dreamcloud_sample = dreamcloud
 	_rate_sample_timer = 0.0
 	_thoughts_ps = 0.0
-	_control_ps = 0.0
+	_dreamcloud_ps = 0.0
 
 func _force_display_reset():
 	# Hard reset display values
 	_thoughts_ps = 0.0
-	_control_ps = 0.0
+	_dreamcloud_ps = 0.0
 	thoughts = perm_perk_system.get_starting_thoughts() if perm_perk_system != null else 0.0
 	_bind_ui_mainui()
 	_refresh_top_ui()
@@ -683,63 +719,32 @@ func _force_display_reset():
 func _refresh_top_ui() -> void:
 	var current_depth := get_current_depth()
 	
-	# CRITICAL FIX: Calculate actual instability gain per second
+	# Always get Main node explicitly
+	var main = get_node_or_null("/root/Main")
+	if main == null:
+		main = get_tree().current_scene
+	
+	# Re-find labels every time (in case Tutorial swapped the scene)
+	if thoughts_label == null or not is_instance_valid(thoughts_label):
+		thoughts_label = main.find_child("ThoughtsLabel", true, false) as Label
+	if dreamcloud_label == null or not is_instance_valid(dreamcloud_label):
+		dreamcloud_label = main.find_child("dreamcloudLabel", true, false) as Label
+	if instability_bar == null or not is_instance_valid(instability_bar):
+		instability_bar = main.find_child("InstabilityBar", true, false) as ProgressBar
+	if instability_label == null or not is_instance_valid(instability_label):
+		instability_label = main.find_child("InstabilityLabel", true, false) as Label
+	if top_bar_panel == null or not is_instance_valid(top_bar_panel):
+		top_bar_panel = main.find_child("TopBarPanel", true, false)
+	
+	# Calculate values
 	var inst_gain: float = 0.0
 	if current_depth >= 2:
 		inst_gain = get_idle_instability_gain_per_sec()
-		
-		# Apply multipliers (same as in _process)
 		var instability_mult: float = _safe_mult(upgrade_manager.get_instability_mult()) * _safe_mult(perk_system.get_instability_mult())
 		if perm_perk_system != null:
 			instability_mult *= _safe_mult(perm_perk_system.get_instability_mult())
-		
 		inst_gain *= instability_mult
 	
-	# Safety: Re-find label if null or freed
-	if thoughts_label == null or not is_instance_valid(thoughts_label):
-		thoughts_label = get_tree().current_scene.find_child("ThoughtsLabel", true, false) as Label
-		if thoughts_label != null:
-			print("DEBUG: Re-bound thoughts_label")
-	
-	# CRITICAL FIX: Set thoughts label text ONCE with rate included
-	if thoughts_label != null:
-		var hide_numbers := false
-		
-		# Check depth 9 hide logic
-		if current_depth == 9:
-			var rules := {}
-			var drc = get_node_or_null("/root/DepthRunController")
-			if drc != null and drc.has_method("get_depth_def"):
-				var def = drc.call("get_depth_def", 9)
-				if def is Dictionary:
-					rules = def.get("rules", {})
-			
-			if rules.get("hide_all_numbers", false):
-				var inner_eye_lvl := 0
-				if drc.has_method("_get_local_level"):
-					inner_eye_lvl = drc.call("_get_local_level", 9, "inner_eye")
-				if inner_eye_lvl == 0:
-					hide_numbers = true
-		
-		if hide_numbers:
-			thoughts_label.text = "Thoughts: ???"
-			thoughts_label.modulate = Color(0.5, 0.5, 0.5, 0.3)
-		else:
-			var rate_str := _fmt_num(_thoughts_ps)
-			thoughts_label.text = "Thoughts %s +%s/s" % [_fmt_num(thoughts), rate_str]
-			thoughts_label.modulate = Color(1, 1, 1, 1)
-			
-		# Force redraw
-		thoughts_label.queue_redraw()
-	
-	# Control label
-	if control_label == null or not is_instance_valid(control_label):
-		control_label = get_tree().current_scene.find_child("ControlLabel", true, false) as Label
-	
-	if control_label != null:
-		control_label.text = "Control: %s" % _fmt_num(control)
-	
-	# CRITICAL FIX: Get proper instability cap
 	var cap: float = 1000.0
 	var drc = get_node_or_null("/root/DepthRunController")
 	if drc != null and drc.has_method("get_instability_cap"):
@@ -747,54 +752,50 @@ func _refresh_top_ui() -> void:
 	elif depth_meta_system != null:
 		cap = depth_meta_system.get_instability_cap(current_depth)
 	
-	# Instability bar setup
+	# UPDATE THOUGHTS (only if we found the label)
+	if thoughts_label != null:
+		var rate_str := _fmt_num(_thoughts_ps)
+		thoughts_label.text = "Thoughts %s +%s/s" % [_fmt_num(thoughts), rate_str]
+	
+	# UPDATE dreamcloud
+	if dreamcloud_label != null:
+		dreamcloud_label.text = "dreamcloud: %s" % _fmt_num(dreamcloud)
+	
+	# UPDATE INSTABILITY BAR
 	if instability_bar != null:
 		instability_bar.custom_minimum_size = Vector2(700, 32)
 		instability_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		instability_bar.min_value = 0.0
 		instability_bar.max_value = cap
 		instability_bar.value = clampf(instability, 0.0, cap)
-		instability_bar.show_percentage = false
 		instability_bar.visible = (current_depth >= 2)
 		
-		# Update value label inside bar
 		var label = instability_bar.get_node_or_null("ValueLabel")
 		if label != null:
 			label.text = "%s / %s" % [_fmt_num(instability), _fmt_num(cap)]
 	
-	# Instability text label
+	# UPDATE INSTABILITY TEXT
 	if instability_label != null:
 		if current_depth == 1:
 			instability_label.text = ""
 			instability_label.visible = false
 		else:
 			var ttf := get_seconds_until_fail()
-			var ttf_str := _fmt_time_ui(ttf)
-			instability_label.text = "Instability: %.0f / %.0f (TTF %s)" % [instability, cap, ttf_str]
+			instability_label.text = "Instability: %.0f / %.0f (TTF %s)" % [instability, cap, _fmt_time_ui(ttf)]
 			instability_label.visible = true
-
-	# Top bar panel update
+	
+	# UPDATE TOP BAR PANEL
 	if top_bar_panel != null and top_bar_panel.has_method("update_top_bar"):
-		var inst_pct: float = clampf(instability, 0.0, 100.0)
-		var overclock_time_left: float = 0.0
-		if overclock_system != null and overclock_system.active:
-			overclock_time_left = maxf(overclock_system.timer, 0.0)
-		var ttf: float = get_seconds_until_fail()
-
 		top_bar_panel.update_top_bar(
-			thoughts,
-			maxf(_thoughts_ps, 0.0),
-			control,
-			maxf(_control_ps, 0.0),
-			inst_pct,
+			thoughts, maxf(_thoughts_ps, 0.0),
+			dreamcloud, maxf(_dreamcloud_ps, 0.0),
+			clampf(instability, 0.0, 100.0),
 			overclock_system != null and overclock_system.active,
-			overclock_time_left,
-			ttf,
-			inst_gain
+			overclock_system.timer if (overclock_system != null and overclock_system.active) else 0.0,
+			get_seconds_until_fail(), inst_gain
 		)
 	
 	_update_depth_ui()
-
 func _set_button_dim(btn: Button, enabled: bool) -> void:
 	if btn == null:
 		return
@@ -809,13 +810,13 @@ func _update_buttons_ui() -> void:
 		
 		if can_overclock:
 			var cost_mul: float = upgrade_manager.get_overclock_cost_mult()
-			var effective_cost: float = overclock_system.base_control_cost * cost_mul
+			var effective_cost: float = overclock_system.base_dreamcloud_cost * cost_mul
 			
 			if overclock_system.active:
 				var sec_left_o: int = int(ceil(maxf(overclock_system.timer, 0.0)))
 				overclock_button.text = "Overclock (%ds)" % sec_left_o
 			else:
-				overclock_button.text = "Overclock (-%d Control)" % int(round(effective_cost))
+				overclock_button.text = "Overclock (-%d dreamcloud)" % int(round(effective_cost))
 		else:
 			overclock_button.text = "🔒 Depth 2"  # Locked icon + requirement
 			overclock_button.tooltip_text = "Unlocks at Depth 2"
@@ -857,7 +858,7 @@ func _build_overclock_tooltip(cost: float, duration_mul: float, thoughts_add: fl
 			instab_mul,
 			("" if extra == "" else "\n" + extra)
 		]
-	return "Cost: %d Control\nDuration x%.2f\nThoughts: +%.2f add, x%.2f mult\nInstability: x%.2f%s" % [
+	return "Cost: %d dreamcloud\nDuration x%.2f\nThoughts: +%.2f add, x%.2f mult\nInstability: x%.2f%s" % [
 		int(round(cost)),
 		duration_mul,
 		thoughts_add,
@@ -868,7 +869,7 @@ func _build_overclock_tooltip(cost: float, duration_mul: float, thoughts_add: fl
 
 func _force_cooldown_texts() -> void:
 	var cost_mul: float = upgrade_manager.get_overclock_cost_mult()
-	var effective_cost: float = overclock_system.base_control_cost * cost_mul
+	var effective_cost: float = overclock_system.base_dreamcloud_cost * cost_mul
 	var duration_mul: float = upgrade_manager.get_overclock_duration_mult()
 	var thoughts_add: float = upgrade_manager.get_overclock_thoughts_mult_bonus()
 	var thoughts_mul: float = upgrade_manager.get_overclock_thoughts_mult_penalty()
@@ -880,7 +881,7 @@ func _force_cooldown_texts() -> void:
 			overclock_button.text = "Overclock (%ds)" % sec_left_o
 			overclock_button.tooltip_text = _build_overclock_tooltip(effective_cost, duration_mul, thoughts_add, thoughts_mul, instab_mul, true, sec_left_o, "")
 		else:
-			overclock_button.text = "Overclock (-%d Control)" % int(round(effective_cost))
+			overclock_button.text = "Overclock (-%d dreamcloud)" % int(round(effective_cost))
 			overclock_button.tooltip_text = _build_overclock_tooltip(effective_cost, duration_mul, thoughts_add, thoughts_mul, instab_mul, false, 0.0, "")
 
 	if dive_button != null:
@@ -924,23 +925,24 @@ func _on_wake_pressed() -> void:
 	var tm = get_node_or_null("/root/TutorialManage")
 	if tm and tm.has_method("on_ui_element_clicked"):
 		tm.on_ui_element_clicked("WakeButton")
-		# Close expanded bars first so wake button isn't blocked
+	
 	_close_expanded_depth_bars()
+	
 	if prestige_panel == null:
 		prestige_panel = _ui_find("PrestigePanel") as PrestigePanel
-		_connect_prestige_panel()  # Connect signals now that panel exists
+		_connect_prestige_panel()
 	if prestige_panel == null:
 		push_warning("GameManager: PrestigePanel not found; Wake blocked.")
 		return
 
 	var drc := get_node_or_null("/root/DepthRunController")
-	var d: int = 1
+	var d: int = get_current_depth()
 	var mem_gain: float = 0.0
 	var crystals_by_name: Dictionary = {}
-
-	if drc != null and "active_depth" in drc:
-		d = int(drc.get("active_depth"))
-
+	
+	_last_wake_depth_for_meta = d
+	
+	# CRITICAL: Calculate gains BEFORE any reset
 	if drc != null and drc.has_method("preview_wake"):
 		var prev: Dictionary = drc.call("preview_wake", 1.0, false)
 		mem_gain = float(prev.get("memories", 0.0))
@@ -953,24 +955,60 @@ func _on_wake_pressed() -> void:
 			var cry_amt = calc_depth_currency_gain(depth_i) * wake_bonus_mult
 			crystals_by_name[cry_name] = float(crystals_by_name.get(cry_name, 0.0)) + cry_amt
 
-	_last_wake_depth_for_meta = d
+	# Open panel with calculated gains (NO RESET YET!)
 	prestige_panel.open_with_depth(mem_gain, crystals_by_name, d)
 	
 	total_runs += 1
+	
 	# Notify tutorial that wake was clicked
-	tm = get_node_or_null("/root/TutorialManage")  # Remove 'var' here
 	if tm and tm.has_method("on_ui_element_clicked"):
 		tm.on_ui_element_clicked("WakeButton")
-		
-	# After prestige_panel.open_with_depth(), force refresh
+	
 	_force_rate_sample()
 	_refresh_top_ui()
 	
-	# Add this: Reset display immediately when wake panel opens
-	if thoughts_label != null:
-		thoughts_label.text = "Thoughts 0 +0/s"  # Force show 0
-
-# Connect button clicks to tutorial manager
+func _reset_run_state() -> void:
+	# Reset primary currencies
+	thoughts = 0.0
+	dreamcloud = 0.0
+	instability = 0.0
+	_thoughts_ps = 0.0
+	_dreamcloud_ps = 0.0
+	
+	# Reset DepthRunController data (CRITICAL)
+	var drc := get_node_or_null("/root/DepthRunController")
+	if drc:
+		drc.set("active_depth", 1)
+		_depth_cache = 1
+		
+		# CRITICAL: Reset run progress array
+		if drc.has_method("reset_run"):
+			drc.call("reset_run")
+		elif drc.get("run") != null:
+			# Manual reset of run data
+			var run_data: Array = drc.get("run")
+			for depth_data in run_data:
+				depth_data["progress"] = 0.0
+				depth_data["purchased_upgrades"] = {}
+			drc.set("run", run_data)
+	
+	# Reset upgrade manager run state
+	if upgrade_manager and upgrade_manager.has_method("reset_run_upgrades"):
+		upgrade_manager.reset_run_upgrades()
+	
+	# Reset temporary buffs
+	_active_temp_buffs.clear()
+	
+	# Reset encounter state
+	if dream_encounter:
+		dream_encounter.current_encounter = {}
+	
+	# Force immediate UI refresh
+	_refresh_top_ui()
+	_sync_cracks()
+	
+	# REMOVED: save_game() - Don't save here! Save only after confirmation.
+	
 func _connect_tutorial_signals() -> void:
 	# This should be called after UI is ready
 	var meta = find_child("MetaPanelController", true, false)
@@ -987,7 +1025,8 @@ func _connect_tutorial_signals() -> void:
 			close_btn.pressed.connect(func(): tutorial_manager.on_button_clicked("CloseButton"))
 		
 func _on_prestige_confirm_wake() -> void:
-	# Add these two declarations:
+	_is_resetting_run = true  # MUST BE FIRST - blocks accumulation immediately
+	
 	var tm = get_node_or_null("/root/TutorialManage")
 	var drc := get_node_or_null("/root/DepthRunController")
 	
@@ -995,29 +1034,13 @@ func _on_prestige_confirm_wake() -> void:
 	if tm and tm.has_method("on_ui_element_clicked"):
 		tm.on_ui_element_clicked("ConfirmWakeB")
 	
-	# Get accumulated memories/crystals from depth_data
-	var accumulated_memories := 0.0
-	var accumulated_crystals := 0.0
-	
-	# Now drc is declared and can be used:
-	var active_d: int = drc.get("active_depth") as int
-	var run_data: Array = drc.get("run") as Array
-	if run_data != null and active_d >= 1 and active_d <= run_data.size():
-		var depth_data: Dictionary = run_data[active_d - 1]
-		accumulated_memories = float(depth_data.get("memories", 0.0))
-		accumulated_crystals = float(depth_data.get("crystals", 0.0))
-	
+	# CRITICAL: Apply gains BEFORE resetting
 	var result = drc.call("wake_cashout", 1.0, false)
 	
 	if result is Dictionary:
 		var gained_memories = float(result.get("memories", 0.0))
-		gained_memories += accumulated_memories
 		memories += gained_memories
 		var crystals = result.get("crystals_by_name", {})
-		
-		var active_currency_name := DepthMetaSystem.get_depth_currency_name(active_d)
-		if accumulated_crystals > 0:
-			crystals[active_currency_name] = float(crystals.get(active_currency_name, 0.0)) + accumulated_crystals
 		
 		for currency_name in crystals.keys():
 			var amount = float(crystals[currency_name])
@@ -1027,27 +1050,62 @@ func _on_prestige_confirm_wake() -> void:
 						depth_meta_system.currency[i] += amount
 					break
 	
-	reset_run()
-	save_game()
+	# Update lifetime stats BEFORE reset (while values are still current)
+	lifetime_thoughts += total_thoughts_earned
+	lifetime_dreamcloud += dreamcloud
+	total_playtime += time_in_run
 	
+	# Reset run state (sets thoughts to starting perks if any)
+	reset_run()
+	
+	# Close panel
 	if prestige_panel != null:
 		prestige_panel.close()
 	
-	# Use 'tm' not 'tutorial_mgr'
+	# CRITICAL: Keep _is_resetting_run true during all awaits to prevent accumulation
+	# Sync DRC values each frame so TopBarPanel shows correct values (not stale accumulated ones)
+	for i in range(15):  # 15 frames to ensure UI settles
+		await get_tree().process_frame
+		
+		# Force DRC to match GameManager's actual reset values
+		# TopBarPanel reads from DRC, not GameManager directly
+		if drc != null:
+			drc.set("thoughts", thoughts)      # Will be 100 if starting perks, 0 otherwise
+			drc.set("dreamcloud", dreamcloud)
+			drc.set("instability", instability)
+			drc.set("thoughts_per_sec", 0.0)   # Show 0 rate during reset
+			drc.set("dreamcloud_per_sec", 0.0)
+		
+		# Force UI refresh each frame
+		_refresh_top_ui()
+	
+	# Rebind UI references (in case TutorialManager rebuilt the scene)
+	_bind_ui_mainui()
+	_refresh_top_ui()
+	
+	# Sync depth panel to clear stale Depth 1 progress/upgrades
+	if drc != null and drc.has_method("_sync_all_to_panel"):
+		drc._sync_all_to_panel()
+	
+	save_game()
+	
+	# NOW safe to allow accumulation again
+	_is_resetting_run = false
+	
+	# Notify tutorial
 	if tm and tm.has_method("on_ui_element_clicked"):
 		tm.on_ui_element_clicked("PrestigeWakeButton")
 	
 	_force_rate_sample()
-	_refresh_top_ui()
-	
 	_on_meta_pressed()
 	
-	# Use 'tm' here too
 	if tm and tm.has_method("start_tutorial"):
 		await get_tree().process_frame
 		if tm.active_tutorial == "":
 			tm.start_tutorial("post_wake_meta")
-
+	
+	
+			
 func _close_expanded_depth_bars() -> void:
 	var panel = get_tree().current_scene.find_child("DepthBarsPanel", true, false)
 	if panel != null:
@@ -1125,7 +1183,7 @@ func do_fail() -> void:
 						
 	# ACCUMULATE LIFETIME STATS (same as wake)
 	lifetime_thoughts += total_thoughts_earned
-	lifetime_control += control
+	lifetime_dreamcloud += dreamcloud
 	total_playtime += time_in_run
 	
 	reset_run()
@@ -1159,20 +1217,20 @@ func do_dive() -> void:
 	# Dive calculations - do these BEFORE changing depth
 	var thoughts_mult: float = _safe_mult(upgrade_manager.get_thoughts_mult()) * _safe_mult(perk_system.get_thoughts_mult()) * _safe_mult(nightmare_system.get_thoughts_mult()) * _get_run_upgrades_thoughts_mult()
 	var instability_mult: float = _safe_mult(upgrade_manager.get_instability_mult()) * _safe_mult(perk_system.get_instability_mult()) * _safe_mult(nightmare_system.get_thoughts_mult())
-	var control_mult: float = _safe_mult(perk_system.get_control_mult()) * _safe_mult(nightmare_system.get_control_mult())
+	var dreamcloud_mult: float = _safe_mult(perk_system.get_dreamcloud_mult()) * _safe_mult(nightmare_system.get_dreamcloud_mult())
 	
 	if depth_meta_system != null:
 		thoughts_mult *= _safe_mult(depth_meta_system.get_global_thoughts_mult())
-		control_mult *= _safe_mult(depth_meta_system.get_global_control_mult())
+		dreamcloud_mult *= _safe_mult(depth_meta_system.get_global_dreamcloud_mult())
 	
 	if perm_perk_system != null:
 		thoughts_mult *= _safe_mult(perm_perk_system.get_thoughts_mult())
 		instability_mult *= _safe_mult(perm_perk_system.get_instability_mult())
-		control_mult *= _safe_mult(perm_perk_system.get_control_mult())
+		dreamcloud_mult *= _safe_mult(perm_perk_system.get_dreamcloud_mult())
 	
 	if abyss_perk_system != null:
 		thoughts_mult *= _safe_mult(abyss_perk_system.get_thoughts_mult())
-		control_mult *= _safe_mult(abyss_perk_system.get_control_mult())
+		dreamcloud_mult *= _safe_mult(abyss_perk_system.get_dreamcloud_mult())
 	
 	var deep_bonus_per_depth: float = upgrade_manager.get_deep_dives_thoughts_bonus_per_depth()
 	var deep_risk_per_depth: float = upgrade_manager.get_deep_dives_instab_bonus_per_depth()
@@ -1186,7 +1244,7 @@ func do_dive() -> void:
 	
 	# Apply dive gains
 	thoughts += dive_thoughts_gain * thoughts_mult * depth_thoughts_mult
-	control += dive_control_gain * control_mult
+	dreamcloud += dive_dreamcloud_gain * dreamcloud_mult
 	
 	var abyss_instab_mult: float = 1.0
 	if abyss_perk_system != null:
@@ -1260,8 +1318,8 @@ func do_dive() -> void:
 		cam.call("snap_to_depth", next_depth)
 	
 	if upgrade_manager.mental_buffer_level > 0:
-		var bonus_control: float = float(next_depth) * upgrade_manager.get_mental_buffer_per_depth()
-		control += bonus_control
+		var bonus_dreamcloud: float = float(next_depth) * upgrade_manager.get_mental_buffer_per_depth()
+		dreamcloud += bonus_dreamcloud
 	
 	_check_abyss_unlock()
 	
@@ -1296,11 +1354,11 @@ func do_overclock() -> void:
 	var thoughts_mul: float = upgrade_manager.get_overclock_thoughts_mult_penalty()
 	var instab_mul: float = upgrade_manager.get_overclock_instability_mult()
 
-	var effective_cost: float = overclock_system.base_control_cost * cost_mul
-	if control < effective_cost:
+	var effective_cost: float = overclock_system.base_dreamcloud_cost * cost_mul
+	if dreamcloud < effective_cost:
 		return
 
-	control -= effective_cost
+	dreamcloud -= effective_cost
 	overclock_system.activate(thoughts_add, thoughts_mul, instab_mul, duration_mul, cost_mul)
 
 	if sound_system != null:
@@ -1310,7 +1368,7 @@ func do_overclock() -> void:
 
 func reset_run() -> void:
 	thoughts = 0.0
-	control = 0.0
+	dreamcloud = 0.0
 	instability = 0.0
 	time_in_run = 0.0
 	total_thoughts_earned = 0.0
@@ -1318,22 +1376,20 @@ func reset_run() -> void:
 	frozen_depth_multipliers = {}
 	dream_current = 1.0
 	
-	# CRITICAL FIX: Reset rate calculation variables
-	_thoughts_ps = 0.0
-	_control_ps = 0.0
-	_last_thoughts_sample = 0.0  # Must match the reset thoughts value
-	_last_control_sample = 0.0   # Must match the reset control value
-	_rate_sample_timer = 0.0
-	
 	# Apply starting perks
 	if perm_perk_system != null:
 		thoughts = perm_perk_system.get_starting_thoughts()
 		instability = maxf(0.0, instability - perm_perk_system.get_starting_instability_reduction())
-		# CRITICAL: Update sample to match starting thoughts so rate calculates as 0
-		_last_thoughts_sample = thoughts
-		_last_control_sample = control
+		_last_thoughts_sample = thoughts  # Match starting value
 	
 	run_start_depth = 1
+	
+	if perm_perk_system != null:
+		var starting = perm_perk_system.get_starting_thoughts()
+		thoughts = starting
+		print("Applied starting thoughts from perks: ", starting)
+	
+	print("RESET_RUN complete: thoughts=", thoughts)
 	
 	# Reset upgrade manager levels
 	upgrade_manager.thoughts_level = 0
@@ -1410,23 +1466,47 @@ func reset_run() -> void:
 			top_bar_panel.bind_ui_references()
 		
 		# Option 2: Force update with current values (this might fail if it uses stale refs)
-		top_bar_panel.update_top_bar(thoughts, 0.0, control, 0.0, 0.0, false, 0.0, 999.0, 0.0)
+		top_bar_panel.update_top_bar(thoughts, 0.0, dreamcloud, 0.0, 0.0, false, 0.0, 999.0, 0.0)
 	
 	_refresh_top_ui()
 	
 	# Force multiple refreshes over next few frames as UI settles
+	# Wait for UI to clear, then re-bind
+	await get_tree().process_frame
+	_bind_ui_mainui()
+	
+	# Force update multiple times as scene settles
+	for i in range(3):
+		_refresh_top_ui()
+		await get_tree().process_frame
+	
+	print("RESET FINAL: thoughts=", thoughts, " label_valid=", is_instance_valid(thoughts_label))
+	
+	# Reset rates
+	_thoughts_ps = 0.0
+	_dreamcloud_ps = 0.0
+	_last_thoughts_sample = thoughts  # Match current thoughts (0 or starting)
+	_last_dreamcloud_sample = dreamcloud
+	
+	# CRITICAL: Re-bind UI after Tutorial popup opens
+	await get_tree().process_frame
+	_bind_ui_mainui()
+	_refresh_top_ui()
+	
+	# Force multiple updates as Tutorial settles
 	for i in range(3):
 		await get_tree().process_frame
-		_bind_ui_mainui()
-		if top_bar_panel != null and top_bar_panel.has_method("update_top_bar"):
-			top_bar_panel.update_top_bar(thoughts, 0.0, control, 0.0, 0.0, false, 0.0, 999.0, 0.0)
 		_refresh_top_ui()
+	
+	print("RESET FINAL: thoughts=", thoughts, " label=", thoughts_label != null)
+	
 	
 func _force_complete_reset_refresh() -> void:
 	print("DEBUG: Force reset refresh")
 	
 	# Reset thoughts display
 	_refresh_top_ui()
+	
 	
 	# Reset depth panel
 	var panel = get_tree().current_scene.find_child("DepthBarsPanel", true, false)
@@ -1521,28 +1601,28 @@ func _apply_offline_progress() -> void:
 	
 	# Calculate multipliers
 	var thoughts_mult: float = _safe_mult(upgrade_manager.get_thoughts_mult()) * _safe_mult(perk_system.get_thoughts_mult()) * _safe_mult(nightmare_system.get_thoughts_mult()) * _get_run_upgrades_thoughts_mult()
-	var control_mult: float = _safe_mult(perk_system.get_control_mult()) * _safe_mult(nightmare_system.get_control_mult())
+	var dreamcloud_mult: float = _safe_mult(perk_system.get_dreamcloud_mult()) * _safe_mult(nightmare_system.get_dreamcloud_mult())
 	
 	if depth_meta_system != null:
 		thoughts_mult *= _safe_mult(depth_meta_system.get_global_thoughts_mult())
-		control_mult *= _safe_mult(depth_meta_system.get_global_control_mult())
+		dreamcloud_mult *= _safe_mult(depth_meta_system.get_global_dreamcloud_mult())
 	
 	if perm_perk_system != null:
 		thoughts_mult *= _safe_mult(perm_perk_system.get_thoughts_mult())
-		control_mult *= _safe_mult(perm_perk_system.get_control_mult())
+		dreamcloud_mult *= _safe_mult(perm_perk_system.get_dreamcloud_mult())
 	
 	if abyss_perk_system != null:
 		thoughts_mult *= _safe_mult(abyss_perk_system.get_thoughts_mult())
-		control_mult *= _safe_mult(abyss_perk_system.get_control_mult())
+		dreamcloud_mult *= _safe_mult(abyss_perk_system.get_dreamcloud_mult())
 	
 	var deep_bonus_per_depth: float = upgrade_manager.get_deep_dives_thoughts_bonus_per_depth()
 	var depth_thoughts_mult: float = 1.0 + (float(current_depth) * (depth_thoughts_step + deep_bonus_per_depth))
 	
-	# Apply thoughts/control gain
+	# Apply thoughts/dreamcloud gain
 	var thoughts_gained := idle_thoughts_rate * thoughts_mult * depth_thoughts_mult * offline_seconds
-	var control_gained := idle_control_rate * control_mult * offline_seconds
+	var dreamcloud_gained := idle_dreamcloud_rate * dreamcloud_mult * offline_seconds
 	thoughts += thoughts_gained
-	control += control_gained
+	dreamcloud += dreamcloud_gained
 	
 	
 	# Instability (Depth 2+ only)
@@ -1646,7 +1726,7 @@ func _apply_offline_progress() -> void:
 	_force_rate_sample()
 	
 	if offline_seconds >= 5.0:
-		_show_offline_progress_popup(thoughts_gained, control_gained, 0.0, 0.0, 0.0, current_depth)
+		_show_offline_progress_popup(thoughts_gained, dreamcloud_gained, 0.0, 0.0, 0.0, current_depth)
 	
 	save_game()
 
@@ -1737,7 +1817,7 @@ func get_save_data() -> Dictionary:
 	# Current run stats
 	data["memories"] = memories
 	data["thoughts"] = thoughts
-	data["control"] = control
+	data["dreamcloud"] = dreamcloud
 	data["instability"] = instability if get_current_depth() >= 2 else 0.0
 	data["time_in_run"] = time_in_run
 	data["total_thoughts_earned"] = total_thoughts_earned
@@ -1745,7 +1825,7 @@ func get_save_data() -> Dictionary:
 	
 	# LIFETIME STATS - Use the exact keys SettingsPanel expects
 	data["lifetime_thoughts"] = lifetime_thoughts + total_thoughts_earned
-	data["lifetime_control"] = lifetime_control + control  
+	data["lifetime_dreamcloud"] = lifetime_dreamcloud + dreamcloud  
 	data["total_dives"] = total_dives  # This is the key!
 	data["deepest_depth"] = max_depth_reached
 	data["total_playtime"] = total_playtime + time_in_run
@@ -1781,7 +1861,7 @@ func get_save_data() -> Dictionary:
 		data["local_upgrades"] = drc.get("local_upgrades")
 		data["frozen_upgrades"] = drc.get("frozen_upgrades")
 		data["depth_thoughts"] = drc.get("thoughts")
-		data["depth_control"] = drc.get("control")
+		data["depth_dreamcloud"] = drc.get("dreamcloud")
 		data["depth_instability"] = drc.get("instability")
 		print("Saving DRC: depth=", drc.get("active_depth"), " progress=", drc.get("run")[0].get("progress") if drc.get("run") is Array and drc.get("run").size() > 0 else "N/A")
 		
@@ -1839,21 +1919,21 @@ func get_save_data() -> Dictionary:
 	
 	# Click upgrades
 	data["click_power_level"] = click_power_level
-	data["click_control_level"] = click_control_level
+	data["click_dreamcloud_level"] = click_dreamcloud_level
 	data["click_stability_level"] = click_stability_level
 	data["click_flow_level"] = click_flow_level
 	data["click_resonance_level"] = click_resonance_level
 	
 		# Click upgrades evolution
 	data["click_power_evolution"] = click_power_evolution
-	data["click_control_evolution"] = click_control_evolution
+	data["click_dreamcloud_evolution"] = click_dreamcloud_evolution
 	data["click_stability_evolution"] = click_stability_evolution
 	data["click_flow_evolution"] = click_flow_evolution
 	data["click_resonance_evolution"] = click_resonance_evolution
 	
 	# Sacrifice penalties
 	data["power_sacrifice"] = power_sacrifice_penalty
-	data["control_sacrifice"] = control_sacrifice_penalty
+	data["dreamcloud_sacrifice"] = dreamcloud_sacrifice_penalty
 	data["stability_sacrifice"] = stability_sacrifice_penalty
 	data["flow_sacrifice"] = flow_sacrifice_penalty
 	data["resonance_sacrifice"] = resonance_sacrifice_penalty
@@ -1868,7 +1948,33 @@ func get_save_data() -> Dictionary:
 		data["abyss_shop_unlocked"] = shop_data.unlocked
 		data["abyss_shop_active"] = shop_data.active
 	
+	# ADD DRC DATA
+	if drc:
+		data["depth_run_controller"] = {
+			"active_depth": int(drc.active_depth),
+			"max_unlocked_depth": int(drc.max_unlocked_depth),
+			"run": drc._run_internal.duplicate(true),
+			"local_upgrades": drc.local_upgrades.duplicate(true),
+			"dream_current": drc.dream_current if "dream_current" in drc else 1.0
+		}
+		print("Saved DRC active_depth: ", drc.active_depth)
+	
 	data["last_play_time"] = Time.get_unix_time_from_system()
+	
+	# NEW: Dream Cloud (replacing dreamcloud)
+	data["dreamcloud"] = dreamcloud
+	data["lifetime_cloud"] = lifetime_cloud
+	
+	# NEW: Combat stats
+	data["combats_won"] = combats_won
+	data["combats_lost"] = combats_lost
+	data["perfect_combats"] = perfect_combats
+	data["current_gear_score"] = current_gear_score
+	
+	# NEW: Equipment data
+	data["equipment"] = equipment_manager.get_save_data()
+	
+	# NOW return at the end
 	return data
 	
 	
@@ -1881,7 +1987,7 @@ func load_game() -> void:
 	
 	# Load lifetime stats
 	lifetime_thoughts = float(data.get(LT_THOUGHTS, 0.0))
-	lifetime_control = float(data.get(LT_CONTROL, 0.0))
+	lifetime_dreamcloud = float(data.get(LT_dreamcloud, 0.0))
 	total_dives = int(data.get(LT_DIVES, 0))
 	total_playtime = float(data.get(LT_PLAYTIME, 0.0))
 	max_depth_reached = int(data.get(LT_DEEPEST, 1))
@@ -1889,7 +1995,7 @@ func load_game() -> void:
 	# Load basic stats first
 	memories = float(data.get("memories", 0.0))
 	thoughts = float(data.get("thoughts", 0.0))
-	control = float(data.get("control", 0.0))
+	dreamcloud = float(data.get("dreamcloud", 0.0))
 	instability = float(data.get("instability", 0.0))
 	time_in_run = float(data.get("time_in_run", 0.0))
 	total_thoughts_earned = float(data.get("total_thoughts_earned", 0.0))
@@ -1981,8 +2087,8 @@ func load_game() -> void:
 			drc.set("frozen_upgrades", fixed_frozen)
 		if data.has("depth_thoughts"):
 			drc.set("thoughts", float(data["depth_thoughts"]))
-		if data.has("depth_control"):
-			drc.set("control", float(data["depth_control"]))
+		if data.has("depth_dreamcloud"):
+			drc.set("dreamcloud", float(data["depth_dreamcloud"]))
 		if data.has("depth_instability"):
 			drc.set("instability", float(data["depth_instability"]))
 		
@@ -2089,7 +2195,7 @@ func load_game() -> void:
 	perk_system.perk3_level = int(data.get("perk3_level", 0))
 	
 	click_power_level = int(data.get("click_power_level", 0))
-	click_control_level = int(data.get("click_control_level", 0))
+	click_dreamcloud_level = int(data.get("click_dreamcloud_level", 0))
 	click_stability_level = int(data.get("click_stability_level", 0))
 	click_flow_level = int(data.get("click_flow_level", 0))
 	click_resonance_level = int(data.get("click_resonance_level", 0))
@@ -2097,14 +2203,14 @@ func load_game() -> void:
 	
 	# Evolution
 	click_power_evolution = int(data.get("click_power_evolution", 0))
-	click_control_evolution = int(data.get("click_control_evolution", 0))
+	click_dreamcloud_evolution = int(data.get("click_dreamcloud_evolution", 0))
 	click_stability_evolution = int(data.get("click_stability_evolution", 0))
 	click_flow_evolution = int(data.get("click_flow_evolution", 0))
 	click_resonance_evolution = int(data.get("click_resonance_evolution", 0))
 	
 	# Sacrifices
 	power_sacrifice_penalty = float(data.get("power_sacrifice", 1.0))
-	control_sacrifice_penalty = float(data.get("control_sacrifice", 1.0))
+	dreamcloud_sacrifice_penalty = float(data.get("dreamcloud_sacrifice", 1.0))
 	stability_sacrifice_penalty = float(data.get("stability_sacrifice", 1.0))
 	flow_sacrifice_penalty = float(data.get("flow_sacrifice", 1.0))
 	resonance_sacrifice_penalty = float(data.get("resonance_sacrifice", 1.0))
@@ -2127,6 +2233,19 @@ func load_game() -> void:
 	if depth_panel and depth_panel.has_method("refresh_all"):
 		depth_panel.refresh_all()
 	
+	# NEW: Load Dream Cloud
+	dreamcloud = float(data.get("dreamcloud", 0.0))
+	lifetime_cloud = float(data.get("lifetime_cloud", 0.0))
+	
+	# NEW: Load combat stats
+	combats_won = int(data.get("combats_won", 0))
+	combats_lost = int(data.get("combats_lost", 0))
+	perfect_combats = int(data.get("perfect_combats", 0))
+	
+	# NEW: Load equipment
+	if data.has("equipment"):
+		equipment_manager.load_save_data(data.equipment)
+		
 	# Load Abyss Shop items (call after a delay to ensure scene is ready)
 	call_deferred("_load_abyss_shop")
 	# CRITICAL: Defer shop sync to ensure scene is ready
@@ -2174,16 +2293,48 @@ func _sync_panel_after_load() -> void:
 			print("VERIFY: Depth 1 progress after sync: ", d1.get("progress", "ERROR"))
 			
 func _bind_ui_mainui() -> void:
-	thoughts_label = _ui_find("ThoughtsLabel") as Label
-	control_label = _ui_find("ControlLabel") as Label
-	instability_label = _ui_find("InstabilityLabel") as Label
-	instability_bar = _ui_find("InstabilityBar") as Range
+	var main = get_node_or_null("/root/Main")
+	if main == null:
+		print("ERROR: Main not found")
+		return
 	
-	# ASSIGN BUTTONS BEFORE THE NULL CHECK
-	wake_button = _ui_find_button("WakeButton")
-	meta_button = _ui_find_button("Meta")
-	overclock_button = _ui_find_button("OverclockButton")
-	dive_button = find_button_recursive("DiveButton")
+	# Navigate to the correct container: Main/MainUI/Root
+	var main_ui = main.find_child("MainUI", true, false)
+	if main_ui == null:
+		print("ERROR: MainUI not found")
+		return
+		
+	var root_container = main_ui.find_child("Root", true, false)
+	if root_container == null:
+		print("ERROR: Root not found in MainUI")
+		return
+	
+	# Now search from Root (this is where TopBarPanel lives)
+	top_bar_panel = root_container.find_child("TopBarPanel", true, false)
+	
+	if top_bar_panel != null:
+		# Search within TopBarPanel for the labels
+		thoughts_label = top_bar_panel.find_child("ThoughtsLabel", true, false) as Label
+		dreamcloud_label = top_bar_panel.find_child("dreamcloudLabel", true, false) as Label
+		instability_label = top_bar_panel.find_child("InstabilityLabel", true, false) as Label
+		instability_bar = top_bar_panel.find_child("InstabilityBar", true, false) as ProgressBar
+		
+		print("UI BIND SUCCESS: thoughts_label=", thoughts_label != null, 
+			  " dreamcloud_label=", dreamcloud_label != null,
+			  " inst_bar=", instability_bar != null,
+			  " from TopBarPanel=", top_bar_panel != null)
+	else:
+		print("ERROR: TopBarPanel not found in Root")
+		# Fallback: try searching entire Main
+		thoughts_label = main.find_child("ThoughtsLabel", true, false) as Label
+	
+	# Bind other buttons from Main
+	wake_button = main.find_child("WakeButton", true, false) as Button
+	meta_button = main.find_child("Meta", true, false) as Button
+	overclock_button = main.find_child("OverclockButton", true, false) as Button
+	dive_button = main.find_child("DiveButton", true, false) as Button
+	
+	print("UI BIND: thoughts_label=", thoughts_label != null, " main=", main.name)
 	
 	# Now safe to check and return
 	if thoughts_label == null:
@@ -2411,8 +2562,8 @@ func _try_auto_overclock() -> void:
 	if overclock_system.active:
 		return
 	var cost_mul: float = upgrade_manager.get_overclock_cost_mult()
-	overclock_system.control_cost = overclock_system.base_control_cost * cost_mul
-	if not overclock_system.can_activate(control):
+	overclock_system.dreamcloud_cost = overclock_system.base_dreamcloud_cost * cost_mul
+	if not overclock_system.can_activate(dreamcloud):
 		return
 	if instability >= auto_overclock_instability_limit:
 		return
@@ -2433,9 +2584,13 @@ func _apply_thoughts_return(res) -> void:
 	if res is Dictionary:
 		if res.get("bought", false):
 			thoughts = maxf(0.0, thoughts - float(res.get("cost", 0.0)))
+		_sync_to_drc()  # ADD THIS
+		_refresh_top_ui()
 		return
 	if res is float or res is int:
 		thoughts = float(res)
+		_sync_to_drc()  # ADD THIS
+		_refresh_top_ui()
 
 func do_buy_thoughts_upgrade(_unused: float = 0.0) -> void:
 	if upgrade_manager == null:
@@ -2549,7 +2704,7 @@ func _update_debug_overlay() -> void:
 	
 	_debug_label.text = "Debug (F8)\n" \
 		+ "Thoughts: %s (%.3f/s)\n" % [_fmt_num(thoughts), maxf(_thoughts_ps, 0.0)] \
-		+ "Control: %s (%.3f/s)\n" % [_fmt_num(control), maxf(_control_ps, 0.0)] \
+		+ "dreamcloud: %s (%.3f/s)\n" % [_fmt_num(dreamcloud), maxf(_dreamcloud_ps, 0.0)] \
 		+ "Instability: %.2f\n" % instability \
 		+ "Instab gain/s: %.4f\n" % gain \
 		+ "TTF: %s (raw %.1fs)\n" % [_fmt_time_ui(ttf), ttf] \
@@ -2563,6 +2718,13 @@ func _notification(what: int) -> void:
 		SaveSystem.save_game(data)
 		get_tree().quit()
 
+func _sync_to_drc() -> void:
+	var drc := get_node_or_null("/root/DepthRunController")
+	if drc != null:
+		drc.set("thoughts", thoughts)
+		drc.set("dreamcloud", dreamcloud)
+		drc.set("instability", instability)
+		
 # When buying velocity/progress upgrades:
 func buy_dream_current_upgrade(amount: float) -> void:
 	dream_current += amount
@@ -2570,6 +2732,14 @@ func buy_dream_current_upgrade(amount: float) -> void:
 	save_game()
 	
 func _process(delta: float) -> void:
+	
+	
+	# CRITICAL FIX: Skip accumulation during reset, but still update UI
+	if _is_resetting_run:
+		_refresh_top_ui()  # ADD THIS - forces UI to show reset values
+		_update_buttons_ui()
+		_force_cooldown_texts()
+		return
 	if depth_meta_system == null:
 		push_error("depth_meta_system is null!")
 		return
@@ -2706,19 +2876,19 @@ func _process(delta: float) -> void:
 	
 	# Calculate multipliers
 	var thoughts_mult: float = _safe_mult(upgrade_manager.get_thoughts_mult()) * _safe_mult(perk_system.get_thoughts_mult()) * _safe_mult(nightmare_system.get_thoughts_mult()) * _get_run_upgrades_thoughts_mult()
-	var control_mult: float = _safe_mult(perk_system.get_control_mult()) * _safe_mult(nightmare_system.get_control_mult())
+	var dreamcloud_mult: float = _safe_mult(perk_system.get_dreamcloud_mult()) * _safe_mult(nightmare_system.get_dreamcloud_mult())
 	
 	if depth_meta_system != null:
 		thoughts_mult *= _safe_mult(depth_meta_system.get_global_thoughts_mult())
-		control_mult *= _safe_mult(depth_meta_system.get_global_control_mult())
+		dreamcloud_mult *= _safe_mult(depth_meta_system.get_global_dreamcloud_mult())
 	
 	if perm_perk_system != null:
 		thoughts_mult *= _safe_mult(perm_perk_system.get_thoughts_mult())
-		control_mult *= _safe_mult(perm_perk_system.get_control_mult())
+		dreamcloud_mult *= _safe_mult(perm_perk_system.get_dreamcloud_mult())
 	
 	if abyss_perk_system != null:
 		thoughts_mult *= _safe_mult(abyss_perk_system.get_thoughts_mult())
-		control_mult *= _safe_mult(abyss_perk_system.get_control_mult())
+		dreamcloud_mult *= _safe_mult(abyss_perk_system.get_dreamcloud_mult())
 	
 	
 	var deep_bonus_per_depth: float = upgrade_manager.get_deep_dives_thoughts_bonus_per_depth()
@@ -2732,16 +2902,20 @@ func _process(delta: float) -> void:
 	
 	var boost_mult := 2.0 if timed_boost_active else 1.0
 	thoughts_mult *= boost_mult
-	control_mult *= boost_mult
+	dreamcloud_mult *= boost_mult
 	
 	var progress_mult := _get_total_progress_multiplier()
 	thoughts_mult *= progress_mult
-	control_mult *= progress_mult
+	dreamcloud_mult *= progress_mult
 	
 	# Calculate and add thoughts
 	var thoughts_to_add := idle_thoughts_rate * thoughts_mult * depth_thoughts_mult * _get_shop_boost() * delta
 	thoughts += thoughts_to_add
-	control += idle_control_rate * control_mult * delta
+	dreamcloud += idle_dreamcloud_rate * dreamcloud_mult * delta
+	
+	# ADD DEBUG PRINT
+	if Engine.get_process_frames() % 60 == 0:  # Print once per second
+		print("GM _process: thoughts=", thoughts, " added=", thoughts_to_add, " drc_ref=", drc)
 	
 	var whisper_mult = 1.0
 	if current_depth == 4 and instability >= 60.0:  # 60% threshold
@@ -2788,13 +2962,13 @@ func _process(delta: float) -> void:
 	if _rate_sample_timer >= 0.5:
 		var inv_dt: float = 1.0 / _rate_sample_timer
 		_thoughts_ps = (thoughts - _last_thoughts_sample) * inv_dt
-		_control_ps = (control - _last_control_sample) * inv_dt
+		_dreamcloud_ps = (dreamcloud - _last_dreamcloud_sample) * inv_dt
 		_last_thoughts_sample = thoughts
-		_last_control_sample = control
+		_last_dreamcloud_sample = dreamcloud
 		_rate_sample_timer = 0.0
 	
 	var thoughts_ps_display := idle_thoughts_rate * thoughts_mult * depth_thoughts_mult * _get_shop_boost()
-	var control_ps_display := idle_control_rate * control_mult
+	var dreamcloud_ps_display := idle_dreamcloud_rate * dreamcloud_mult
 	
 	for i in range(_active_temp_buffs.size() - 1, -1, -1):
 		var buff = _active_temp_buffs[i]
@@ -2803,13 +2977,28 @@ func _process(delta: float) -> void:
 			_active_temp_buffs.remove_at(i)
 			print("Temporary buff expired: ", buff.source)
 
-	if drc != null:
+	# NEW: Dream Cloud generation (small passive amount)
+	var cloud_ps := get_dreamcloud_per_sec()
+	dreamcloud += cloud_ps * delta
+	lifetime_cloud += cloud_ps * delta
+	
+	# NEW: Combat encounter spawning (Depth 3+)
+	var combat_depth := get_current_depth()
+	if combat_depth >= 3:
+		dream_encounter.update(delta, combat_depth, instability)
+	
+	# Update gear score
+	current_gear_score = equipment_manager.calculate_total_gear_score()
+	
+	if drc != null and not _is_resetting_run:
 		drc.instability = instability
 		drc.set("thoughts", thoughts)
-		drc.set("control", control)
+		drc.set("dreamcloud", dreamcloud)
 		drc.set("thoughts_per_sec", thoughts_ps_display)
-		drc.set("control_per_sec", control_ps_display)
+		drc.set("dreamcloud_per_sec", dreamcloud_ps_display)
 		drc.set("dream_current", dream_current)
+	else:
+		print("SKIPPED SYNC: drc=", drc, " _is_resetting_run=", _is_resetting_run)
 	
 	_autosave_timer += delta
 	if _autosave_timer >= 5.0:
@@ -2819,6 +3008,10 @@ func _process(delta: float) -> void:
 		data["last_play_time"] = Time.get_unix_time_from_system()
 		SaveSystem.save_game(data)
 		print("AUTO-SAVE TIME")
+	
+	# ADD DEBUG PRINT
+	if Engine.get_process_frames() % 60 == 0:
+		print("GM SYNC TO DRC: thoughts=", thoughts, " drc.thoughts=", drc.get("thoughts"))
 		
 	_refresh_top_ui()
 	_update_buttons_ui()
@@ -2828,6 +3021,77 @@ func _process(delta: float) -> void:
 	_update_click_combo(delta)
 	if _debug_visible:
 		_update_debug_overlay()
+
+func get_dreamcloud_per_sec() -> float:
+	var base := 0.1  # Small passive generation
+	var depth_mult := 1.0 + (get_current_depth() * 0.05)
+	return base * depth_mult
+
+func get_dreamcloud_from_combat(depth: int, perfect: bool = false) -> int:
+	var base: int = 0
+	match depth:
+		3, 4: base = randi_range(50, 100)
+		5, 6: base = randi_range(150, 300)
+		7, 8: base = randi_range(300, 600)
+		9, 10: base = randi_range(600, 1200)
+		11, 12: base = randi_range(1000, 2000)
+		13, 14: base = randi_range(1500, 3500)
+		15: base = randi_range(2500, 5000)
+	
+	if perfect:
+		base = int(base * 1.5)
+	
+	return base
+
+func _on_dream_encounter_started(encounter: Dictionary) -> void:
+	# Pause depth progress during combat
+	set_meta("progress_paused", true)
+	
+	if encounter.type == "combat":
+		# Start combat
+		var enemy_data: Dictionary = encounter.enemy
+		var player_stats := equipment_manager.get_player_combat_stats()
+		
+		combat_engine.start_combat(player_stats, enemy_data, encounter.depth)
+		
+		# Show combat UI
+		_show_combat_ui()
+
+func _show_combat_ui() -> void:
+	# TODO: Show your combat modal UI
+	pass
+
+func get_instability_cap(depth: int) -> float:
+	# Your existing instability cap formula
+	return 100.0 * pow(1.15, depth - 1)  # Adjust formula as needed
+	
+func _hide_combat_ui() -> void:
+	# TODO: Hide your combat modal UI  
+	pass
+
+func _on_dream_encounter_completed(result: Dictionary) -> void:
+	set_meta("progress_paused", false)
+	
+	if result.won:
+		var cloud_reward := get_dreamcloud_from_combat(result.depth, result.perfect)
+		dreamcloud += cloud_reward
+		
+		combats_won += 1
+		if result.perfect:
+			perfect_combats += 1
+		
+		# Chance for equipment drop
+		if result.drop:
+			equipment_manager.add_item(result.drop)
+	
+	else:
+		combats_lost += 1
+		# Instability penalty for losing
+		instability += get_instability_cap(get_current_depth()) * 0.1
+	
+	_hide_combat_ui()
+	save_game()
+
 
 func _quick_save_time():
 	# Lightweight save - just the timestamp for offline tracking
@@ -3155,7 +3419,7 @@ func can_dive_to_next_depth() -> bool:
 	
 	return current_instab_upgrade_level >= max_instab_upgrade
 
-func _show_offline_progress_popup(thoughts_gained: float, control_gained: float, progress_gained: float, mem_gained: float, cry_gained: float, active_depth: int) -> void:
+func _show_offline_progress_popup(thoughts_gained: float, dreamcloud_gained: float, progress_gained: float, mem_gained: float, cry_gained: float, active_depth: int) -> void:
 	var existing_layer := get_tree().current_scene.find_child("OfflineProgressLayer", true, false)
 	if existing_layer != null:
 		existing_layer.queue_free()
@@ -3250,17 +3514,17 @@ func _show_offline_progress_popup(thoughts_gained: float, control_gained: float,
 	thoughts_value.add_theme_color_override("font_color", Color(0.4, 0.9, 0.4, 1.0))
 	grid.add_child(thoughts_value)
 	
-	# Control
+	# dreamcloud
 	@warning_ignore("shadowed_variable")
-	var control_label := Label.new()
-	control_label.text = "Control:"
-	control_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	grid.add_child(control_label)
+	var dreamcloud_label := Label.new()
+	dreamcloud_label.text = "dreamcloud:"
+	dreamcloud_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	grid.add_child(dreamcloud_label)
 	
-	var control_value := Label.new()
-	control_value.text = "+%s" % _fmt_num(control_gained)
-	control_value.add_theme_color_override("font_color", Color(0.4, 0.7, 0.9, 1.0))
-	grid.add_child(control_value)
+	var dreamcloud_value := Label.new()
+	dreamcloud_value.text = "+%s" % _fmt_num(dreamcloud_gained)
+	dreamcloud_value.add_theme_color_override("font_color", Color(0.4, 0.7, 0.9, 1.0))
+	grid.add_child(dreamcloud_value)
 	
 	# Separator for depth-specific
 	var sep2 := HSeparator.new()
@@ -3471,16 +3735,9 @@ func on_manual_focus_clicked() -> void:
 	
 	thoughts += thoughts_gained
 	total_thoughts_earned += thoughts_gained
+	_sync_to_drc()  # ADD THIS
 	_register_click_for_combo()
 	_refresh_top_ui()
-
-func get_click_power() -> float:
-	var base := 10.0 * pow(10.0, float(click_power_level) / 3.0)
-	var milestones := _get_milestone_count(click_power_level)
-	var milestone_mult := pow(1.5, milestones)
-	var evolution_mult := pow(2.0, click_power_evolution)
-	
-	return base * milestone_mult * evolution_mult * power_sacrifice_penalty
 
 func get_click_stability_reduction() -> float:
 	var base := 5.0 * pow(1.15, float(click_stability_level))
@@ -3490,13 +3747,13 @@ func get_click_stability_reduction() -> float:
 	
 	return base * milestone_mult * evolution_mult * stability_sacrifice_penalty
 
-func get_click_control_gain() -> float:
-	var base := 0.5 * pow(1.2, float(click_control_level))
-	var milestones := _get_milestone_count(click_control_level)
+func get_click_dreamcloud_gain() -> float:
+	var base := 0.5 * pow(1.2, float(click_dreamcloud_level))
+	var milestones := _get_milestone_count(click_dreamcloud_level)
 	var milestone_mult := pow(1.4, milestones)
-	var evolution_mult := pow(2.0, click_control_evolution)
+	var evolution_mult := pow(2.0, click_dreamcloud_evolution)
 	
-	return base * milestone_mult * evolution_mult * control_sacrifice_penalty
+	return base * milestone_mult * evolution_mult * dreamcloud_sacrifice_penalty
 
 func get_combo_window() -> float:
 	var base := 2.0 + (float(click_flow_level) * 0.02)
@@ -3531,7 +3788,7 @@ func can_evolve(upgrade_type: String) -> bool:
 	var level := 0
 	match upgrade_type:
 		"power": level = click_power_level
-		"control": level = click_control_level
+		"dreamcloud": level = click_dreamcloud_level
 		"stability": level = click_stability_level
 		"flow": level = click_flow_level
 		"resonance": level = click_resonance_level
@@ -3544,7 +3801,7 @@ func evolve_upgrade(upgrade_type: String, sacrifice_type: String) -> bool:
 	# Apply evolution
 	match upgrade_type:
 		"power": click_power_evolution += 1
-		"control": click_control_evolution += 1
+		"dreamcloud": click_dreamcloud_evolution += 1
 		"stability": click_stability_evolution += 1
 		"flow": click_flow_evolution += 1
 		"resonance": click_resonance_evolution += 1
@@ -3558,7 +3815,7 @@ func evolve_upgrade(upgrade_type: String, sacrifice_type: String) -> bool:
 	
 	match sacrifice_type:
 		"power": power_sacrifice_penalty *= penalty
-		"control": control_sacrifice_penalty *= penalty
+		"dreamcloud": dreamcloud_sacrifice_penalty *= penalty
 		"stability": stability_sacrifice_penalty *= penalty
 		"flow": flow_sacrifice_penalty *= penalty
 		"resonance": resonance_sacrifice_penalty *= penalty
@@ -3609,20 +3866,17 @@ func try_buy_click_power_upgrade() -> bool:
 	var cost := get_click_power_cost()
 	if thoughts < cost:
 		return false
-	
 	thoughts -= cost
 	click_power_level += 1
-	recalculate_click_stats()
-	save_game()
 	return true
 
-func try_buy_click_control_upgrade() -> bool:
-	var cost := get_click_control_cost()
+func try_buy_click_dreamcloud_upgrade() -> bool:
+	var cost := get_click_dreamcloud_cost()
 	if thoughts < cost:
 		return false
 	
 	thoughts -= cost
-	click_control_level += 1
+	click_dreamcloud_level += 1
 	recalculate_click_stats()
 	save_game()
 	return true
@@ -3662,17 +3916,23 @@ func try_buy_click_resonance_upgrade() -> bool:
 
 func recalculate_click_stats() -> void:
 	# Update cached values based on levels
-	click_control_gain = float(click_control_level) * 0.3
+	click_dreamcloud_gain = float(click_dreamcloud_level) * 0.3
 	click_instability_reduction = float(click_stability_level) * 0.8
 
 func get_click_power_cost() -> float:
-	return 50.0 * pow(10.0, float(click_power_level) / 2.5)
+	return 100.0 * pow(1.8, click_power_level)
+
+func get_click_power() -> float:
+	return click_power_level * 0.001  # 0.1% per level
+
+func get_click_power_evolution() -> int:
+	return click_power_evolution
 
 func get_click_stability_cost() -> float:
 	return 100.0 * pow(10.0, float(click_stability_level) / 2.8)
 
-func get_click_control_cost() -> float:
-	return 75.0 * pow(10.0, float(click_control_level) / 2.6)
+func get_click_dreamcloud_cost() -> float:
+	return 75.0 * pow(10.0, float(click_dreamcloud_level) / 2.6)
 
 func get_click_flow_cost() -> float:
 	return 150.0 * pow(10.0, float(click_flow_level) / 2.4)
@@ -3740,7 +4000,7 @@ func _create_click_upgrade_panel() -> void:
 	vbox.add_child(sep)
 	
 	# Create rows
-	var upgrade_types := ["power", "control", "stability", "flow", "resonance"]
+	var upgrade_types := ["power", "dreamcloud", "stability", "flow", "resonance"]
 	for type in upgrade_types:
 		if ResourceLoader.exists("res://UI/ClickUpgradeRow.gd"):
 			var row = preload("res://UI/ClickUpgradeRow.gd").new()
@@ -3893,7 +4153,7 @@ func _create_click_upgrade_sidebar() -> void:
 	# Don't expand vertical - let it grow naturally
 	vbox.add_child(rows_vbox)
 		
-	var upgrade_types := ["power", "control", "stability", "flow", "resonance"]
+	var upgrade_types := ["power", "dreamcloud", "stability", "flow", "resonance"]
 	for type in upgrade_types:
 		if ResourceLoader.exists("res://UI/ClickUpgradeRow.gd"):
 			var row = preload("res://UI/ClickUpgradeRow.gd").new()
@@ -3946,7 +4206,7 @@ func _setup_click_buttons() -> void:
 	
 	# Find the buttons
 	var thoughts_btn := click_row.find_child("ClickThoughts", false, false) as Button
-	var control_btn := click_row.find_child("ClickControl", false, false) as Button
+	var dreamcloud_btn := click_row.find_child("Clickdreamcloud", false, false) as Button
 	var instability_btn := click_row.find_child("ClickInstability", false, false) as Button
 	
 	# Connect to existing functions
@@ -3954,11 +4214,11 @@ func _setup_click_buttons() -> void:
 		thoughts_btn.pressed.connect(on_manual_focus_clicked)
 		_style_click_button(thoughts_btn, "🧠 Focus", Color(0.35, 0.8, 0.95))  # Blue
 	
-	if control_btn:
+	if dreamcloud_btn:
 		# You'll need to add this function or use existing logic
-		if not control_btn.pressed.is_connected(_on_click_control):
-			control_btn.pressed.connect(_on_click_control)
-		_style_click_button(control_btn, "🛡️ Breathe", Color(0.4, 0.9, 0.5))  # Green
+		if not dreamcloud_btn.pressed.is_connected(_on_click_dreamcloud):
+			dreamcloud_btn.pressed.connect(_on_click_dreamcloud)
+		_style_click_button(dreamcloud_btn, "🛡️ Breathe", Color(0.4, 0.9, 0.5))  # Green
 	
 	if instability_btn:
 		if not instability_btn.pressed.is_connected(_on_click_instability):
@@ -4008,11 +4268,11 @@ func _connect_click_buttons() -> void:
 	# Map button names to functions
 	var connections := {
 		"Think": on_manual_focus_clicked,           # or _on_click_think
-		"Control": _on_click_control,
+		"dreamcloud": _on_click_dreamcloud,
 		"Stabilize": _on_click_stabilize,
 		# Fallback names if different
 		"ClickThoughts": on_manual_focus_clicked,
-		"ClickControl": _on_click_control,
+		"Clickdreamcloud": _on_click_dreamcloud,
 		"ClickInstability": _on_click_stabilize
 	}
 	
@@ -4036,26 +4296,18 @@ func _on_click_think() -> void:
 	_show_click_feedback(thoughts_gained, "thoughts")
 	_refresh_top_ui()
 
-func _on_click_control() -> void:
-	var gain := click_control_gain * get_combo_multiplier()
-	control += gain
+func _on_click_dreamcloud() -> void:
+	var gain := click_dreamcloud_gain * get_combo_multiplier()
+	dreamcloud += gain
+	_sync_to_drc()  # ADD THIS
 	_register_click_for_combo()
-	_show_click_feedback(gain, "control")
+	_show_click_feedback(gain, "dreamcloud")
 	_refresh_top_ui()
 
 func _on_click_stabilize() -> void:
 	var reduction := click_instability_reduction
-	if reduction <= 0.0:
-		return  # No levels purchased
-	
-	# Apply reduction
 	instability = maxf(0.0, instability - reduction)
-	
-	# Push to DRC so save/load keeps the stabilized value
-	var drc := get_node_or_null("/root/DepthRunController")
-	if drc != null:
-		drc.instability = instability
-	
+	_sync_to_drc()  # ADD THIS
 	_register_click_for_combo()
 	_show_click_feedback(reduction, "instability")
 	_refresh_top_ui()
@@ -4284,20 +4536,20 @@ func apply_offline_earnings(seconds: float) -> void:
 	
 	# Calculate earnings using same logic as _apply_offline_progress
 	var thoughts_earned := idle_thoughts_rate * _calculate_all_multipliers() * effective_seconds
-	var control_earned := idle_control_rate * _calculate_control_mult() * effective_seconds
+	var dreamcloud_earned := idle_dreamcloud_rate * _calculate_dreamcloud_mult() * effective_seconds
 	
 	thoughts += thoughts_earned
-	control += control_earned
+	dreamcloud += dreamcloud_earned
 	total_thoughts_earned += thoughts_earned
 	
 	_show_time_warp_notification(effective_seconds, thoughts_earned)
 
-func _calculate_control_mult() -> float:
+func _calculate_dreamcloud_mult() -> float:
 	var mult: float = 1.0
 	if perk_system != null:
-		mult *= _safe_mult(perk_system.get_control_mult())
+		mult *= _safe_mult(perk_system.get_dreamcloud_mult())
 	if perm_perk_system != null:
-		mult *= _safe_mult(perm_perk_system.get_control_mult())
+		mult *= _safe_mult(perm_perk_system.get_dreamcloud_mult())
 	return mult
 
 func _show_time_warp_notification(seconds: float, thoughts_gained: float) -> void:

@@ -20,7 +20,7 @@ var currencies_container: HBoxContainer
 
 # Currency displays (Right side)
 var thoughts_display: HBoxContainer
-var control_display: HBoxContainer
+var dreamcloud_display: HBoxContainer
 var gems_display: HBoxContainer
 
 # Left side buttons
@@ -148,10 +148,10 @@ func _hide_old_ui() -> void:
 		for child in old_margin.get_children():
 			child.visible = false
 	
-	# Hide old ControlPad
-	var old_control = get_node_or_null("TopBar/ControlPad")
-	if old_control:
-		old_control.visible = false
+	# Hide old dreamcloudPad
+	var old_dreamcloud = get_node_or_null("TopBar/dreamcloudPad")
+	if old_dreamcloud:
+		old_dreamcloud.visible = false
 	
 	# CRITICAL: Find any stray "Watch Ad" labels or buttons that might be in old UI
 	for child in get_tree().current_scene.find_children("*", "Button", true):
@@ -266,9 +266,9 @@ func _setup_currency_displays() -> void:
 	thoughts_display = _create_currency_display("🧠", Color(1.0, 0.85, 0.4))
 	currencies_container.add_child(thoughts_display)
 	
-	# Control: 🛡️ icon + value  
-	control_display = _create_currency_display("🛡️", Color(0.4, 0.85, 1.0))
-	currencies_container.add_child(control_display)
+	# dreamcloud: 🛡️ icon + value  
+	dreamcloud_display = _create_currency_display("🛡️", Color(0.4, 0.85, 1.0))
+	currencies_container.add_child(dreamcloud_display)
 	
 	# Gems: 💎 icon + value
 	gems_display = _create_currency_display("💎", Color(0.2, 0.8, 1.0))
@@ -344,17 +344,76 @@ func _on_time_warp_pressed() -> void:
 		push_warning("TimeWarpPanel not found!")
 
 func _process(_delta: float) -> void:
+	var gm = get_node_or_null("/root/Main/GameManager")
+	if gm == null:
+		return
+	
+	# Get DRC reference
+	if _run == null:
+		_run = get_node_or_null("/root/DepthRunController")
+	
+	# Get instability values
+	var inst_value: float = 0.0
+	var inst_cap: float = 1000.0
+	var inst_rate: float = 0.0
+	
+	if _run != null:
+		inst_value = float(_run.get("instability")) if _run.get("instability") != null else 0.0
+		
+		# Get cap
+		if _run.has_method("get_instability_cap"):
+			inst_cap = _run.call("get_instability_cap", int(_run.get("active_depth")))
+		elif _run.has_method("get_depth_progress_cap"):
+			inst_cap = _run.call("get_depth_progress_cap", int(_run.get("active_depth"))) * 1.2
+		
+		# Get rate from DRC
+		if _run.has_method("_apply_depth_rules"):
+			var applied = _run.call("_apply_depth_rules", int(_run.get("active_depth")))
+			inst_rate = applied.get("instability_per_sec", 0.0)
+	
+	# CRITICAL FIX: Calculate percentage (0-100)
+	var inst_percent: float = (inst_value / inst_cap) * 100.0 if inst_cap > 0 else 0.0
+	
+	# Update title
+	if inst_title:
+		inst_title.text = "Instability (+%.0f/s)" % inst_rate
+	
+	# CRITICAL FIX: Update bar value
+	if inst_bar:
+		inst_bar.max_value = 100.0
+		inst_bar.value = inst_percent  # This MUST be between 0 and 100
+		
+		# Debug print
+		if Engine.get_process_frames() % 60 == 0:
+			print("Instability: ", inst_value, "/", inst_cap, " = ", inst_percent, "%")
+		
+		# Color coding based on percentage
+		if inst_percent < 50:
+			inst_bar.modulate = Color(0.2, 0.8, 0.2)  # Green
+		elif inst_percent < 80:
+			inst_bar.modulate = Color(0.95, 0.65, 0.15)  # Amber
+		else:
+			inst_bar.modulate = Color(0.85, 0.18, 0.18)  # Red
+			
+	if gm == null:
+		return
+		
+	var thoughts: float = gm.thoughts
+	var dreamcloud: float = gm.dreamcloud
+	var thoughts_ps: float = gm._thoughts_ps
+	
+	# ADD DEBUG PRINT
+	if Engine.get_process_frames() % 60 == 0:
+		print("TOPBAR READ FROM DRC: thoughts=", thoughts, " dreamcloud=", dreamcloud)
+	
 	if _run == null:
 		_run = get_node_or_null("/root/DepthRunController")
 		if _run == null:
 			return
 
-	var thoughts: float = float(_run.get("thoughts"))
-	var control: float = float(_run.get("control"))
-	var thoughts_ps: float = float(_run.get("thoughts_per_sec"))
-	var control_ps: float = 0.0
-	if _run.has_method("get_control_per_sec"):
-		control_ps = float(_run.call("get_control_per_sec"))
+	var dreamcloud_ps: float = 0.0
+	if _run.has_method("get_dreamcloud_per_sec"):
+		dreamcloud_ps = float(_run.call("get_dreamcloud_per_sec"))
 
 	var active_depth: int = int(_run.get("active_depth"))
 	var max_depth: int = 0
@@ -373,10 +432,9 @@ func _process(_delta: float) -> void:
 	
 	# Update currency displays with tooltips
 	_update_currency_display(thoughts_display, thoughts, thoughts_ps, "Thoughts")
-	_update_currency_display(control_display, control, control_ps, "Control")
+	_update_currency_display(dreamcloud_display, dreamcloud, dreamcloud_ps, "dreamcloud")
 	
 	# Update gems
-	var gm := get_node_or_null("/root/Main/GameManager")
 	if gems_display and gm:
 		var gems_count: int = gm.gems if "gems" in gm else 0
 		gems_display.get_node("ValueLabel").text = _fmt_num_compact(gems_count)
@@ -459,40 +517,80 @@ func _update_watch_ad_button() -> void:
 	else:
 		watch_ad_button.modulate = Color(1, 1, 1)
 
+# In TopBarPanel.gd, update the instability display section:
+func _update_instability_display() -> void:
+	if _run == null:
+		return
+	
+	# Get instability as percentage (0-100+)
+	var inst_value: float = float(_run.get("instability")) if _run.get("instability") != null else 0.0
+	var inst_cap: float = 1000.0  # Base cap, but we display as percentage
+	
+	# Get the actual cap from run controller if available
+	if _run.has_method("get_instability_cap"):
+		inst_cap = _run.call("get_instability_cap", int(_run.get("active_depth")))
+	
+	# Convert to percentage (instability is stored as raw value, cap is usually 1000)
+	var inst_percent: float = (inst_value / inst_cap) * 100.0
+	var inst_gain: float = float(_run.get("instability_per_sec")) if _run.get("instability_per_sec") != null else 0.0
+	
+	if inst_title:
+		inst_title.text = "Instability (+%.1f%%/s)" % inst_gain
+	
+	if inst_bar:
+		inst_bar.max_value = 100.0  # 100% is the danger zone
+		inst_bar.value = inst_percent
+		
+		# Color coding based on danger
+		if inst_percent < 50.0:
+			inst_bar.modulate = Color(0.2, 0.8, 0.2)  # Green
+		elif inst_percent < 80.0:
+			inst_bar.modulate = Color(0.95, 0.65, 0.15)  # Amber
+		else:
+			inst_bar.modulate = Color(0.85, 0.18, 0.18)  # Red
+	
+	if inst_hint:
+		inst_hint.text = "%.1f%%" % inst_percent
+		
+# Compact format: M, B, T, then straight to e-notation at 1e15
 func _fmt_num_compact(v: float) -> String:
-	if v >= 1e15:
-		var exponent := int(floor(log(v) / log(10)))
-		var mantissa := snappedf(v / pow(10, exponent), 0.01)
-		return str(mantissa) + "e+" + str(exponent)
-	if v >= 1e12:
-		return "%.1fT" % (v / 1e12)
-	if v >= 1e9:
-		return "%.1fB" % (v / 1e9)
-	if v >= 1e6:
-		return "%.1fM" % (v / 1e6)
-	if v >= 1e3:
+	if v < 1000.0:
+		return "%.0f" % v
+	elif v < 1e6:  # 1,000 to 999,999 -> K
 		return "%.1fK" % (v / 1e3)
-	return "%.1f" % v
+	elif v < 1e9:  # 1e6 to 999,999,999 -> M
+		return "%.1fM" % (v / 1e6)
+	elif v < 1e12:  # 1e9 to 999,999,999,999 -> B
+		return "%.1fB" % (v / 1e9)
+	elif v < 1e15:  # 1e12 to 999,999,999,999,999 -> T
+		return "%.1fT" % (v / 1e12)
+	else:
+		# 1e15 and above -> scientific notation (1.23e15)
+		var exponent: int = int(floor(log(v) / log(10)))
+		var mantissa: float = snappedf(v / pow(10, exponent), 0.01)
+		return "%.2fe%d" % [mantissa, exponent]
 
+# Detailed format with 2 decimal places
 func _fmt_num(v: float) -> String:
 	if v == INF or v == -INF:
 		return "∞"
-	if v != v:
+	if v != v:  # NaN check
 		return "NaN"
 	v = float(v)
-	if v >= 1e15:
-		var exponent := int(floor(log(v) / log(10)))
-		var mantissa := snappedf(v / pow(10, exponent), 0.01)
-		return str(mantissa) + "e+" + str(exponent)
-	if v >= 1e12:
-		return "%.2fT" % (v / 1e12)
-	if v >= 1e9:
-		return "%.2fB" % (v / 1e9)
-	if v >= 1e6:
-		return "%.2fM" % (v / 1e6)
-	if v >= 1e3:
+	if v < 1000.0:
+		return "%.0f" % v
+	elif v < 1e6:
 		return "%.2fK" % (v / 1e3)
-	return "%.1f" % v
+	elif v < 1e9:
+		return "%.2fM" % (v / 1e6)
+	elif v < 1e12:
+		return "%.2fB" % (v / 1e9)
+	elif v < 1e15:
+		return "%.2fT" % (v / 1e12)
+	else:
+		var exponent: int = int(floor(log(v) / log(10)))
+		var mantissa: float = snappedf(v / pow(10, exponent), 0.01)
+		return "%.2fe%d" % [mantissa, exponent]
 
 func _resolve_depth_label() -> Label:
 	if depth_label_path != NodePath(""):
@@ -542,8 +640,8 @@ func set_depth_ui(current_depth: int, _max_depth: int) -> void:
 func update_top_bar(
 	_thoughts: float,
 	_thoughts_ps: float,
-	_control: float,
-	_control_ps: float,
+	_dreamcloud: float,
+	_dreamcloud_ps: float,
 	_inst_pct: float,
 	_is_overclock: bool,
 	_overclock_time_left: float,

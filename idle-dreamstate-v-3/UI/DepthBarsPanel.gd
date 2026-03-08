@@ -49,7 +49,7 @@ func _apply_bars_margins_force() -> void:
 	# Apply AFTER containers finish layout
 	await get_tree().process_frame
 
-	# If BarsRoot is controlled by a Container, offsets won't stick.
+	# If BarsRoot is dreamcloudled by a Container, offsets won't stick.
 	# So we wrap it in a MarginContainer at runtime (once) and drive margins there.
 	var p := bars_root.get_parent()
 	if p is MarginContainer:
@@ -161,7 +161,7 @@ func _ensure_overlay() -> void:
 	_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
 	cl.add_child(_overlay)
 
-	# IMPORTANT: CanvasLayer is not a Control, so anchors don't size children.
+	# IMPORTANT: CanvasLayer is not a dreamcloud, so anchors don't size children.
 	# We must size the overlay manually to the viewport.
 	_overlay.top_level = true
 	_overlay.position = Vector2.ZERO

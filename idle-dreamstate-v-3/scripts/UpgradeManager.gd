@@ -39,14 +39,14 @@ var overclock_safety_level: int = 0
 @export var deep_dives_thoughts_per_depth: float = 0.03   # +3% per depth per level
 @export var deep_dives_instab_per_depth: float = 0.02     # +2% per depth per level
 
-# Mental Buffer: control bonus on every Dive
-# control_bonus = depth * mental_buffer_level * mental_buffer_per_depth
+# Mental Buffer: dreamcloud bonus on every Dive
+# dreamcloud_bonus = depth * mental_buffer_level * mental_buffer_per_depth
 @export var mental_buffer_per_depth: float = 0.5
 
-# Overclock Mastery (power + duration, costs more control)
+# Overclock Mastery (power + duration, costs more dreamcloud)
 @export var overclock_mastery_thoughts_step: float = 0.10  # +10% overclock thoughts mult per level
 @export var overclock_mastery_duration_step: float = 0.15  # +15% duration per level
-@export var overclock_mastery_cost_step: float = 0.12      # +12% control cost per level
+@export var overclock_mastery_cost_step: float = 0.12      # +12% dreamcloud cost per level
 
 # Overclock Safety (reduces overclock instability penalty, but slightly reduces overclock thoughts)
 @export var overclock_safety_instab_step: float = 0.08     # -8% overclock instability mult per level (multiplicative)

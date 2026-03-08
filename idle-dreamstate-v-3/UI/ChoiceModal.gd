@@ -183,10 +183,10 @@ func show_event(event_data: Dictionary, depth_def: Dictionary, risk_assessment_u
 func _on_choice_selected(id: String, effects: Dictionary) -> void:
 	_pending_effects = effects
 	
-	if effects.has("cost_control"):
-		var cost := float(effects["cost_control"])
+	if effects.has("cost_dreamcloud"):
+		var cost := float(effects["cost_dreamcloud"])
 		if _gm != null:
-			_gm.control = maxf(0.0, _gm.control - cost)
+			_gm.dreamcloud = maxf(0.0, _gm.dreamcloud - cost)
 	
 	if effects.has("cost_thoughts"):
 		var cost := float(effects["cost_thoughts"])
@@ -204,7 +204,7 @@ func _on_choice_selected(id: String, effects: Dictionary) -> void:
 func _is_risky_choice(effects: Dictionary) -> bool:
 	if effects.has("instability_bonus") and float(effects["instability_bonus"]) > 0.1:
 		return true
-	if effects.has("cost_control") or effects.has("cost_thoughts"):
+	if effects.has("cost_dreamcloud") or effects.has("cost_thoughts"):
 		return true
 	return false
 

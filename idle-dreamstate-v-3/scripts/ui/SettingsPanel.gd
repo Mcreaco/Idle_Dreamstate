@@ -19,7 +19,7 @@ const SAVE_TUTORIAL_DISABLED_KEY := "tutorials_disabled"
 
 # Lifetime keys (stored in save)
 const LT_THOUGHTS := "lifetime_thoughts"
-const LT_CONTROL := "lifetime_control"
+const LT_dreamcloud := "lifetime_dreamcloud"
 const LT_DIVES := "total_dives"
 const LT_DEEPEST := "deepest_depth"
 const LT_PLAYTIME := "total_playtime"
@@ -412,13 +412,13 @@ func _refresh_stats(_force: bool) -> void:
 		lines[1].text = "Depth: %d" % current_depth
 		lines[2].text = "Thoughts: %s" % _fmt_num(_get_float_from_gm("thoughts"))
 		lines[3].text = "Thoughts/s: %s" % _fmt_num(_get_float_from_gm("_thoughts_ps"))
-		lines[4].text = "Control: %s" % _fmt_num(_get_float_from_gm("control"))
+		lines[4].text = "dreamcloud: %s" % _fmt_num(_get_float_from_gm("dreamcloud"))
 		lines[5].text = "Instability: %s" % _fmt_num(_get_float_from_gm("instability"))
 	else:
 		var data: Dictionary = SaveSystem.load_game()
 		lines[0].text = "LIFETIME"
 		lines[1].text = "Total Thoughts: %s" % _fmt_num(float(data.get(LT_THOUGHTS, 0)))
-		lines[2].text = "Total Control: %s" % _fmt_num(float(data.get(LT_CONTROL, 0)))
+		lines[2].text = "Total dreamcloud: %s" % _fmt_num(float(data.get(LT_dreamcloud, 0)))
 		lines[3].text = "Total Dives: %s" % _fmt_num(float(data.get(LT_DIVES, 0)))
 		lines[4].text = "Deepest Depth: %d" % int(data.get(LT_DEEPEST, 1))
 		lines[5].text = "Playtime (s): %s" % _fmt_num(float(data.get(LT_PLAYTIME, 0)))

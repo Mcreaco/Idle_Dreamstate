@@ -173,17 +173,16 @@ func _ready() -> void:
 	
 	refresh()
 
-# MISSING FUNCTIONS ADDED HERE:
 func _on_buy() -> void:
 	if gm == null:
 		return
 	var success := false
 	match upgrade_type:
 		"power": success = gm.try_buy_click_power_upgrade()
-		"control": success = gm.try_buy_click_control_upgrade()
 		"stability": success = gm.try_buy_click_stability_upgrade()
 		"flow": success = gm.try_buy_click_flow_upgrade()
 		"resonance": success = gm.try_buy_click_resonance_upgrade()
+		"combat_focus": success = gm.try_buy_click_combat_focus_upgrade()
 	if success:
 		refresh()
 
@@ -213,7 +212,8 @@ func _show_sacrifice_dialog() -> void:
 	desc.autowrap_mode = TextServer.AUTOWRAP_WORD
 	vbox.add_child(desc)
 	
-	var options := ["power", "control", "stability", "flow", "resonance"]
+	# Updated options (removed dreamcloud, added combat_focus)
+	var options := ["power", "stability", "flow", "resonance", "combat_focus"]
 	for opt in options:
 		if opt == upgrade_type:
 			continue
@@ -224,7 +224,7 @@ func _show_sacrifice_dialog() -> void:
 			var mastery: float = gm.perm_perk_system.get_evolution_mastery_reduction()
 			penalty_str = str(int((0.5 - mastery) * 100)) + "%"
 		
-		sac_btn.text = "Weaken %s by %s" % [opt.capitalize(), penalty_str]
+		sac_btn.text = "Weaken %s by %s" % [opt.capitalize().replace("_", " "), penalty_str]
 		sac_btn.pressed.connect(func():
 			if gm.evolve_upgrade(upgrade_type, opt):
 				dialog.queue_free()
@@ -262,18 +262,16 @@ func refresh() -> void:
 			title = "Mental Strike"
 			level = gm.click_power_level
 			cost = gm.get_click_power_cost()
-			var power: float = gm.get_click_power()
-			desc = "+%s thoughts/click" % gm._fmt_num(power)
-		"control":
-			title = "Controlled Breathing"
-			level = gm.click_control_level
-			cost = gm.get_click_control_cost()
-			desc = "+%.1f Control/click" % gm.click_control_gain
+			var percent: float = level * 0.1
+			desc = "+%.1f%% of current Thoughts per click" % percent
+		
 		"stability":
 			title = "Pressure Release"
 			level = gm.click_stability_level
 			cost = gm.get_click_stability_cost()
-			desc = "-%s Instability/click" % gm._fmt_num(gm.click_instability_reduction)
+			var percent: float = level * 2.0
+			desc = "-%.0f%% Instability per click" % percent
+		
 		"flow":
 			title = "Flow State"
 			level = gm.click_flow_level
@@ -281,12 +279,20 @@ func refresh() -> void:
 			var window: float = gm.get_combo_window()
 			var mult: float = gm.get_combo_multiplier()
 			desc = "Combo: ×%.2f (%.1fs)" % [mult, window]
+		
 		"resonance":
 			title = "Deep Resonance"
 			level = gm.click_resonance_level
 			cost = gm.get_click_resonance_cost()
-			var bonus: float = gm.get_click_idle_bonus() * 100.0
-			desc = "+%.1f%% idle thoughts" % bonus
+			var bonus: float = level * 0.01
+			desc = "+%.2f%% idle thoughts (permanent)" % bonus
+		
+		"combat_focus":
+			title = "Combat Focus"
+			level = gm.click_combat_focus_level if "click_combat_focus_level" in gm else 0
+			cost = gm.get_click_combat_focus_cost() if gm.has_method("get_click_combat_focus_cost") else 50.0
+			var amount: int = level
+			desc = "+%d Dreamcloud per click (Combat only)" % amount
 	
 	# Calculate milestones
 	next_milestone = _get_next_milestone(level)
@@ -295,15 +301,15 @@ func refresh() -> void:
 	else:
 		prev_milestone = 0
 	
+	# Update name
 	if _name_lbl:
-		# Add evolution stars
 		var evo_count := 0
 		match upgrade_type:
-			"power": evo_count = gm.click_power_evolution
-			"control": evo_count = gm.click_control_evolution
-			"stability": evo_count = gm.click_stability_evolution
-			"flow": evo_count = gm.click_flow_evolution
-			"resonance": evo_count = gm.click_resonance_evolution
+			"power": evo_count = gm.click_power_evolution if "click_power_evolution" in gm else 0
+			"stability": evo_count = gm.click_stability_evolution if "click_stability_evolution" in gm else 0
+			"flow": evo_count = gm.click_flow_evolution if "click_flow_evolution" in gm else 0
+			"resonance": evo_count = gm.click_resonance_evolution if "click_resonance_evolution" in gm else 0
+			"combat_focus": evo_count = gm.click_combat_focus_evolution if "click_combat_focus_evolution" in gm else 0
 		
 		if evo_count > 0:
 			var stars := "★".repeat(evo_count)
@@ -319,6 +325,7 @@ func refresh() -> void:
 	if _lvl_lbl:
 		_lvl_lbl.text = "Level %d" % level
 	
+	# Update buy button
 	if _buy_btn:
 		if level >= 1000:
 			_buy_btn.visible = false
@@ -331,26 +338,39 @@ func refresh() -> void:
 				_buy_btn.text = "Buy"
 				_buy_btn.disabled = false
 	
+	# Update cost label
 	if _cost_lbl:
 		if level >= 1000:
 			_cost_lbl.text = "MAX"
 			_cost_lbl.modulate = Color(1, 1, 1)
 		else:
-			_cost_lbl.text = gm._fmt_num(cost)
+			_cost_lbl.text = gm._fmt_num(cost) if gm.has_method("_fmt_num") else str(cost)
 			if gm.thoughts < cost:
 				_cost_lbl.modulate = Color(0.9, 0.3, 0.3)
 			else:
 				_cost_lbl.modulate = Color(1, 1, 1)
 	
-	# Progress bar shows progress to next milestone
+	# CRITICAL FIX: Update progress bar with proper reset
 	if _bar:
 		if level >= 1000:
 			_bar.visible = false
 		else:
 			_bar.visible = true
-			_bar.min_value = prev_milestone
-			_bar.max_value = next_milestone
-			_bar.value = level
+			
+			# Calculate milestones
+			next_milestone = _get_next_milestone(level)
+			if level >= 10:
+				prev_milestone = _get_next_milestone(level - 1)
+			else:
+				prev_milestone = 0
+			
+			# Set values as floats to ensure proper calculation
+			_bar.min_value = float(prev_milestone)
+			_bar.max_value = float(next_milestone)
+			_bar.value = float(level)
+			
+			# Force update
+			_bar.queue_redraw()
 			
 			# Update milestone text
 			var milestone_lbl = _bar.get_parent().get_node_or_null("MilestoneLabel")
@@ -360,6 +380,7 @@ func refresh() -> void:
 				else:
 					milestone_lbl.text = "Next: Lv %d" % next_milestone
 	
+	# Evolution button
 	if level >= 1000:
 		evolve_btn.visible = true
 	else:

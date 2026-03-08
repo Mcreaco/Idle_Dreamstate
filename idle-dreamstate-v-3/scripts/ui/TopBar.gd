@@ -2,7 +2,7 @@ class_name TopBar
 extends Control
 
 @onready var thoughts_label: Label = $MainVBox/StatsRow/ThoughtsLabel
-@onready var control_label: Label = $MainVBox/StatsRow/ControlLabel
+@onready var dreamcloud_label: Label = $MainVBox/StatsRow/dreamcloudLabel
 @onready var memories_label: Label = $MainVBox/StatsRow/MemoriesLabel
 @onready var run_time_label: Label = $MainVBox/StatsRow/RunTimeLabel
 @onready var best_run_label: Label = $MainVBox/StatsRow/BestRunLabel
@@ -34,7 +34,7 @@ func _process(delta: float) -> void:
 
 func update_display(
 	thoughts: float,
-	control: float,
+	dreamcloud: float,
 	instability: float,
 	state: String,
 	memories: float,
@@ -46,7 +46,7 @@ func update_display(
 	best_memories_gain: float
 ) -> void:
 	thoughts_label.text = "Thoughts: " + str(roundi(thoughts))
-	control_label.text = "Control: " + str(roundi(control))
+	dreamcloud_label.text = "dreamcloud: " + str(roundi(dreamcloud))
 	memories_label.text = "Memories: " + str(roundi(memories))
 	run_time_label.text = "Run: " + _fmt_time(run_time)
 	best_run_label.text = "Best: " + _fmt_time(best_run_time) \

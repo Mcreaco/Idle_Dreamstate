@@ -40,8 +40,8 @@ func update(delta: float, instability: float) -> Dictionary:
 				effects.thoughts_mult *= 1.5
 				print("CORRUPTION: power rush")
 			2:
-				# control drain (handled in GameManager)
-				effects["drain_control"] = 5.0
-				print("CORRUPTION: control leak")
+				# dreamcloud drain (handled in GameManager)
+				effects["drain_dreamcloud"] = 5.0
+				print("CORRUPTION: dreamcloud leak")
 
 	return effects

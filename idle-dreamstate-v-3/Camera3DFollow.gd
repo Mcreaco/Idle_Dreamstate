@@ -148,7 +148,7 @@ func _adjust_fog(depth: int) -> void:
 		return
 
 	# Keep volumetric fog ON so FogVolume nodes render.
-	# We only control the GLOBAL fog density here.
+	# We only dreamcloud the GLOBAL fog density here.
 	env.volumetric_fog_enabled = true
 	env.fog_enabled = false # optional: disables old-style distance fog
 

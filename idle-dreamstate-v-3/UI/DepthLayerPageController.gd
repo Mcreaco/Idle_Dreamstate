@@ -1,5 +1,5 @@
 extends Control
-class_name DepthLayerPageController
+class_name DepthLayerPagecontroller
 
 @export var depth_index: int = 1
 

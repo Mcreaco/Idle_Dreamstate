@@ -170,7 +170,7 @@ func open_with_depth(mem: float, crystals_dict: Dictionary, wake_depth: int) -> 
 	if reset_label != null:
 		reset_label.text = """You Reset:
 • Thoughts (return to 0)
-• Control (return to 0)
+• dreamcloud (return to 0)
 • Instability (return to 0)
 • Run Upgrades (Thoughts Flow, Stability, etc.)
 • Current Depth (return to 1)

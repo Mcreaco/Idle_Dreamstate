@@ -23,78 +23,59 @@ func check_offline_progress():
 		_save_time()
 		return
 	
-	# CRITICAL: Calculate time IMMEDIATELY before any saves happen
 	var last_time = float(data["last_play_time"])
 	var now = Time.get_unix_time_from_system()
 	var away_seconds = clamp(now - last_time, 0.0, max_offline_seconds)
 	
-	print("Calculated away time: ", away_seconds, " seconds")
-	
-	if away_seconds < 5:  # Change to 5 for testing
-		print("Away too short: ", away_seconds)
+	if away_seconds < 5:
 		_save_time()
 		return
 	
-	# NOW wait for DRC to be ready (timestamp is already calculated safely)
-	await get_tree().create_timer(0.5).timeout
-	
-	var gm = get_parent()
-	if not gm:
-		return
-	
-	# Get active_depth from save (already loaded in 'data')
+	# Determine active depth from save data
 	var active_depth = 1
+	
 	if data.has("depth_run_controller"):
 		var drc_data = data["depth_run_controller"]
 		if drc_data.has("active_depth"):
-			active_depth = int(drc_data["active_depth"])  # Cast to int immediately
-			print("Using saved active_depth: ", active_depth)
+			active_depth = int(drc_data["active_depth"])
+			print("Found active_depth in save: ", active_depth)
 	
-	# Get crystal name
-	var crystal_name = "Crystal"
-	var meta = get_node_or_null("/root/Main/DepthMetaSystem")
-	if meta and meta.has_method("get_depth_currency_name"):
-		crystal_name = meta.call("get_depth_currency_name", active_depth)
-	else:
-		# Use int() in the match to handle float values like 5.0
-		match int(active_depth):
-			1: crystal_name = "Amethyst"
-			2: crystal_name = "Ruby"
-			3: crystal_name = "Emerald"
-			4: crystal_name = "Sapphire"
-			5: crystal_name = "Diamond"
-			6: crystal_name = "Topaz"
-			7: crystal_name = "Garnet"
-			8: crystal_name = "Opal"
-			9: crystal_name = "Aquamarine"
-			10: crystal_name = "Onyx"
-			11: crystal_name = "Jade"
-			12: crystal_name = "Moonstone"
-			13: crystal_name = "Obsidian"
-			14: crystal_name = "Citrine"
-			15: crystal_name = "Quartz"
-			_: crystal_name = "Crystal"
+	# Wait for nodes
+	await get_tree().create_timer(0.5).timeout
 	
-	print("Processing depth ", active_depth, " (", crystal_name, ")")
-	
-	# Now DRC should be ready
 	var drc = get_node_or_null("/root/DepthRunController")
+	var gm = get_node_or_null("/root/Main/GameManager")  # Used for thoughts/dreamcloud later
+	
+	# Set DRC to correct depth
+	if drc and active_depth > 1:
+		drc.active_depth = active_depth
+		if drc.has_method("_ensure_depth_runtime"):
+			drc.call("_ensure_depth_runtime", active_depth)
+	
+	var crystal_name = _get_crystal_name(active_depth)
 	var mem_gain = 0.0
 	var cry_gain = 0.0
 	var progress_gain = 0.0
 	var depth_name = ""
+	var thoughts_gain = 0.0
+	var dreamcloud_gain = 0.0
 	
-	if drc != null and active_depth >= 1:
-		var run_data = drc.get("run")
-		if run_data != null and active_depth <= run_data.size():
-			var depth_data = run_data[active_depth - 1]
+	# Calculate gains
+	if drc and data.has("depth_run_controller"):
+		var drc_data = data["depth_run_controller"]
+		var run_data = drc.get("run")  # Use DRC's current run data
+		
+		if active_depth <= run_data.size():
+			# Use the actual depth data from DRC
+			var depth_data = run_data[active_depth - 1]  # NOW USED
+			
+			# Get upgrades
+			var local_upgs = drc_data.get("local_upgrades", {})
+			var depth_upgs = local_upgs.get(str(active_depth), {})
 			
 			var base_mem = float(drc.get("base_memories_per_sec"))
 			var base_cry = float(drc.get("base_crystals_per_sec"))
 			var base_prog = float(drc.get("base_progress_per_sec"))
-			
-			var local_upgs = drc.get("local_upgrades")
-			var depth_upgs = local_upgs.get(active_depth, {}) if local_upgs else {}
 			
 			var mem_lvl = int(depth_upgs.get("memories_gain", 0))
 			var cry_lvl = int(depth_upgs.get("crystals_gain", 0))
@@ -104,55 +85,80 @@ func check_offline_progress():
 			var cry_mult = 1.0 + (0.12 * cry_lvl)
 			var prog_mult = 1.0 + (0.25 * speed_lvl)
 			
-			var length = 1.0
-			if drc.has_method("get_depth_length"):
-				length = drc.call("get_depth_length", active_depth)
-			
 			# Calculate gains
 			mem_gain = base_mem * mem_mult * away_seconds
 			cry_gain = base_cry * cry_mult * away_seconds
 			
-			var dream_current = gm.dream_current if "dream_current" in gm else 1.0
+			var length = 1.0
+			if drc.has_method("get_depth_length"):
+				length = drc.call("get_depth_length", active_depth)
+			
+			var dream_current = drc_data.get("dream_current", 1.0)
 			var per_sec = (base_prog * dream_current * prog_mult) / max(length, 0.0001)
 			progress_gain = per_sec * away_seconds
 			
+			# Get name
 			var def = drc.call("get_depth_def", active_depth) if drc.has_method("get_depth_def") else {}
 			depth_name = def.get("new_title", "Depth %d" % active_depth)
 			
-			# Apply to DRC
+			# APPLY TO DRC
 			var current_progress = float(depth_data.get("progress", 0.0))
 			var cap = drc.call("get_depth_progress_cap", active_depth) if drc.has_method("get_depth_progress_cap") else 1000.0
-			var new_progress = min(cap, current_progress + progress_gain)
-			
-			depth_data["progress"] = new_progress
+			depth_data["progress"] = min(cap, current_progress + progress_gain)
 			depth_data["memories"] = float(depth_data.get("memories", 0.0)) + mem_gain
 			depth_data["crystals"] = float(depth_data.get("crystals", 0.0)) + cry_gain
-			run_data[active_depth - 1] = depth_data
-			drc.set("run", run_data)
 			
-			print("Gains: Mem=", mem_gain, " ", crystal_name, "=", cry_gain)
+			# Update DRC
+			run_data[active_depth - 1] = depth_data
+			# DRC internal data is already updated since we modified the reference
+			
+			# Sync UI
+			if drc.has_method("_sync_all_to_panel"):
+				drc.call("_sync_all_to_panel")
 	
-	# Apply thoughts/control
-	var multipliers = 1.0
-	if gm.has_method("_calculate_all_multipliers"):
-		multipliers = gm._calculate_all_multipliers()
+	# Calculate thoughts/dreamcloud using gm (NOW USED)
+	if gm:
+		var multipliers = 1.0
+		if gm.has_method("_calculate_all_multipliers"):
+			multipliers = gm._calculate_all_multipliers()
+		
+		var idle_rate = gm.get("idle_thoughts_rate") if gm.get("idle_thoughts_rate") != null else 0.8
+		var dreamcloud_rate = gm.get("idle_dreamcloud_rate") if gm.get("idle_dreamcloud_rate") != null else 0.5
+		
+		thoughts_gain = idle_rate * multipliers * away_seconds
+		dreamcloud_gain = dreamcloud_rate * away_seconds
+		
+		gm.thoughts += thoughts_gain
+		gm.dreamcloud += dreamcloud_gain
 	
-	var thoughts_gain = gm.idle_thoughts_rate * multipliers * away_seconds
-	var control_gain = gm.idle_control_rate * away_seconds
-	
-	gm.thoughts += thoughts_gain
-	gm.control += control_gain
-	
-	# Show popup
-	_show_popup(away_seconds, thoughts_gain, control_gain, mem_gain, cry_gain, progress_gain, depth_name, crystal_name, active_depth)
+	_show_popup(away_seconds, thoughts_gain, dreamcloud_gain, mem_gain, cry_gain, progress_gain, depth_name, crystal_name, active_depth)
 	_save_time()
 
+func _get_crystal_name(depth: int) -> String:
+	match depth:
+		1: return "Amethyst"
+		2: return "Ruby"
+		3: return "Emerald"
+		4: return "Sapphire"
+		5: return "Diamond"
+		6: return "Topaz"
+		7: return "Garnet"
+		8: return "Opal"
+		9: return "Aquamarine"
+		10: return "Onyx"
+		11: return "Jade"
+		12: return "Moonstone"
+		13: return "Obsidian"
+		14: return "Citrine"
+		15: return "Quartz"
+		_: return "Crystal"
+		
 func _save_time():
 	var data = SaveSystem.load_game()
 	data["last_play_time"] = Time.get_unix_time_from_system()
 	SaveSystem.save_game(data)
 
-func _show_popup(seconds: float, thoughts: float, control: float, memories: float = 0.0, crystals: float = 0.0, progress: float = 0.0, depth_name: String = "", crystal_name: String = "Crystals", _active_depth: int = 1):
+func _show_popup(seconds: float, thoughts: float, dreamcloud: float, memories: float = 0.0, crystals: float = 0.0, progress: float = 0.0, depth_name: String = "", crystal_name: String = "Crystals", _active_depth: int = 1):
 	get_tree().paused = true
 	
 	var popup = PanelContainer.new()
@@ -229,16 +235,16 @@ func _show_popup(seconds: float, thoughts: float, control: float, memories: floa
 	thoughts_value.add_theme_color_override("font_color", Color(0.4, 0.9, 0.4))
 	grid.add_child(thoughts_value)
 	
-	# Control
-	var control_label = Label.new()
-	control_label.text = "Control:"
-	control_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	grid.add_child(control_label)
+	# dreamcloud
+	var dreamcloud_label = Label.new()
+	dreamcloud_label.text = "dreamcloud:"
+	dreamcloud_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	grid.add_child(dreamcloud_label)
 	
-	var control_value = Label.new()
-	control_value.text = "+%s" % _fmt(control)
-	control_value.add_theme_color_override("font_color", Color(0.4, 0.7, 0.9))
-	grid.add_child(control_value)
+	var dreamcloud_value = Label.new()
+	dreamcloud_value.text = "+%s" % _fmt(dreamcloud)
+	dreamcloud_value.add_theme_color_override("font_color", Color(0.4, 0.7, 0.9))
+	grid.add_child(dreamcloud_value)
 	
 	# Memories (if any)
 	if memories > 0:

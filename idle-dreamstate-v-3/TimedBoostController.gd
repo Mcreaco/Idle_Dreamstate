@@ -1,4 +1,4 @@
-# TimedBoostController.gd  (AUTOLOAD RECOMMENDED)
+# TimedBoostcontroller.gd  (AUTOLOAD RECOMMENDED)
 extends Node
 
 # Boost spec
@@ -19,9 +19,9 @@ var _boost_end_unix: float = 0.0
 
 # Original values we override (so we can restore perfectly)
 var _orig_idle_thoughts_rate: float = 0.0
-var _orig_idle_control_rate: float = 0.0
+var _orig_idle_dreamcloud_rate: float = 0.0
 var _orig_dive_thoughts_gain: float = 0.0
-var _orig_dive_control_gain: float = 0.0
+var _orig_dive_dreamcloud_gain: float = 0.0
 var _have_orig: bool = false
 
 func _ready() -> void:
@@ -75,16 +75,16 @@ func _start_boost(seconds: float) -> void:
 	# First time we boost, capture original values.
 	if not _have_orig:
 		_orig_idle_thoughts_rate = float(_gm.get("idle_thoughts_rate"))
-		_orig_idle_control_rate = float(_gm.get("idle_control_rate"))
+		_orig_idle_dreamcloud_rate = float(_gm.get("idle_dreamcloud_rate"))
 		_orig_dive_thoughts_gain = float(_gm.get("dive_thoughts_gain"))
-		_orig_dive_control_gain = float(_gm.get("dive_control_gain"))
+		_orig_dive_dreamcloud_gain = float(_gm.get("dive_dreamcloud_gain"))
 		_have_orig = true
 
 	# Apply boosted values
 	_gm.set("idle_thoughts_rate", _orig_idle_thoughts_rate * multiplier)
-	_gm.set("idle_control_rate", _orig_idle_control_rate * multiplier)
+	_gm.set("idle_dreamcloud_rate", _orig_idle_dreamcloud_rate * multiplier)
 	_gm.set("dive_thoughts_gain", _orig_dive_thoughts_gain * multiplier)
-	_gm.set("dive_control_gain", _orig_dive_control_gain * multiplier)
+	_gm.set("dive_dreamcloud_gain", _orig_dive_dreamcloud_gain * multiplier)
 
 	_active = true
 	_boost_end_unix = Time.get_unix_time_from_system() + seconds
@@ -95,9 +95,9 @@ func _end_boost() -> void:
 
 	if _gm != null and _have_orig:
 		_gm.set("idle_thoughts_rate", _orig_idle_thoughts_rate)
-		_gm.set("idle_control_rate", _orig_idle_control_rate)
+		_gm.set("idle_dreamcloud_rate", _orig_idle_dreamcloud_rate)
 		_gm.set("dive_thoughts_gain", _orig_dive_thoughts_gain)
-		_gm.set("dive_control_gain", _orig_dive_control_gain)
+		_gm.set("dive_dreamcloud_gain", _orig_dive_dreamcloud_gain)
 
 	_active = false
 	_boost_end_unix = 0.0

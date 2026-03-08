@@ -55,8 +55,8 @@ func _refresh() -> void:
 	# BonusesRow is optional
 	if _bonuses != null and _perks != null:
 		var thoughts_mult := _perks.get_thoughts_mult()
-		var control_mult := _perks.get_control_mult()
+		var dreamcloud_mult := _perks.get_dreamcloud_mult()
 		var instab_mult := _perks.get_instability_mult()
-		_bonuses.text = "Bonuses: Thoughts x%.2f  |  Control x%.2f  |  Instab x%.2f" % [
-			thoughts_mult, control_mult, instab_mult
+		_bonuses.text = "Bonuses: Thoughts x%.2f  |  dreamcloud x%.2f  |  Instab x%.2f" % [
+			thoughts_mult, dreamcloud_mult, instab_mult
 		]

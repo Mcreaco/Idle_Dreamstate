@@ -15,7 +15,7 @@ var recursive_memory_level: int = 0      # +Memories gain per level
 var lucid_dreaming_level: int = 0        # +Overclock duration
 var deep_sleeper_level: int = 0          # +Max depth bonus
 var night_owl_level: int = 0             # +Idle thoughts at night (or always)
-var dream_catcher_level: int = 0         # +Chance to not consume control on overclock
+var dream_catcher_level: int = 0         # +Chance to not consume dreamcloud on overclock
 var subconscious_miner_level: int = 0    # +Auto thoughts generation even while offline
 var void_walker_level: int = 0           # +Instability cap increase (can go over 100 without failing)
 var rapid_eye_level: int = 0             # +Dive cooldown reduction
@@ -99,7 +99,7 @@ func get_thoughts_mult() -> float:
 func get_instability_mult() -> float:
 	return maxf(0.1, pow(0.93, float(calm_mind_level)))
 
-func get_control_mult() -> float:
+func get_dreamcloud_mult() -> float:
 	return pow(1.20, float(focused_will_level))
 
 func get_starting_thoughts() -> float:

@@ -174,7 +174,7 @@ func refresh() -> void:
 			title = "Focused Will"
 			lvl = perm.focused_will_level
 			cost = perm.get_cost_by_id(perk_id)
-			tip = "+6% Control per level"
+			tip = "+6% dreamcloud per level"
 		"starting_insight":
 			title = "Starting Insight"
 			lvl = perm.starting_insight_level
@@ -214,7 +214,7 @@ func refresh() -> void:
 			title = "Dream Catcher"
 			lvl = perm.dream_catcher_level
 			cost = perm.get_cost_by_id(perk_id)
-			tip = "+3% chance to not consume Control on Overclock"
+			tip = "+3% chance to not consume dreamcloud on Overclock"
 		"subconscious_miner":
 			title = "Subconscious Miner"
 			lvl = perm.subconscious_miner_level

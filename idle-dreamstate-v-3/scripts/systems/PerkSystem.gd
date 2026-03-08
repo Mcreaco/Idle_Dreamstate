@@ -20,7 +20,7 @@ var perk3_level: int = 0
 # Effects
 # perk1: Thoughts multiplier +10% per level
 # perk2: Instability multiplier 0.95 per level (reduces instability gain)
-# perk3: Control multiplier +10% per level
+# perk3: dreamcloud multiplier +10% per level
 @export var perk1_step: float = 0.10
 @export var perk2_step: float = 0.05
 @export var perk3_step: float = 0.10
@@ -33,7 +33,7 @@ func get_instability_mult() -> float:
 	# lower is better; at level 1 => 0.95, level 2 => 0.9025 ...
 	return pow(1.0 - perk2_step, float(perk2_level))
 
-func get_control_mult() -> float:
+func get_dreamcloud_mult() -> float:
 	return 1.0 + float(perk3_level) * perk3_step
 
 
@@ -106,5 +106,5 @@ func get_perk_desc(perk_id: int) -> String:
 	match perk_id:
 		1: return "+10% Thoughts per level"
 		2: return "-5% Instability gain per level"
-		3: return "+10% Control per level"
+		3: return "+10% dreamcloud per level"
 	return ""

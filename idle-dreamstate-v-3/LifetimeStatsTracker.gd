@@ -8,14 +8,14 @@ class_name LifetimeStatsTracker
 @export var flush_interval_sec: float = 1.0
 
 const LT_THOUGHTS := "lifetime_thoughts"
-const LT_CONTROL := "lifetime_control"
+const LT_dreamcloud := "lifetime_dreamcloud"
 const LT_DIVES := "total_dives"
 const LT_DEEPEST := "deepest_depth"
 const LT_PLAYTIME := "total_playtime"
 
 var _gm: Node = null
 var _prev_thoughts: float = 0.0
-var _prev_control: float = 0.0
+var _prev_dreamcloud: float = 0.0
 var _sec_accum: float = 0.0
 var _flush_accum: float = 0.0
 
@@ -30,7 +30,7 @@ func _ready() -> void:
 		return
 
 	_prev_thoughts = _gm_float("thoughts")
-	_prev_control = _gm_float("control")
+	_prev_dreamcloud = _gm_float("dreamcloud")
 
 	var pp := get_tree().current_scene.find_child(prestige_panel_name, true, false)
 	if pp != null and pp.has_signal("confirm_wake"):
@@ -49,20 +49,20 @@ func _process(delta: float) -> void:
 		_sec_accum -= 1.0
 		_queue_add(LT_PLAYTIME, 1.0)
 
-	# thoughts/control (positive deltas only)
+	# thoughts/dreamcloud (positive deltas only)
 	var t := _gm_float("thoughts")
-	var c := _gm_float("control")
+	var c := _gm_float("dreamcloud")
 
 	var dt := t - _prev_thoughts
 	if dt > 0.0:
 		_queue_add(LT_THOUGHTS, dt)
 
-	var dc := c - _prev_control
+	var dc := c - _prev_dreamcloud
 	if dc > 0.0:
-		_queue_add(LT_CONTROL, dc)
+		_queue_add(LT_dreamcloud, dc)
 
 	_prev_thoughts = t
-	_prev_control = c
+	_prev_dreamcloud = c
 
 	# deepest depth (max)
 	_queue_setmax(LT_DEEPEST, _gm_int("depth"))

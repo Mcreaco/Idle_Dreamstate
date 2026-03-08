@@ -1,17 +1,17 @@
 extends Control
 
 @onready var hours_display = $Hours      # Can be Label or Button
-@onready var buy_control = $DailyWarp     # Can be Label or Button  
-@onready var ad_control = $"Watch Ad"     # Can be Label or Button
+@onready var buy_dreamcloud = $DailyWarp     # Can be Label or Button  
+@onready var ad_dreamcloud = $"Watch Ad"     # Can be Label or Button
 
 func _ready():
 	_refresh_ui()
 	
 	# Connect signals only if they're buttons
-	if buy_control is Button:
-		buy_control.pressed.connect(_on_buy)
-	if ad_control is Button:
-		ad_control.pressed.connect(_on_watch_ad)
+	if buy_dreamcloud is Button:
+		buy_dreamcloud.pressed.connect(_on_buy)
+	if ad_dreamcloud is Button:
+		ad_dreamcloud.pressed.connect(_on_watch_ad)
 
 func _refresh_ui():
 	var gm = get_node_or_null("/root/Main/GameManager")
@@ -31,18 +31,18 @@ func _refresh_ui():
 		hours_display.disabled = true
 	
 	var buy_text = "Buy 1h (%.1fh left)" % remaining if remaining > 0 else "Daily Cap Reached"
-	if buy_control is Label:
-		buy_control.text = buy_text
-	elif buy_control is Button:
-		buy_control.text = buy_text
-		buy_control.disabled = remaining <= 0
+	if buy_dreamcloud is Label:
+		buy_dreamcloud.text = buy_text
+	elif buy_dreamcloud is Button:
+		buy_dreamcloud.text = buy_text
+		buy_dreamcloud.disabled = remaining <= 0
 	
 	var ads_text = "Watch Ad [%d left]" % stats.ads_remaining
-	if ad_control is Label:
-		ad_control.text = ads_text
-	elif ad_control is Button:
-		ad_control.text = ads_text
-		ad_control.disabled = stats.ads_remaining <= 0
+	if ad_dreamcloud is Label:
+		ad_dreamcloud.text = ads_text
+	elif ad_dreamcloud is Button:
+		ad_dreamcloud.text = ads_text
+		ad_dreamcloud.disabled = stats.ads_remaining <= 0
 
 func _on_buy():
 	var gm = get_node_or_null("/root/Main/GameManager")

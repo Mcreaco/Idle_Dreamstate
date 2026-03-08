@@ -129,10 +129,10 @@ func _refresh_header() -> void:
 		return
 
 	var t := _perks.get_thoughts_mult()
-	var c := _perks.get_control_mult()
+	var c := _perks.get_dreamcloud_mult()
 	var i := _perks.get_instability_mult()
 
-	var msg := "Spend [b]Memories[/b] for permanent bonuses.\nCurrent: Thoughts x%.2f  |  Control x%.2f  |  Instab x%.2f" % [t, c, i]
+	var msg := "Spend [b]Memories[/b] for permanent bonuses.\nCurrent: Thoughts x%.2f  |  dreamcloud x%.2f  |  Instab x%.2f" % [t, c, i]
 
 	# Safest way: set text directly
 	_header_info.text = msg

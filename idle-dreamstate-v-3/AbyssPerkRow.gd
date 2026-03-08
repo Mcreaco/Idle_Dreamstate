@@ -105,7 +105,7 @@ func _get_mini_text() -> String:
 		"echoed_descent":
 			return "Start runs deeper. (Abyss clear still requires starting at 0.)"
 		"abyssal_focus":
-			return "Permanent Control gain boost."
+			return "Permanent dreamcloud gain boost."
 		"dark_insight":
 			return "Permanent Thoughts gain boost."
 		"abyss_veil":

@@ -55,7 +55,7 @@ func _refresh() -> void:
 			lvl = abyss.abyssal_focus_level
 			max_lvl = abyss.abyssal_focus_max
 			cost = abyss.get_abyssal_focus_cost()
-			desc = "More Control gain.\n+%d%% per level." % int(round(abyss.control_mult_step * 100.0))
+			desc = "More dreamcloud gain.\n+%d%% per level." % int(round(abyss.dreamcloud_mult_step * 100.0))
 		"dark_insight":
 			title = "Dark Insight"
 			lvl = abyss.dark_insight_level

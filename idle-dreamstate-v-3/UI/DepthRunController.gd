@@ -6,7 +6,7 @@ extends Node
 
 # top panel base rates (tune later)
 @export var thoughts_per_sec: float = 0.0
-@export var control_per_sec: float = 0.0
+@export var dreamcloud_per_sec: float = 0.0
 @export var instability_per_sec: float = 0.0
 
 @export var base_progress_per_sec: float = 1 # 1/1200 = 0.000833 (20 min base)
@@ -21,7 +21,7 @@ var choice_modal: ChoiceModal = null
 var _active_event: Dictionary = {}
 var auto_dive_enabled: bool = false  # Player toggles this via checkbox
 var _thoughts_per_sec_cached: float = 0.0
-var _control_per_sec_cached: float = 0.0
+var _dreamcloud_per_sec_cached: float = 0.0
 
 var active_depth: int = 1
 var max_unlocked_depth: int = 1
@@ -50,7 +50,7 @@ var local_upgrades: Dictionary = {}
 
 # Top HUD values (if you’re using this controller to drive a HUD)
 var thoughts: float = 0.0
-var control: float = 0.0
+var dreamcloud: float = 0.0
 var instability: float = 0.0
 
 var _panel: Node = null
@@ -225,8 +225,51 @@ func _check_auto_dive() -> void:
 	
 func _tick_active_depth(delta: float) -> void:
 	if has_meta("progress_paused") and get_meta("progress_paused"):
-		return  # Skip progress while paused
+		return
+		
 	var d: int = active_depth
+	if d < 1 or d > _run_internal.size():
+		return
+	
+	# Track time in depth
+	_ensure_depth_runtime(d)
+	var rt: Dictionary = _depth_runtime[d]
+	rt["time_in_depth"] = rt.get("time_in_depth", 0.0) + delta
+	_depth_runtime[d] = rt
+	
+	# Get depth rules
+	var applied := _apply_depth_rules(d)
+	
+	# CRITICAL: Update class variables for TopBarPanel to read
+	instability_per_sec = applied.get("instability_per_sec", 0.0)
+	var depth_prog_mul := float(applied.get("progress_mul", 1.0))
+	var depth_mem_mul := float(applied.get("mem_mul", 1.0))
+	var depth_cry_mul := float(applied.get("cry_mul", 1.0))
+	var inst_cap: float = applied.get("instability_cap", 1000.0)
+	var rules: Dictionary = applied.get("rules", {})
+	
+	# Update instability
+	if d >= 2 and rules.get("instability_enabled", false):
+		var inst_per_sec: float = instability_per_sec
+		instability += (inst_per_sec * delta)
+		
+		# Cap check
+		var max_inst: float = inst_cap
+		var gm_check = get_node_or_null("/root/Main/GameManager")
+		if gm_check:
+			var void_walker_lvl: int = 0
+			if gm_check.has_method("get_perk_level"):
+				void_walker_lvl = gm_check.get_perk_level("void_walker")
+			elif "permanent_upgrades" in gm_check:
+				void_walker_lvl = int(gm_check.permanent_upgrades.get("void_walker", 0))
+			
+			max_inst += (void_walker_lvl * 0.05 * inst_cap)
+		
+		if instability >= max_inst:
+			instability = max_inst
+			wake_cashout(1.0, true)
+			return
+			
 	var current_time := Time.get_ticks_msec() / 1000.0
 	
 	# Rate-limited debug (once per second)
@@ -248,10 +291,6 @@ func _tick_active_depth(delta: float) -> void:
 		return
 
 	# Apply per-depth rules (sets instability_per_sec, returns muls)
-	var applied := _apply_depth_rules(d)
-	var depth_prog_mul := float(applied.get("progress_mul", 1.0))
-	var depth_mem_mul := float(applied.get("mem_mul", 1.0))
-	var depth_cry_mul := float(applied.get("cry_mul", 1.0))
 	var _rules: Dictionary = applied.get("rules", {})
 
 	# DREAM CURRENT SYSTEM: Fetch global progress rate from GameManager
@@ -327,10 +366,57 @@ func _tick_active_depth(delta: float) -> void:
 	
 	_run_internal[d - 1] = data
 	
+	# Make sure to pass the calculated instability rate to the HUD
+	thoughts_per_sec = _calculate_thoughts_per_sec(d)
+	dreamcloud_per_sec = _calculate_dreamcloud_per_sec(d)
+	instability_per_sec = applied.get("instability_per_sec", 0.0)
+	
 	# Update panel
 	_panel.set_row_data(d, data)
 	_panel.set_active_depth(active_depth)
 
+func _calculate_thoughts_per_sec(d: int) -> float:
+	var base: float = 1.0
+	var multipliers: float = 1.0
+	
+	# Depth scaling (exponential growth for big numbers)
+	multipliers *= pow(1.5, d - 1)
+	
+	# Apply frozen upgrade bonuses
+	for depth_key in frozen_upgrades.keys():
+		var source_depth: int = int(depth_key)
+		if source_depth >= d:
+			continue
+		var dct: Dictionary = frozen_upgrades[depth_key]
+		# Velocity/Progress speed from frozen depths
+		var frozen_speed_lvl: int = int(dct.get("progress_speed", 0))
+		if frozen_speed_lvl > 0:
+			multipliers += (frozen_speed_lvl * 0.2)
+	
+	# Apply current depth local upgrades
+	var local: Dictionary = local_upgrades.get(d, {})
+	var speed_lvl: int = int(local.get("progress_speed", 0))
+	if speed_lvl > 0:
+		multipliers += (speed_lvl * 0.25)  # +25% per level in current depth
+	
+	# Meta multipliers from GameManager
+	var gm = get_node_or_null("/root/Main/GameManager")
+	if gm:
+		if gm.has_method("get_thoughts_mult"):
+			multipliers *= gm.get_thoughts_mult()
+		if gm.has_method("get_abyss_multiplier"):
+			multipliers *= gm.get_abyss_multiplier()
+	
+	return base * multipliers
+
+func _calculate_dreamcloud_per_sec(_d: int) -> float:
+	# Minimal passive generation - Dreamcloud is now primarily from clicks/combat
+	var base: float = 0.05  # Very small passive gain
+	return base * (1.0 + (_d * 0.02))  # Slight scaling with depth
+
+func get_dreamcloud_per_sec() -> float:
+	return _calculate_dreamcloud_per_sec(active_depth)
+	
 func add_local_upgrade(depth_index: int, upgrade_id: String, amount: int = 1) -> void:
 	if depth_index != active_depth:
 		return
@@ -348,8 +434,8 @@ func add_local_upgrade(depth_index: int, upgrade_id: String, amount: int = 1) ->
 		if upgrade_id == "progress_speed":
 			game_mgr.buy_dream_current_upgrade(0.2 * amount)
 		
-		# Depth 2: Controlled Fall adds +0.1 per level
-		elif upgrade_id == "controlled_fall":
+		# Depth 2: dreamcloudled Fall adds +0.1 per level
+		elif upgrade_id == "dreamcloudled_fall":
 			var current_dc = game_mgr.dream_current
 			var bonus = 0.1 * amount
 			game_mgr.dream_current = current_dc * (1.0 + bonus)  # Multiplicative: 1.0 -> 1.1 -> 1.21 etc
@@ -382,15 +468,13 @@ func perform_transcendence() -> Dictionary:
 	return {"success": true, "new_depth": 1}
 	
 func _tick_top(delta: float) -> void:
-	# These should be REAL rates, not cached getters.
+	# Only thoughts should generate passively
 	var tps: float = thoughts_per_sec
-	var cps: float = control_per_sec
-
 	thoughts += tps * delta
-	control += cps * delta
-
+	
+	# CRITICAL: Set dreamcloud to 0 - only Combat Focus clicks generate it
+	_dreamcloud_per_sec_cached = 0.0
 	_thoughts_per_sec_cached = tps
-	_control_per_sec_cached = cps
 
 func get_depth_progress_cap(depth: int) -> float:
 	# NEW: Exponential scaling for 250-300 hour target
@@ -399,7 +483,7 @@ func get_depth_progress_cap(depth: int) -> float:
 func _sync_hud() -> void:
 	if _hud != null and _hud.has_method("set_values"):
 		# Use cached values (they represent what we applied this frame)
-		_hud.call("set_values", thoughts, _thoughts_per_sec_cached, control, _control_per_sec_cached, instability)
+		_hud.call("set_values", thoughts, _thoughts_per_sec_cached, dreamcloud, _dreamcloud_per_sec_cached, instability)
 
 
 func can_dive() -> bool:
@@ -573,10 +657,6 @@ func _frozen_effect(current_depth: int, upgrade_id: String, per_level: float) ->
 func get_thoughts_per_sec() -> float:
 	return _thoughts_per_sec_cached
 
-
-func get_control_per_sec() -> float:
-	return _control_per_sec_cached
-
 func get_instability_cap(depth: int) -> float:
 	# Scale with progress cap (120% of progress required)
 	return get_depth_progress_cap(depth) * 1.2
@@ -587,54 +667,78 @@ func get_depth_length(depth_index: int) -> float:
 
 
 func wake_cashout(ad_multiplier: float, forced: bool) -> Dictionary:
-	push_warning("wake_cashout() called - resetting run data")
-	print_stack()
+	print("WAKE_CASHOUT called - forced:", forced, " depth:", active_depth)
+	
 	var thoughts_mult: float = 1.0
 	var memories_mult: float = 1.0
 	var crystals_mult: float = 1.0
+	
 	if forced:
 		thoughts_mult = 0.70
 		memories_mult = 0.55
 		crystals_mult = 0.40
-
+	
+	# Calculate gains
 	var totals := _sum_run_totals(active_depth)
 	var bank_thoughts: float = float(thoughts) * thoughts_mult * ad_multiplier
 	var bank_memories: float = float(totals["memories"]) * memories_mult * ad_multiplier
 	
-	var meta: Node = get_tree().current_scene.find_child("DepthMetaSystem", true, false)
-	if meta != null:
-		if meta.has_method("add_thoughts"):
-			meta.call("add_thoughts", bank_thoughts)
-		if meta.has_method("add_memories"):
-			meta.call("add_memories", bank_memories)
-
-	var max_d := clampi(active_depth, 1, max_depth)
-	for depth_i in range(1, max_d + 1):
-		var data: Dictionary = _run_internal[depth_i - 1]  # Was: run[depth_i - 1]
-		var raw_cry := float(data.get("crystals", 0.0))
-		var bank_cry := raw_cry * crystals_mult * ad_multiplier
-		if bank_cry > 0.0:
-			_apply_bank(depth_i, 0.0, 0.0, bank_cry)
-
-	_reset_all_depth_progress()
-	thoughts = 0.0
-	control = 0.0
-	instability = 0.0
-	active_depth = 1
-	max_unlocked_depth = 1
-	_last_depth = active_depth
-	_on_depth_changed(active_depth)
+	# Bank the currencies
+	var gm := get_node_or_null("/root/Main/GameManager")
+	if gm:
+		if "memories" in gm: gm.memories += bank_memories
+		# Add crystals to meta
+		var meta: Node = get_tree().current_scene.find_child("DepthMetaSystem", true, false)
+		if meta and meta.has_method("add_currency"):
+			for depth_i in range(1, active_depth + 1):
+				var data: Dictionary = _run_internal[depth_i - 1]
+				var raw_cry := float(data.get("crystals", 0.0))
+				var bank_cry := raw_cry * crystals_mult * ad_multiplier
+				if bank_cry > 0.0:
+					meta.call("add_currency", depth_i, bank_cry)
 	
-	_sync_all_to_panel()
-	_sync_hud()
+	# CRITICAL: FULL RESET
+	_reset_run_data()
 	
-	# THIS IS THE FIX - return the dictionary
 	return {
 		"thoughts": bank_thoughts,
 		"memories": bank_memories,
-		"crystals_by_name": totals["crystals_by_name"]
+		"forced": forced
 	}
 
+func _reset_run_data() -> void:
+	print("RESETTING RUN DATA")
+	
+	# Reset all progress
+	for i in range(_run_internal.size()):
+		var data: Dictionary = _run_internal[i]
+		data["progress"] = 0.0
+		data["memories"] = 0.0
+		data["crystals"] = 0.0
+		_run_internal[i] = data
+	
+	# CRITICAL: Clear local upgrades (this was missing!)
+	local_upgrades.clear()
+	local_upgrades[1] = {}  # Start fresh at depth 1
+	
+	# Clear frozen upgrades
+	frozen_upgrades.clear()
+	
+	# Reset currencies
+	thoughts = 0.0
+	dreamcloud = 0.0
+	instability = 0.0
+	
+	# Reset depth
+	active_depth = 1
+	max_unlocked_depth = 1
+	_last_depth = active_depth
+	
+	# Sync
+	_sync_all_to_panel()
+	_sync_hud()
+	
+	print("Reset complete: active_depth=", active_depth, " local_upgrades=", local_upgrades)
 
 func reset_active_depth_progress_only() -> void:
 	_reset_depth_progress()
@@ -820,8 +924,8 @@ func _build_depth_defs() -> void:
 				"effect_per_level": -0.05,  # 0.95^level multiplier
 				"cost_currency": "thoughts"
 			},
-			"controlled_fall": {
-				"name": "Controlled Fall",
+			"dreamcloudled_fall": {
+				"name": "dreamcloudled Fall",
 				"description": "+0.1 Dream Current per level (Global Speed)",
 				"max_level": 10,  # Cap at +1.0 total
 				"base_cost": 500.0,  # Expensive - affects all depths
@@ -847,10 +951,10 @@ func _build_depth_defs() -> void:
 				"effect_per_level": 0.15,  # Buffed from 12%
 				"cost_currency": "thoughts"
 			},
-			"breath_control": {
-				"name": "Breath Control",
-				"description": "+0.2 Max Control capacity per level",
-				"max_level": 25,  # Max +5.0 control
+			"breath_dreamcloud": {
+				"name": "Breath dreamcloud",
+				"description": "+0.2 Max dreamcloud capacity per level",
+				"max_level": 25,  # Max +5.0 dreamcloud
 				"base_cost": 150.0,
 				"cost_growth": 1.5,
 				"effect_per_level": 0.2,  # Buffed from 0.1
@@ -998,9 +1102,9 @@ func _build_depth_defs() -> void:
 					},
 					{
 						"id": "overclock",
-						"text": "Overclock through (-20 Control, +15% Instability)",
+						"text": "Overclock through (-20 dreamcloud, +15% Instability)",
 						"effect": {
-							"cost_control": 20,
+							"cost_dreamcloud": 20,
 							"instability_bonus": 0.15,  # 15% of cap, not 15 points!
 							"progress_bonus": 0.05       # 5% progress
 						}
@@ -1058,7 +1162,7 @@ func _build_depth_defs() -> void:
 			},
 			"fractured_mirage": {
 				"name": "Fractured Mirage",
-				"description": "+0.15 Max Control per level",
+				"description": "+0.15 Max dreamcloud per level",
 				"max_level": 999,
 				"base_cost": 120.0,
 				"cost_growth": 1.5,
@@ -1095,7 +1199,7 @@ func _build_depth_defs() -> void:
 							"instability_bonus": 0.35,   # High risk
 							"mem_mul": 2.0,              # Double memories
 							"duration": 15.0,            # 15 seconds
-							"cost_control": 50.0         # Also costs control
+							"cost_dreamcloud": 50.0         # Also costs dreamcloud
 						}
 					}
 				],
@@ -1105,12 +1209,12 @@ func _build_depth_defs() -> void:
 	}
 	
 	# ============================================
-	# DEPTH 6 — HOLLOW (Frozen depth bonus - 5 upgrades)
-	# ============================================
+# DEPTH 6 — HOLLOW (Frozen Depth Synergy)
+# ============================================
 	_depth_defs[6] = {
 		"new_title": "Hollow",
-		"desc": "Emptiness echoes. Your past depths strengthen you.",
-		"ui_unlocks": [],
+		"desc": "Emptiness echoes. Your frozen past depths amplify present gains.",
+		"ui_unlocks": ["frozen_depth_indicator"],
 		"rules": {
 			"instability_enabled": true,
 			"progress_mul": 1.0,
@@ -1119,135 +1223,136 @@ func _build_depth_defs() -> void:
 			"forced_wake_at_100": true,
 			"event_enabled": true,
 			"event_timer": 40.0,
-			"dive_unlock_requirement": {"upgrade": "stab", "level": 10}
+			"dive_unlock_requirement": {"upgrade": "crystalline_memory", "level": 5}
 		},
 		"upgrades": {
 			"crystalline_memory": {
 				"name": "Crystalline Memory",
-				"description": "Each prior depth cleared = +3% Progress Speed",
-				"max_level": 999999,
-				"base_cost": 300.0,
-				"cost_growth": 1.6,
-				"effect_per_level": 0.03,
+				"description": "Each completed depth below grants +5% Progress Speed",
+				"max_level": 10,  # Max 50% bonus from 10 frozen depths
+				"base_cost": 1.0e6,  # 1 Million thoughts
+				"cost_growth": 2.0,  # Doubles each level: 1M, 2M, 4M... ~1B at max
+				"effect_per_level": 0.05,
 				"cost_currency": "thoughts"
 			},
-			"deep_freeze": {
-				"name": "Deep Freeze",
-				"description": "+10% Sapphire Crystals per level",
-				"max_level": 999999,
-				"base_cost": 240.0,
-				"cost_growth": 1.6,
-				"effect_per_level": 0.10,
+			"thermal_preservation": {
+				"name": "Thermal Preservation",
+				"description": "Reduce Instability acceleration from time pressure by 15%/level",
+				"max_level": 5,  # Capped to prevent infinite stagnation
+				"base_cost": 2.5e6,
+				"cost_growth": 2.2,
+				"effect_per_level": 0.15,
 				"cost_currency": "thoughts"
 			},
-			"thermal_vent": {
-				"name": "Thermal Vent",
-				"description": "-0.06% Instability/sec, -3% Thoughts",
+			"deep_cache": {
+				"name": "Deep Cache",
+				"description": "+25% Topaz Crystals per level",
+				"max_level": 50,
+				"base_cost": 5.0e6,
+				"cost_growth": 1.6,
+				"effect_per_level": 0.25,
+				"cost_currency": "thoughts"
+			},
+			"hibernation_protocol": {
+				"name": "Hibernation Protocol",
+				"description": "Instability gain reduced by 20%/level when progress is paused",
 				"max_level": 3,
-				"base_cost": 400.0,
-				"cost_growth": 2.0,
-				"effect_per_level": -0.06,
+				"base_cost": 1.0e7,
+				"cost_growth": 3.0,
+				"effect_per_level": 0.20,
 				"cost_currency": "thoughts"
 			},
-			"hollow_echo": {
-				"name": "Hollow Echo",
-				"description": "+0.5% All gains per frozen depth per level",
-				"max_level": 999999,
-				"base_cost": 500.0,
-				"cost_growth": 1.8,
-				"effect_per_level": 0.005,
-				"cost_currency": "thoughts"
-			},
-			"ice_anchor": {
-				"name": "Ice Anchor",
-				"description": "Instability rises 8% slower per level",
-				"max_level": 999999,
-				"base_cost": 350.0,
-				"cost_growth": 1.9,
-				"effect_per_level": 0.08,
+			"echo_chamber": {
+				"name": "Echo Chamber",
+				"description": "Memories from this depth are worth +12% per level",
+				"max_level": 25,
+				"base_cost": 8.0e6,
+				"cost_growth": 1.7,
+				"effect_per_level": 0.12,
 				"cost_currency": "thoughts"
 			}
 		},
 		"events": [
 			{
-				"id": "echo_event",
+				"id": "frozen_resonance",
 				"trigger": "timer",
 				"cooldown": 40.0,
+				"pause_progress": true,
 				"choices": [
 					{
-						"id": "embrace",
-						"text": "Embrace the echo",
-						"effect": {"frozen_bonus_mul": 1.5, "duration": 15.0, "instability_bonus": 0.10}
+						"id": "embrace_cold",
+						"text": "Embrace the Hollow (+30% progress, +25% Instability)",
+						"effect": {"progress_mul": 1.3, "instability_mul": 1.25, "duration": 20.0}
 					},
 					{
-						"id": "reject",
-						"text": "Reject the past",
-						"effect": {"progress_bonus": 0.05}
+						"id": "burn_memory",
+						"text": "Burn a Memory (-50% Memories, reset Instability to 0)",
+						"effect": {"memories_penalty": 0.5, "set_instability": 0.0}
 					}
 				]
 			}
 		]
 	}
-	
+
 	# ============================================
-	# DEPTH 7 — DREAD (Fake threats - 5 upgrades)
+	# DEPTH 7 — DREAD (Paranoia/Fake Threats)
 	# ============================================
 	_depth_defs[7] = {
 		"new_title": "Dread",
-		"desc": "Fear manifests. Not all dangers are real.",
-		"ui_unlocks": [],
+		"desc": "Fear manifests as phantom Instability spikes. Not all dangers are real.",
+		"ui_unlocks": ["threat_indicator"],
 		"rules": {
 			"instability_enabled": true,
 			"progress_mul": 1.0,
-			"mem_mul": 1.30,
+			"mem_mul": 1.32,
 			"cry_mul": 1.18,
 			"forced_wake_at_100": true,
 			"event_enabled": true,
 			"event_timer": 35.0,
-			"dive_unlock_requirement": {"upgrade": "stab", "level": 10}
+			"dive_unlock_requirement": {"upgrade": "reality_anchor", "level": 3}
 		},
 		"upgrades": {
-			"reality_check": {
-				"name": "Reality Check",
-				"description": "15% chance to ignore fake threats per level",
-				"max_level": 999999,
-				"base_cost": 450.0,
-				"cost_growth": 1.6,
-				"effect_per_level": 0.15,
-				"cost_currency": "thoughts"
-			},
-			"adrenaline_mining": {
-				"name": "Adrenaline Mining",
-				"description": "+20% Thoughts during fake threats per level",
-				"max_level": 999999,
-				"base_cost": 500.0,
-				"cost_growth": 1.8,
+			"reality_anchor": {
+				"name": "Reality Anchor",
+				"description": "20% chance to ignore fake Instability spikes per level",
+				"max_level": 5,  # 100% at max
+				"base_cost": 5.0e9,  # 5 Billion
+				"cost_growth": 2.5,
 				"effect_per_level": 0.20,
 				"cost_currency": "thoughts"
 			},
-			"true_fear": {
-				"name": "True Fear",
-				"description": "Real threats deal 12% less Instability per level",
-				"max_level": 4,
-				"base_cost": 400.0,
-				"cost_growth": 1.7,
-				"effect_per_level": 0.12,
+			"fear_feeding": {
+				"name": "Fear Feeding",
+				"description": "+40% Thoughts generation during fake threat events per level",
+				"max_level": 10,
+				"base_cost": 2.5e9,
+				"cost_growth": 2.0,
+				"effect_per_level": 0.40,
 				"cost_currency": "thoughts"
 			},
-			"paranoia_shield": {
-				"name": "Paranoia Shield",
-				"description": "+0.2 Max Control per level",
-				"max_level": 999999,
-				"base_cost": 300.0,
-				"cost_growth": 1.5,
-				"effect_per_level": 0.2,
+			"true_sight": {
+				"name": "True Sight",
+				"description": "Distinguish real from fake threats (reveals outcome before choosing)",
+				"max_level": 1,
+				"base_cost": 5.0e10,  # 50 Billion
+				"cost_growth": 1.0,
+				"effect_per_level": 1.0,
+				"cost_currency": "thoughts"
+			},
+			"garnet_focus": {
+				"name": "Garnet Focus",
+				"description": "+22% Garnet Crystal gain per level",
+				"max_level": 50,
+				"base_cost": 1.0e10,
+				"cost_growth": 1.65,
+				"effect_per_level": 0.22,
 				"cost_currency": "thoughts"
 			},
 			"dread_immunity": {
 				"name": "Dread Immunity",
-				"description": "First real threat per run is negated",
+				"description": "First real threat per run is automatically negated",
 				"max_level": 1,
-				"base_cost": 1200.0,
+				"base_cost": 2.5e11,  # 250 Billion
 				"cost_growth": 1.0,
 				"effect_per_level": 1.0,
 				"cost_currency": "thoughts"
@@ -1255,87 +1360,87 @@ func _build_depth_defs() -> void:
 		},
 		"events": [
 			{
-				"id": "paranoia",
+				"id": "phantom_spike",
 				"trigger": "timer",
 				"cooldown": 35.0,
-				"fake_instability_spike": true,
+				"is_fake": true,  # 70% chance this is fake, 30% real
 				"choices": [
 					{
-						"id": "panic",
-						"text": "Panic overclock",
-						"effect": {"cost_control": 30.0, "instability_bonus": 0.10, "was_fake": true}
+						"id": "overreact",
+						"text": "Emergency Stabilize (Costs 25% progress)",
+						"effect": {"progress_penalty": 0.25, "instability_reduction": 0.3, "was_fake_bonus": 0.15}
 					},
 					{
-						"id": "wait",
-						"text": "Wait and see",
-						"effect": {"progress_bonus": 0.05, "reveal_fake": true}
+						"id": "observe",
+						"text": "Observe carefully",
+						"effect": {"reveal_truth": true, "if_fake": {"progress_bonus": 0.1}, "if_real": {"instability_bonus": 0.2}}
 					}
 				]
 			}
 		]
 	}
-	
+
 	# ============================================
-	# DEPTH 8 — CHASM (Speed synergy - 5 upgrades)
+	# DEPTH 8 — CHASM (Speed vs Safety Tradeoffs)
 	# ============================================
 	_depth_defs[8] = {
 		"new_title": "Chasm",
-		"desc": "A vast drop. Your journey strengthens your step.",
-		"ui_unlocks": [],
+		"desc": "Gravity accelerates. The faster you fall, the harder you hit bottom.",
+		"ui_unlocks": ["momentum_meter"],
 		"rules": {
 			"instability_enabled": true,
 			"progress_mul": 1.0,
-			"mem_mul": 1.35,
-			"cry_mul": 1.20,
+			"mem_mul": 1.40,
+			"cry_mul": 1.22,
 			"forced_wake_at_100": true,
 			"event_enabled": true,
 			"event_timer": 30.0,
-			"dive_unlock_requirement": {"upgrade": "stab", "level": 10}
+			"dive_unlock_requirement": {"upgrade": "controlled_fall", "level": 5}
 		},
 		"upgrades": {
-			"momentum_cascade": {
-				"name": "Momentum Cascade",
-				"description": "+5% Progress per frozen depth per level",
-				"max_level": 999999,
-				"base_cost": 600.0,
-				"cost_growth": 1.6,
-				"effect_per_level": 0.05,
+			"controlled_fall": {
+				"name": "Controlled Fall",
+				"description": "+8% Progress Speed, -3% Instability Gain per level",
+				"max_level": 20,
+				"base_cost": 1.0e14,  # 100 Trillion
+				"cost_growth": 1.8,
+				"effect_per_level": 0.08,
 				"cost_currency": "thoughts"
 			},
-			"gravity_slingshot": {
-				"name": "Gravity Slingshot",
-				"description": "Auto-progress +3%/sec, but +12% Instability",
-				"max_level": 3,
-				"base_cost": 800.0,
-				"cost_growth": 2.0,
-				"effect_per_level": 0.03,
+			"terminal_velocity": {
+				"name": "Terminal Velocity",
+				"description": "Instability cap +10% per level (allows exceeding 100%)",
+				"max_level": 10,
+				"base_cost": 5.0e14,
+				"cost_growth": 2.5,
+				"effect_per_level": 0.10,
 				"cost_currency": "thoughts"
 			},
-			"void_breathing": {
-				"name": "Void Breathing",
-				"description": "+12% Control Generation per level",
-				"max_level": 999999,
-				"base_cost": 480.0,
-				"cost_growth": 1.6,
-				"effect_per_level": 0.12,
-				"cost_currency": "thoughts"
-			},
-			"diamond_focus": {
-				"name": "Diamond Focus",
-				"description": "+15% Diamond Crystals per level",
-				"max_level": 999999,
-				"base_cost": 720.0,
-				"cost_growth": 1.6,
+			"impact_dampening": {
+				"name": "Impact Dampening",
+				"description": "When forced Wake occurs, retain +15% more Memories/level",
+				"max_level": 5,
+				"base_cost": 2.5e15,  # 2.5 Quadrillion
+				"cost_growth": 3.0,
 				"effect_per_level": 0.15,
 				"cost_currency": "thoughts"
 			},
-			"weightless": {
-				"name": "Weightless",
-				"description": "Progress unaffected by Instability slowdowns",
-				"max_level": 1,
-				"base_cost": 2000.0,
-				"cost_growth": 1.0,
-				"effect_per_level": 1.0,
+			"opal_focus": {
+				"name": "Opal Focus",
+				"description": "+25% Opal Crystals per level",
+				"max_level": 50,
+				"base_cost": 1.0e15,
+				"cost_growth": 1.7,
+				"effect_per_level": 0.25,
+				"cost_currency": "thoughts"
+			},
+			"weightless_moment": {
+				"name": "Weightless Moment",
+				"description": "Pause button also pauses Instability gain for 3s/level",
+				"max_level": 5,
+				"base_cost": 5.0e15,
+				"cost_growth": 2.2,
+				"effect_per_level": 3.0,
 				"cost_currency": "thoughts"
 			}
 		},
@@ -1344,426 +1449,82 @@ func _build_depth_defs() -> void:
 				"id": "narrow_ledge",
 				"trigger": "timer",
 				"cooldown": 30.0,
-				"effect_on_trigger": {"pause_progress": true, "instability_mul": 2.0, "duration": 10.0},
 				"choices": [
 					{
-						"id": "push",
-						"text": "Push through",
-						"effect": {"resume_progress": true, "keep_instability_mul": true}
+						"id": "leap",
+						"text": "Leap (+40% speed for 10s, +20% Instability)",
+						"effect": {"progress_mul": 1.4, "instability_mul": 1.2, "duration": 10.0}
 					},
 					{
-						"id": "find_path",
-						"text": "Find safe path",
-						"effect": {"cost_thoughts": 50.0, "normal_instability": true, "progress_bonus_after": 0.15}
+						"id": "climb",
+						"text": "Climb safely (+10% progress, -10% Instability)",
+						"effect": {"progress_mul": 1.1, "instability_mul": 0.9, "duration": 15.0}
 					}
 				]
 			}
 		]
 	}
-	
+
 	# ============================================
-	# DEPTH 9 — SILENCE (Blind mode - 5 upgrades)
+	# DEPTH 9 — SILENCE (Information Denial)
 	# ============================================
 	_depth_defs[9] = {
 		"new_title": "Silence",
-		"desc": "Sound dies. You must feel your way forward.",
-		"ui_unlocks": ["hidden_numbers"],
+		"desc": "No numbers. No certainty. Only instinct guides you now.",
+		"ui_unlocks": ["blind_mode"],
 		"rules": {
 			"instability_enabled": true,
 			"progress_mul": 1.0,
-			"mem_mul": 1.40,
-			"cry_mul": 1.22,
-			"forced_wake_at_100": true,
-			"event_enabled": true,
-			"event_timer": 25.0,
-			"hide_all_numbers": true,
-			"dive_unlock_requirement": {"upgrade": "stab", "level": 10}
-		},
-		"upgrades": {
-			"inner_eye": {
-				"name": "Inner Eye",
-				"description": "Unlock UI: Lv1=Thoughts, Lv2=Instability, Lv3=Progress, Lv4=Crystals",
-				"max_level": 4,
-				"base_cost": 900.0,
-				"cost_growth": 2.5,
-				"effect_per_level": 1.0,
-				"cost_currency": "thoughts"
-			},
-			"blind_intuition": {
-				"name": "Blind Intuition",
-				"description": "+10% all gains while numbers hidden per level",
-				"max_level": 999999,
-				"base_cost": 700.0,
-				"cost_growth": 1.7,
-				"effect_per_level": 0.10,
-				"cost_currency": "thoughts"
-			},
-			"silent_running": {
-				"name": "Silent Running",
-				"description": "-0.08% Instability/sec while blind per level",
-				"max_level": 4,
-				"base_cost": 850.0,
-				"cost_growth": 1.9,
-				"effect_per_level": -0.08,
-				"cost_currency": "thoughts"
-			},
-			"aquamarine_focus": {
-				"name": "Aquamarine Focus",
-				"description": "+18% Aquamarine Crystals per level",
-				"max_level": 999999,
-				"base_cost": 1080.0,
-				"cost_growth": 1.6,
-				"effect_per_level": 0.18,
-				"cost_currency": "thoughts"
-			},
-			"trust_the_void": {
-				"name": "Trust the Void",
-				"description": "At max level, numbers stay hidden but +20% all gains permanently",
-				"max_level": 1,
-				"base_cost": 3000.0,
-				"cost_growth": 1.0,
-				"effect_per_level": 1.0,
-				"cost_currency": "thoughts"
-			}
-		},
-		"events": [
-			{
-				"id": "the_hush",
-				"trigger": "timer",
-				"cooldown": 25.0,
-				"effect_on_trigger": {"hide_ui_duration": 8.0},
-				"choices": [
-					{
-						"id": "listen",
-						"text": "Listen carefully",
-						"effect": {"instability_mul": -0.20, "pause_progress": true}
-					},
-					{
-						"id": "guess",
-						"text": "Push forward blind",
-						"effect": {"continue_blind": true, "risk_overclock": true}
-					}
-				]
-			}
-		]
-	}
-	
-	# ============================================
-	# DEPTH 10 — VEIL (Random outcomes - 5 upgrades)
-	# ============================================
-	_depth_defs[10] = {
-		"new_title": "Veil",
-		"desc": "Truth and lie intertwine. Choose wisely, or don't.",
-		"ui_unlocks": [],
-		"rules": {
-			"instability_enabled": true,
-			"progress_mul": 1.0,
-			"mem_mul": 1.45,
-			"cry_mul": 1.25,
-			"forced_wake_at_100": true,
-			"event_enabled": true,
-			"event_timer": 30.0,
-			"dive_unlock_requirement": {"upgrade": "stab", "level": 10}
-		},
-		"upgrades": {
-			"probability_anchor": {
-				"name": "Probability Anchor",
-				"description": "Reduce random variance by 8% per level",
-				"max_level": 999999,
-				"base_cost": 960.0,
-				"cost_growth": 1.7,
-				"effect_per_level": 0.08,
-				"cost_currency": "thoughts"
-			},
-			"veil_piercing": {
-				"name": "Veil Piercing",
-				"description": "See exact outcomes before choosing",
-				"max_level": 1,
-				"base_cost": 5000.0,
-				"cost_growth": 1.0,
-				"effect_per_level": 1.0,
-				"cost_currency": "thoughts"
-			},
-			"chaos_tax": {
-				"name": "Chaos Tax",
-				"description": "+15% Thoughts, outcomes 25% more random",
-				"max_level": 999999,
-				"base_cost": 1200.0,
-				"cost_growth": 2.0,
-				"effect_per_level": 0.15,
-				"cost_currency": "thoughts"
-			},
-			"order_from_chaos": {
-				"name": "Order from Chaos",
-				"description": "Every 3rd choice is guaranteed positive",
-				"max_level": 1,
-				"base_cost": 2500.0,
-				"cost_growth": 1.0,
-				"effect_per_level": 1.0,
-				"cost_currency": "thoughts"
-			},
-			"astral_logic": {
-				"name": "Astral Logic",
-				"description": "+12% Topaz Crystals, choices slightly favor good outcomes",
-				"max_level": 999999,
-				"base_cost": 1440.0,
-				"cost_growth": 1.7,
-				"effect_per_level": 0.12,
-				"cost_currency": "thoughts"
-			}
-		},
-		"events": [
-			{
-				"id": "truth_false",
-				"trigger": "timer",
-				"cooldown": 30.0,
-				"random_outcome": true,
-				"choices": [
-					{
-						"id": "button_a",
-						"text": "???",
-						"outcomes": [
-							{"chance": 0.5, "progress_bonus": 0.20, "instability_bonus": -0.10},
-							{"chance": 0.5, "progress_bonus": -0.10, "instability_bonus": 0.20}
-						]
-					},
-					{
-						"id": "button_b",
-						"text": "???",
-						"outcomes": [
-							{"chance": 0.5, "progress_bonus": 0.20, "instability_bonus": -0.10},
-							{"chance": 0.5, "progress_bonus": -0.10, "instability_bonus": 0.20}
-						]
-					}
-				]
-			}
-		]
-	}
-	
-	# ============================================
-	# DEPTH 11 — RUIN (Loss risk - 5 upgrades)
-	# ============================================
-	_depth_defs[11] = {
-		"new_title": "Ruin",
-		"desc": "What was built crumbles. The past is not forever.",
-		"ui_unlocks": [],
-		"rules": {
-			"instability_enabled": true,
-			"progress_mul": 1.0,
-			"mem_mul": 1.50,
+			"mem_mul": 1.48,
 			"cry_mul": 1.28,
 			"forced_wake_at_100": true,
 			"event_enabled": true,
 			"event_timer": 25.0,
-			"dive_unlock_requirement": {"upgrade": "stab", "level": 10}
+			"hide_all_numbers": true,
+			"dive_unlock_requirement": {"upgrade": "inner_eye", "level": 2}
 		},
 		"upgrades": {
-			"reinforced_anchors": {
-				"name": "Reinforced Anchors",
-				"description": "25% chance to resist bonus loss per level",
-				"max_level": 999999,
-				"base_cost": 1500.0,
-				"cost_growth": 1.7,
-				"effect_per_level": 0.25,
-				"cost_currency": "thoughts"
-			},
-			"scavengers_luck": {
-				"name": "Scavenger's Luck",
-				"description": "Gain +20% Crystals when bonuses are 'ruined' per level",
-				"max_level": 999999,
-				"base_cost": 1200.0,
-				"cost_growth": 1.7,
-				"effect_per_level": 0.20,
-				"cost_currency": "thoughts"
-			},
-			"entropy_shield": {
-				"name": "Entropy Shield",
-				"description": "Immune to bonus loss, -0.05% Instability/sec",
-				"max_level": 1,
-				"base_cost": 4000.0,
-				"cost_growth": 1.0,
-				"effect_per_level": 1.0,
-				"cost_currency": "thoughts"
-			},
-			"ruin_diver": {
-				"name": "Ruin Diver",
-				"description": "+18% Garnet Crystals per level",
-				"max_level": 999999,
-				"base_cost": 1000.0,
-				"cost_growth": 1.7,
-				"effect_per_level": 0.18,
-				"cost_currency": "thoughts"
-			},
-			"phoenix_protocol": {
-				"name": "Phoenix Protocol",
-				"description": "If all bonuses lost, gain +80% Thoughts for 60s",
-				"max_level": 1,
-				"base_cost": 3500.0,
-				"cost_growth": 1.0,
-				"effect_per_level": 1.0,
-				"cost_currency": "thoughts"
-			}
-		},
-		"events": [
-			{
-				"id": "collapse",
-				"trigger": "timer",
-				"cooldown": 25.0,
-				"effect_on_trigger": {"lose_frozen_depth": -2},
-				"choices": [
-					{
-						"id": "let_go",
-						"text": "Let it crumble",
-						"effect": {"confirm_loss": true, "instability_bonus": -0.10}
-					},
-					{
-						"id": "reinforce",
-						"text": "Reinforce structure",
-						"effect": {"cost_crystals": 100.0, "keep_bonuses": true, "instability_bonus": 0.15}
-					}
-				]
-			}
-		]
-	}
-	
-	# ============================================
-	# DEPTH 12 — ECLIPSE (Mirror danger - 5 upgrades)
-	# ============================================
-	_depth_defs[12] = {
-		"new_title": "Eclipse",
-		"desc": "Your shadow acts. Every move echoes dangerously.",
-		"ui_unlocks": ["shadow_clone"],
-		"rules": {
-			"instability_enabled": true,
-			"progress_mul": 1.0,
-			"mem_mul": 1.55,
-			"cry_mul": 1.30,
-			"forced_wake_at_100": true,
-			"event_enabled": true,
-			"event_timer": 20.0,
-			"shadow_clone_enabled": true,
-			"shadow_delay": 5.0,
-			"dive_unlock_requirement": {"upgrade": "stab", "level": 10}
-		},
-		"upgrades": {
-			"shadow_sync": {
-				"name": "Shadow Sync",
-				"description": "Clone efficiency +10% per level",
-				"max_level": 999999,
-				"base_cost": 2250.0,
-				"cost_growth": 1.7,
-				"effect_per_level": 0.10,
-				"cost_currency": "thoughts"
-			},
-			"dark_twin": {
-				"name": "Dark Twin",
-				"description": "Clone generates 8% of your Thoughts per level",
-				"max_level": 999999,
-				"base_cost": 1800.0,
-				"cost_growth": 1.6,
-				"effect_per_level": 0.08,
-				"cost_currency": "thoughts"
-			},
-			"eclipse_phase": {
-				"name": "Eclipse Phase",
-				"description": "Clone absorbs 12% of Instability per level",
+			"inner_eye": {
+				"name": "Inner Eye",
+				"description": "Restore UI element: Lv1=Thoughts, Lv2=Instability, Lv3=Progress, Lv4=All",
 				"max_level": 4,
-				"base_cost": 2000.0,
-				"cost_growth": 1.8,
+				"base_cost": 1.0e20,
+				"cost_growth": 10.0,  # Expensive jumps: 1e20, 1e21, 1e22, 1e23
+				"effect_per_level": 1.0,
+				"cost_currency": "thoughts"
+			},
+			"sixth_sense": {
+				"name": "Sixth Sense",
+				"description": "+15% all gains while UI is hidden per level",
+				"max_level": 10,
+				"base_cost": 5.0e19,
+				"cost_growth": 1.9,
+				"effect_per_level": 0.15,
+				"cost_currency": "thoughts"
+			},
+			"silent_running": {
+				"name": "Silent Running",
+				"description": "-12% Instability gain while blind per level",
+				"max_level": 5,
+				"base_cost": 2.5e20,
+				"cost_growth": 2.5,
 				"effect_per_level": 0.12,
 				"cost_currency": "thoughts"
 			},
-			"mirror_pool": {
-				"name": "Mirror Pool",
-				"description": "Clone also generates 4% of Crystals per level",
-				"max_level": 999999,
-				"base_cost": 2700.0,
-				"cost_growth": 1.9,
-				"effect_per_level": 0.04,
+			"aquamarine_focus": {
+				"name": "Aquamarine Focus",
+				"description": "+28% Aquamarine Crystals per level",
+				"max_level": 50,
+				"base_cost": 1.0e21,
+				"cost_growth": 1.75,
+				"effect_per_level": 0.28,
 				"cost_currency": "thoughts"
 			},
-			"umbral_burst": {
-				"name": "Umbral Burst",
-				"description": "Every 60s, clone grants instant 6% Progress",
+			"void_trust": {
+				"name": "Trust the Void",
+				"description": "Permanently blind but +35% all gains (Irreversible)",
 				"max_level": 1,
-				"base_cost": 6000.0,
-				"cost_growth": 1.0,
-				"effect_per_level": 1.0,
-				"cost_currency": "thoughts"
-			}
-		},
-		"events": [
-			{
-				"id": "shadow_self",
-				"trigger": "timer",
-				"cooldown": 20.0,
-				"effect_on_trigger": {"shadow_active": true, "duration": 15.0},
-				"warning": "Your shadow mirrors your actions with 5s delay!"
-			}
-		]
-	}
-	
-	# ============================================
-	# DEPTH 13 — VOIDLINE (Passive drain - 5 upgrades)
-	# ============================================
-	_depth_defs[13] = {
-		"new_title": "Voidline",
-		"desc": "The edge of existence. The void hungers constantly.",
-		"ui_unlocks": [],
-		"rules": {
-			"instability_enabled": true,
-			"progress_mul": 1.0,
-			"mem_mul": 1.60,
-			"cry_mul": 1.35,
-			"forced_wake_at_100": true,
-			"event_enabled": true,
-			"event_type": "passive",
-			"void_drain_chance": 0.01,
-			"void_drain_amount": 0.05,
-			"dive_unlock_requirement": {"upgrade": "stab", "level": 10}
-		},
-		"upgrades": {
-			"void_anchor": {
-				"name": "Void Anchor",
-				"description": "Reduce drain chance by 0.1%/sec per level",
-				"max_level": 999999,
-				"base_cost": 3375.0,
-				"cost_growth": 1.7,
-				"effect_per_level": -0.001,
-				"cost_currency": "thoughts"
-			},
-			"tether_line": {
-				"name": "Tether Line",
-				"description": "25% chance to recover drained progress per level",
-				"max_level": 999999,
-				"base_cost": 2700.0,
-				"cost_growth": 1.7,
-				"effect_per_level": 0.25,
-				"cost_currency": "thoughts"
-			},
-			"embrace_the_void": {
-				"name": "Embrace the Void",
-				"description": "+60% all gains, drain chance becomes 4%",
-				"max_level": 1,
-				"base_cost": 8000.0,
-				"cost_growth": 1.0,
-				"effect_per_level": 1.0,
-				"cost_currency": "thoughts"
-			},
-			"onyx_focus": {
-				"name": "Onyx Focus",
-				"description": "+20% Onyx Crystals per level",
-				"max_level": 999999,
-				"base_cost": 4050.0,
-				"cost_growth": 1.6,
-				"effect_per_level": 0.20,
-				"cost_currency": "thoughts"
-			},
-			"null_field": {
-				"name": "Null Field",
-				"description": "First 30s of each depth immune to drain",
-				"max_level": 1,
-				"base_cost": 5000.0,
+				"base_cost": 1.0e25,
 				"cost_growth": 1.0,
 				"effect_per_level": 1.0,
 				"cost_currency": "thoughts"
@@ -1771,66 +1532,66 @@ func _build_depth_defs() -> void:
 		},
 		"events": []
 	}
-	
+
 	# ============================================
-	# DEPTH 14 — BLACKWATER (Crystal carryover - 5 upgrades)
+	# DEPTH 10 — VEIL (High RNG/Variance)
 	# ============================================
-	_depth_defs[14] = {
-		"new_title": "Blackwater",
-		"desc": "Dark tides rise. What you gain here stains the next.",
-		"ui_unlocks": [],
+	_depth_defs[10] = {
+		"new_title": "Veil",
+		"desc": "Probability fluctuates wildly. Certainty is purchased at a premium.",
+		"ui_unlocks": ["probability_display"],
 		"rules": {
 			"instability_enabled": true,
 			"progress_mul": 1.0,
-			"mem_mul": 1.65,
-			"cry_mul": 1.38,
+			"mem_mul": 1.55,
+			"cry_mul": 1.35,
 			"forced_wake_at_100": true,
 			"event_enabled": true,
-			"event_timer": 20.0,
-			"dive_unlock_requirement": {"upgrade": "stab", "level": 10}
+			"event_timer": 30.0,
+			"dive_unlock_requirement": {"upgrade": "probability_anchor", "level": 5}
 		},
 		"upgrades": {
-			"crystal_memory": {
-				"name": "Crystal Memory",
-				"description": "Carry +6% of this depth's Crystals to next run per level",
-				"max_level": 999999,
-				"base_cost": 5000.0,
-				"cost_growth": 1.8,
-				"effect_per_level": 0.06,
+			"probability_anchor": {
+				"name": "Probability Anchor",
+				"description": "Reduce random variance by 12% per level",
+				"max_level": 5,  # 60% reduction max
+				"base_cost": 1.0e28,
+				"cost_growth": 4.0,
+				"effect_per_level": 0.12,
 				"cost_currency": "thoughts"
 			},
-			"resonance": {
-				"name": "Resonance",
-				"description": "All depths generate +3% Crystals this run per level",
-				"max_level": 999999,
-				"base_cost": 4000.0,
-				"cost_growth": 1.7,
-				"effect_per_level": 0.03,
-				"cost_currency": "thoughts"
-			},
-			"blackwater_breathing": {
-				"name": "Blackwater Breathing",
-				"description": "-0.1% Instability/sec per level",
-				"max_level": 3,
-				"base_cost": 7500.0,
-				"cost_growth": 2.0,
-				"effect_per_level": -0.1,
-				"cost_currency": "thoughts"
-			},
-			"abyssal_tribute": {
-				"name": "Abyssal Tribute",
-				"description": "+20% Jade Crystals, but 5% sacrificed to the deep",
-				"max_level": 3,
-				"base_cost": 6000.0,
-				"cost_growth": 1.8,
-				"effect_per_level": 0.20,
-				"cost_currency": "thoughts"
-			},
-			"permanent_record": {
-				"name": "Permanent Record",
-				"description": "Wake grants +2% of total run Crystals as bonus",
+			"quantum_lock": {
+				"name": "Quantum Lock",
+				"description": "All random outcomes are at least neutral (no negatives)",
 				"max_level": 1,
-				"base_cost": 10000.0,
+				"base_cost": 1.0e30,
+				"cost_growth": 1.0,
+				"effect_per_level": 1.0,
+				"cost_currency": "thoughts"
+			},
+			"chaos_gaming": {
+				"name": "Chaos Gaming",
+				"description": "Random events trigger 25% more frequently, +20% rewards",
+				"max_level": 5,
+				"base_cost": 5.0e28,
+				"cost_growth": 2.5,
+				"effect_per_level": 0.25,
+				"cost_currency": "thoughts"
+			},
+			"onyx_focus": {
+				"name": "Onyx Focus",
+				"description": "+30% Onyx Crystals per level",
+				"max_level": 50,
+				"base_cost": 2.5e29,
+				"cost_growth": 1.8,
+				"effect_per_level": 0.30,
+				"cost_currency": "thoughts"
+			},
+			"certainty_protocol": {
+				"name": "Certainty Protocol",
+				"description": "Spend 1e50 Thoughts to guarantee next event is positive (Cooldown: 60s)",
+				"max_level": 1,
+				"base_cost": 1.0e50,  # Massive one-time cost
 				"cost_growth": 1.0,
 				"effect_per_level": 1.0,
 				"cost_currency": "thoughts"
@@ -1838,89 +1599,405 @@ func _build_depth_defs() -> void:
 		},
 		"events": [
 			{
-				"id": "tide",
+				"id": "schrodinger_box",
 				"trigger": "timer",
-				"cooldown": 20.0,
-				"effect_on_trigger": {"instability_mul": 1.5, "duration": 15.0},
+				"cooldown": 30.0,
 				"choices": [
 					{
-						"id": "swim",
-						"text": "Swim through",
-						"effect": {"continue": true, "keep_mul": true}
-					},
-					{
-						"id": "anchor",
-						"text": "Drop anchor",
-						"effect": {"cost_control": 75.0, "normal_instability": true, "progress_mul": 0.75}
+						"id": "open",
+						"text": "Open the box",
+						"effect": {"random_range": {"progress": [-0.2, 0.5], "instability": [-0.3, 0.4]}}
 					}
 				]
 			}
 		]
 	}
-	
+
 	# ============================================
-	# DEPTH 15 — ABYSS (Final test - 5 upgrades)
+	# DEPTH 11 — RUIN (Permanent Loss Mechanics)
 	# ============================================
-	_depth_defs[15] = {
-		"new_title": "Abyss",
-		"desc": "The final threshold. All trials converge here.",
-		"ui_unlocks": ["abyss_challenge"],
+	_depth_defs[11] = {
+		"new_title": "Ruin",
+		"desc": "Entropy claims all. Even your upgrades decay here.",
+		"ui_unlocks": ["decay_warning"],
 		"rules": {
 			"instability_enabled": true,
 			"progress_mul": 1.0,
-			"mem_mul": 1.70,
-			"cry_mul": 1.45,
+			"mem_mul": 1.65,
+			"cry_mul": 1.42,
+			"forced_wake_at_100": true,
+			"event_enabled": true,
+			"event_timer": 25.0,
+			"dive_unlock_requirement": {"upgrade": "entropy_shield", "level": 1}
+		},
+		"upgrades": {
+			"entropy_shield": {
+				"name": "Entropy Shield",
+				"description": "40% chance to resist upgrade decay per level",
+				"max_level": 5,  # 200% effective = immunity
+				"base_cost": 1.0e40,
+				"cost_growth": 5.0,
+				"effect_per_level": 0.40,
+				"cost_currency": "thoughts"
+			},
+			"phoenix_protocol": {
+				"name": "Phoenix Protocol",
+				"description": "When upgrade decays, gain +50% burst progress",
+				"max_level": 3,
+				"base_cost": 5.0e41,
+				"cost_growth": 3.0,
+				"effect_per_level": 0.50,
+				"cost_currency": "thoughts"
+			},
+			"scavenger_fortune": {
+				"name": "Scavenger's Fortune",
+				"description": "+35% Crystals gained from Ruin events per level",
+				"max_level": 10,
+				"base_cost": 2.5e41,
+				"cost_growth": 2.0,
+				"effect_per_level": 0.35,
+				"cost_currency": "thoughts"
+			},
+			"jade_focus": {
+				"name": "Jade Focus",
+				"description": "+32% Jade Crystals per level",
+				"max_level": 50,
+				"base_cost": 1.0e42,
+				"cost_growth": 1.85,
+				"effect_per_level": 0.32,
+				"cost_currency": "thoughts"
+			},
+			"ruin_diver": {
+				"name": "Ruin Diver",
+				"description": "Lose 50% less Memories on forced Wake per level",
+				"max_level": 5,
+				"base_cost": 5.0e42,
+				"cost_growth": 4.0,
+				"effect_per_level": 0.50,
+				"cost_currency": "thoughts"
+			}
+		},
+		"events": [
+			{
+				"id": "structural_collapse",
+				"trigger": "timer",
+				"cooldown": 25.0,
+				"effect_on_trigger": {"random_upgrade_level_down": 1},
+				"choices": [
+					{
+						"id": "accept",
+						"text": "Accept the loss",
+						"effect": {"instability_reduction": 0.15}
+					},
+					{
+						"id": "resist",
+						"text": "Resist (50% chance to save upgrade, +30% Instability)",
+						"effect": {"resist_chance": 0.5, "instability_bonus": 0.3}
+					}
+				]
+			}
+		]
+	}
+
+	# ============================================
+	# DEPTH 12 — ECLIPSE (Shadow Clone - Combat Synergy)
+	# ============================================
+	_depth_defs[12] = {
+		"new_title": "Eclipse",
+		"desc": "Your shadow fights beside you. Combat efficiency peaks here.",
+		"ui_unlocks": ["shadow_clone_ui"],
+		"rules": {
+			"instability_enabled": true,
+			"progress_mul": 1.0,
+			"mem_mul": 1.75,
+			"cry_mul": 1.50,
+			"forced_wake_at_100": true,
+			"event_enabled": true,
+			"event_timer": 20.0,
+			"dive_unlock_requirement": {"upgrade": "shadow_binding", "level": 5}
+		},
+		"upgrades": {
+			"shadow_binding": {
+				"name": "Shadow Binding",
+				"description": "Shadow Clone deals +15% damage per level in Dream Combat",
+				"max_level": 20,
+				"base_cost": 1.0e55,
+				"cost_growth": 2.0,
+				"effect_per_level": 0.15,
+				"cost_currency": "thoughts"
+			},
+			"twin_momentum": {
+				"name": "Twin Momentum",
+				"description": "Clone generates +3% of your Thoughts/sec per level",
+				"max_level": 25,
+				"base_cost": 5.0e55,
+				"cost_growth": 1.9,
+				"effect_per_level": 0.03,
+				"cost_currency": "thoughts"
+			},
+			"umbral_shield": {
+				"name": "Umbral Shield",
+				"description": "Clone absorbs +10% of Instability gain per level",
+				"max_level": 5,
+				"base_cost": 2.5e56,
+				"cost_growth": 3.0,
+				"effect_per_level": 0.10,
+				"cost_currency": "thoughts"
+			},
+			"moonstone_focus": {
+				"name": "Moonstone Focus",
+				"description": "+35% Moonstone Crystals per level",
+				"max_level": 50,
+				"base_cost": 1.0e57,
+				"cost_growth": 1.9,
+				"effect_per_level": 0.35,
+				"cost_currency": "thoughts"
+			},
+			"eclipse_burst": {
+				"name": "Eclipse Burst",
+				"description": "Every 45s, gain instant 8% progress + Dreamcloud generation burst",
+				"max_level": 5,
+				"base_cost": 1.0e58,
+				"cost_growth": 2.5,
+				"effect_per_level": 0.02,  # +2% progress and +10% Dreamcloud gen per level
+				"cost_currency": "thoughts"
+			}
+		},
+		"events": [
+			{
+				"id": "shadow_merge",
+				"trigger": "timer",
+				"cooldown": 20.0,
+				"choices": [
+					{
+						"id": "merge",
+						"text": "Merge with Shadow (Double all stats for 15s, then +50% Instability)",
+						"effect": {"all_mul": 2.0, "duration": 15.0, "after_instability": 0.5}
+					},
+					{
+						"id": "separate",
+						"text": "Remain Separate (+20% Dreamcloud generation for combat)",
+						"effect": {"dreamcloud_gen_mul": 1.2, "duration": 30.0}
+					}
+				]
+			}
+		]
+	}
+
+	# ============================================
+	# DEPTH 13 — VOIDLINE (Passive Drain)
+	# ============================================
+	_depth_defs[13] = {
+		"new_title": "Voidline",
+		"desc": "The event horizon. Progress itself is consumed.",
+		"ui_unlocks": ["void_drain_meter"],
+		"rules": {
+			"instability_enabled": true,
+			"progress_mul": 1.0,
+			"mem_mul": 1.85,
+			"cry_mul": 1.60,
+			"forced_wake_at_100": true,
+			"event_enabled": false,
+			"void_drain_enabled": true,  # Special rule
+			"dive_unlock_requirement": {"upgrade": "void_anchor", "level": 10}
+		},
+		"upgrades": {
+			"void_anchor": {
+				"name": "Void Anchor",
+				"description": "-15% progress drain rate per level",
+				"max_level": 10,
+				"base_cost": 1.0e75,
+				"cost_growth": 3.0,
+				"effect_per_level": 0.15,
+				"cost_currency": "thoughts"
+			},
+			"tether_recovery": {
+				"name": "Tether Recovery",
+				"description": "40% chance to recover drained progress per level",
+				"max_level": 5,
+				"base_cost": 5.0e76,
+				"cost_growth": 2.5,
+				"effect_per_level": 0.40,
+				"cost_currency": "thoughts"
+			},
+			"obsidian_focus": {
+				"name": "Obsidian Focus",
+				"description": "+40% Obsidian Crystals per level",
+				"max_level": 50,
+				"base_cost": 2.5e77,
+				"cost_growth": 2.0,
+				"effect_per_level": 0.40,
+				"cost_currency": "thoughts"
+			},
+			"embrace_void": {
+				"name": "Embrace the Void",
+				"description": "Drain is doubled, but all gains are +80%",
+				"max_level": 1,
+				"base_cost": 1.0e80,
+				"cost_growth": 1.0,
+				"effect_per_level": 1.0,
+				"cost_currency": "thoughts"
+			},
+			"null_field": {
+				"name": "Null Field",
+				"description": "Immune to drain for first 60s of depth per level",
+				"max_level": 5,
+				"base_cost": 1.0e78,
+				"cost_growth": 5.0,
+				"effect_per_level": 60.0,
+				"cost_currency": "thoughts"
+			}
+		},
+		"events": []
+	}
+
+	# ============================================
+	# DEPTH 14 — BLACKWATER (Meta/Carryover Focus)
+	# ============================================
+	_depth_defs[14] = {
+		"new_title": "Blackwater",
+		"desc": "Dark tides bind runs together. Prepare for transcendence.",
+		"ui_unlocks": ["carryover_preview"],
+		"rules": {
+			"instability_enabled": true,
+			"progress_mul": 1.0,
+			"mem_mul": 1.95,
+			"cry_mul": 1.75,
+			"forced_wake_at_100": true,
+			"event_enabled": true,
+			"event_timer": 20.0,
+			"dive_unlock_requirement": {"upgrade": "abyssal_tribute", "level": 3}
+		},
+		"upgrades": {
+			"abyssal_memory": {
+				"name": "Abyssal Memory",
+				"description": "Carry +8% of total Thoughts to next run per level",
+				"max_level": 10,
+				"base_cost": 1.0e120,
+				"cost_growth": 10.0,
+				"effect_per_level": 0.08,
+				"cost_currency": "thoughts"
+			},
+			"crystal_resonance": {
+				"name": "Crystal Resonance",
+				"description": "Start next run with +100 of this depth's crystals per level",
+				"max_level": 50,
+				"base_cost": 1.0e125,
+				"cost_growth": 1.5,
+				"effect_per_level": 100.0,
+				"cost_currency": "thoughts"
+			},
+			"tidal_stabilization": {
+				"name": "Tidal Stabilization",
+				"description": "Instability reduces by 0.05%/sec per level passively",
+				"max_level": 5,
+				"base_cost": 5.0e122,
+				"cost_growth": 5.0,
+				"effect_per_level": 0.05,
+				"cost_currency": "thoughts"
+			},
+			"citrine_focus": {
+				"name": "Citrine Focus",
+				"description": "+45% Citrine Crystals per level",
+				"max_level": 50,
+				"base_cost": 2.5e124,
+				"cost_growth": 2.1,
+				"effect_per_level": 0.45,
+				"cost_currency": "thoughts"
+			},
+			"permanent_record": {
+				"name": "Permanent Record",
+				"description": "Transcendence Points from this run +25% per level",
+				"max_level": 10,
+				"base_cost": 1.0e150,
+				"cost_growth": 100.0,
+				"effect_per_level": 0.25,
+				"cost_currency": "thoughts"
+			}
+		},
+		"events": [
+			{
+				"id": "dark_tide",
+				"trigger": "timer",
+				"cooldown": 20.0,
+				"choices": [
+					{
+						"id": "drown",
+						"text": "Drown in Memories (Sacrifice 90% current Thoughts for +50% Instability cap)",
+						"effect": {"thoughts_sacrifice": 0.9, "instability_cap_bonus": 0.5, "duration": 30.0}
+					},
+					{
+						"id": "float",
+						"text": "Float (+20% carryover to next run)",
+						"effect": {"next_run_carryover_mul": 1.2}
+					}
+				]
+			}
+		]
+	}
+
+	# ============================================
+	# DEPTH 15 — ABYSS (Final Challenge)
+	# ============================================
+	_depth_defs[15] = {
+		"new_title": "Abyss",
+		"desc": "The convergence. All previous mechanics manifest randomly.",
+		"ui_unlocks": ["abyss_challenge", "transcendence_button"],
+		"rules": {
+			"instability_enabled": true,
+			"progress_mul": 1.0,
+			"mem_mul": 2.10,
+			"cry_mul": 2.00,
 			"forced_wake_at_100": true,
 			"event_enabled": true,
 			"event_timer": 15.0,
-			"abyss_extra_instability": 2.0,
-			"random_event_pool": ["echo", "paranoia", "narrow_ledge", "the_hush", "truth_false", "collapse", "shadow_self", "tide"],
-			"dive_unlock_requirement": {"upgrade": "stab", "level": 5}
+			"random_event_pool": ["phantom_spike", "schrodinger_box", "structural_collapse", "shadow_merge", "dark_tide"],
+			"dive_unlock_requirement": {"upgrade": "cosmic_horror", "level": 1}
 		},
 		"upgrades": {
-			"abyssal_will": {
-				"name": "Abyssal Will",
-				"description": "+1% resistance to all negative effects per level",
-				"max_level": 999999,
-				"base_cost": 7500.0,
-				"cost_growth": 1.8,
-				"effect_per_level": 0.01,
-				"cost_currency": "thoughts"
-			},
-			"depth_mastery": {
-				"name": "Depth Mastery",
-				"description": "+25% Thoughts, Memories, Crystals per level",
-				"max_level": 999999,
-				"base_cost": 6000.0,
-				"cost_growth": 1.8,
-				"effect_per_level": 0.25,
-				"cost_currency": "thoughts"
-			},
-			"final_anchor": {
-				"name": "Final Anchor",
-				"description": "-0.15% Instability/sec (costs 10x more)",
-				"max_level": 999999,
-				"base_cost": 6480.0,
-				"cost_growth": 1.4,
-				"effect_per_level": -0.15,
-				"cost_currency": "thoughts"
-			},
 			"cosmic_horror": {
 				"name": "Cosmic Horror",
-				"description": "All previous depth upgrades active at 25% effect",
+				"description": "All previous depth upgrades active at 30% efficiency",
 				"max_level": 1,
-				"base_cost": 15000.0,
+				"base_cost": 1.0e200,
 				"cost_growth": 1.0,
-				"effect_per_level": 0.25,
+				"effect_per_level": 0.30,
+				"cost_currency": "thoughts"
+			},
+			"abyssal_sovereignty": {
+				"name": "Abyssal Sovereignty",
+				"description": "Immune to all negative event effects",
+				"max_level": 1,
+				"base_cost": 1.0e250,
+				"cost_growth": 1.0,
+				"effect_per_level": 1.0,
+				"cost_currency": "thoughts"
+			},
+			"quartz_focus": {
+				"name": "Quartz Focus",
+				"description": "+50% Quartz Crystals per level",
+				"max_level": 100,
+				"base_cost": 1.0e180,
+				"cost_growth": 1.5,
+				"effect_per_level": 0.50,
 				"cost_currency": "thoughts"
 			},
 			"transcendence": {
 				"name": "Transcendence",
-				"description": "Gain ability to 'Sleep' (second prestige layer)",
+				"description": "Unlock the Sleep mechanic (Second Prestige Layer)",
 				"max_level": 1,
-				"base_cost": 50000.0,
+				"base_cost": 1.0e300,  # The ultimate goal
 				"cost_growth": 1.0,
 				"effect_per_level": 1.0,
+				"cost_currency": "thoughts"
+			},
+			"infinite_depth": {
+				"name": "Infinite Depth",
+				"description": "Can continue past 100% Instability, but gains scale exponentially with danger",
+				"max_level": 10,
+				"base_cost": 1.0e220,
+				"cost_growth": 100.0,
+				"effect_per_level": 0.10,  # +10% gains per % over 100
 				"cost_currency": "thoughts"
 			}
 		},
@@ -1930,7 +2007,7 @@ func _build_depth_defs() -> void:
 				"trigger": "timer",
 				"cooldown": 15.0,
 				"random_from_pool": true,
-				"note": "Randomly picks from all previous depth events"
+				"intensity_mul": 1.5  # All events are 50% more severe
 			}
 		]
 	}
@@ -1950,58 +2027,68 @@ func _apply_depth_rules(d: int) -> Dictionary:
 	var def: Dictionary = get_depth_def(d)
 	var rules: Dictionary = def.get("rules", {})
 	
-	var base_inst_ps: float = 0.0
-	match d:
-		2: base_inst_ps = 0.12
-		3: base_inst_ps = 0.15
-		4: base_inst_ps = 0.18
-		5: base_inst_ps = 0.22
-		6, 7, 8, 9: base_inst_ps = 0.28
-		10, 11, 12: base_inst_ps = 0.35
-		13, 14, 15: base_inst_ps = 0.45
-		_: base_inst_ps = 0.0
+	# Default returns
+	var inst_rate: float = 0.0
+	var prog_mul: float = 1.0
+	var mem_mul: float = float(rules.get("mem_mul", 1.0))
+	var cry_mul: float = float(rules.get("cry_mul", 1.0))
+	var inst_cap: float = get_instability_cap(d)
 	
-	# APPLY STABILIZER UPGRADE (Depth 2)
-	if d == 2:
-		var stabilizer_level := _get_local_level(d, "stabilize")
-		if stabilizer_level > 0:
-			var def_data: Dictionary = def.get("upgrades", {}).get("stabilize", {})
-			var effect_per_level: float = def_data.get("effect_per_level", -0.05)
-			base_inst_ps *= pow(1.0 + effect_per_level, stabilizer_level)
-			base_inst_ps = maxf(0.01, base_inst_ps)  # Floor at 0.01 so it never goes negative
+	# Calculate instability rate for depth 2+
+	if d >= 2 and rules.get("instability_enabled", false):
+		# New aggressive curve:
+		# Depth 2: 2%/s (50s to fill)
+		# Depth 5: 6.5%/s (15s to fill)
+		# Depth 10: 35%/s (3s to fill)
+		# Depth 15: 150%/s (0.6s to fill - virtually instant without upgrades)
+		var base_rate: float = 0.02 * pow(1.5, d - 2)
+		
+		# Time pressure: +0.2% per second spent in depth
+		_ensure_depth_runtime(d)
+		var rt: Dictionary = _depth_runtime[d]
+		var time_in_depth: float = rt.get("time_in_depth", 0.0)
+		var time_pressure: float = 1.0 + (time_in_depth * 0.002)
+		base_rate *= time_pressure
+		
+		# Apply Stabilize upgrades (Depth 2) - 5% multiplicative reduction per level
+		var stab_level: int = _get_local_level(2, "stabilize") + _get_local_level(d, "stabilize")
+		if stab_level > 0:
+			base_rate *= pow(0.95, stab_level)
+		
+		# Apply Crush Resistance (Depth 3) - 6% multiplicative reduction per level
+		if d >= 3:
+			var crush_level: int = _get_local_level(3, "crush_resistance")
+			if crush_level > 0:
+				base_rate *= pow(0.94, crush_level)
+		
+		inst_rate = base_rate * 100.0  # Convert to percentage points
 	
-	# APPLY PRESSURE HARDENING (Depth 3) - reduces slowdown from pressure
-	var prog_mul := float(rules.get("progress_mul", 1.0))
-	if rules.has("pressure_threshold") and float(instability) >= float(rules.get("pressure_threshold")):
-		var pressure_slow: float = 0.6
-		# Pressure Hardening reduces the penalty
-		var hardening_level := _get_local_level(d, "pressure_hardening")
-		if hardening_level > 0:
-			var hardening_def: Dictionary = def.get("upgrades", {}).get("pressure_hardening", {})
-			var hardening_effect: float = hardening_def.get("effect_per_level", 0.10)
-			pressure_slow = minf(1.0, pressure_slow + (hardening_effect * hardening_level))
-		prog_mul *= pressure_slow
-
-	var mem_mul := float(rules.get("mem_mul", 1.0))
-	var cry_mul := float(rules.get("cry_mul", 1.0))
-	
-	# APPLY CRUSH RESISTANCE (Depth 3) - reduces instability gain
-	if d == 3:
-		var crush_level := _get_local_level(d, "crush_resistance")
-		if crush_level > 0:
-			var crush_def: Dictionary = def.get("upgrades", {}).get("crush_resistance", {})
-			var crush_effect: float = crush_def.get("effect_per_level", -0.04)
-			base_inst_ps += (crush_effect * crush_level)
-			base_inst_ps = maxf(0.01, base_inst_ps)
+	# Pressure mechanic (Depth 3)
+	if d == 3 and rules.has("pressure_threshold"):
+		var pressure_threshold: float = rules.get("pressure_threshold", 60.0)
+		var inst_percent: float = (instability / inst_cap) * 100.0 if inst_cap > 0 else 0.0
+		
+		if inst_percent >= pressure_threshold:
+			var pressure_severity: float = (inst_percent - pressure_threshold) / (100.0 - pressure_threshold)
+			pressure_severity = clampf(pressure_severity, 0.0, 1.0)
+			var slow_mult: float = 0.4
+			
+			var hardening_level: int = _get_local_level(d, "pressure_hardening")
+			if hardening_level > 0:
+				var hardening_def: Dictionary = def.get("upgrades", {}).get("pressure_hardening", {})
+				var hardening_effect: float = hardening_def.get("effect_per_level", 0.12)
+				slow_mult = maxf(0.0, 0.4 - (hardening_effect * hardening_level))
+			
+			prog_mul *= (1.0 - (pressure_severity * slow_mult))
 	
 	return {
-		"instability_per_sec": base_inst_ps,
+		"instability_per_sec": inst_rate,  # This is % per second (e.g., 0.5 means +0.5%/s)
 		"progress_mul": prog_mul,
 		"mem_mul": mem_mul,
 		"cry_mul": cry_mul,
-		"rules": rules
+		"rules": rules,
+		"instability_cap": inst_cap
 	}
-
 # Add helper to get upgrade level (if not already present)
 func _get_meta_upgrade_level(depth: int, upgrade_id: String) -> int:
 	var meta = get_tree().current_scene.find_child("DepthMetaSystem", true, false)
@@ -2069,31 +2156,27 @@ func _trigger_depth_event(d: int) -> void:
 		_trigger_rift_choice(event_data)
 
 
-func _on_rift_choice_resolved(choice_id: String, effects: Dictionary) -> void:
+func _on_rift_choice_resolved(_choice_id: String, effects: Dictionary) -> void:
 	set_meta("progress_paused", false)
 	_rift_event_active = false
 	
-	var gm = get_node_or_null("/root/Main/GameManager")
-	if gm == null:
-		return
+	# Get instability cap
+	var inst_cap: float = get_instability_cap(active_depth)
 	
-	var inst_cap = 1000.0
-	if gm.has_method("get_instability_cap"):
-		inst_cap = gm.get_instability_cap()
-	
-	# Apply instability based on percentage in effects
 	if effects.has("instability_bonus"):
-		var percent = float(effects["instability_bonus"])
-		var amount = inst_cap * percent
-		gm.instability = clampf(gm.instability + amount, 0.0, inst_cap)
-		print("Rift choice '%s': +%.1f instability (%.0f%% of cap)" % [choice_id, amount, percent * 100])
+		var percent: float = float(effects["instability_bonus"])
+		instability += (inst_cap * percent)
 	
-	# Apply other effects (progress, multipliers, etc.)
 	if effects.has("progress_bonus"):
-		# Apply progress...
-		pass
+		var prog_cap: float = get_depth_progress_cap(active_depth)
+		var current: float = _run_internal[active_depth - 1].get("progress", 0.0)
+		_run_internal[active_depth - 1]["progress"] = minf(prog_cap, current + (prog_cap * float(effects["progress_bonus"])))
+	
+	# Handle costs if any (now in thoughts, not dreamcloud)
+	if effects.has("cost_thoughts"):
+		var cost: float = float(effects["cost_thoughts"])
+		thoughts = max(0.0, thoughts - cost)
 		
-# Call this in _tick_active_depth to apply temporary multipliers
 func get_temporary_memory_multiplier() -> float:
 	var mult = 1.0
 	for buff in _temp_buffs.values():
@@ -2114,7 +2197,7 @@ func _trigger_flicker_event(_event_data: Dictionary = {}) -> void:
 			"The Murk flickers...",
 			[
 				{"id": "wait", "text": "Wait it out (Pause 10s)"},
-				{"id": "overclock", "text": "Overclock through (-20 Control, +15% Instability)"}
+				{"id": "overclock", "text": "Overclock through (-20 dreamcloud, +15% Instability)"}
 			]
 		)
 		
@@ -2126,47 +2209,37 @@ func _on_flicker_choice(choice_id: String, _effects: Dictionary) -> void:
 	print("FLICKER CHOICE: ", choice_id)
 	set_meta("progress_paused", false)
 	
-	# Disconnect to prevent duplicates
 	if choice_modal and choice_modal.choice_made.is_connected(_on_flicker_choice):
 		choice_modal.choice_made.disconnect(_on_flicker_choice)
 	
-	var gm = get_node_or_null("/root/Main/GameManager")
-	if gm == null:
-		push_error("No GameManager in _on_flicker_choice!")
-		return
-	
 	if choice_id == "overclock":
-		print("Processing OVERCLOCK")
+		# NEW: Cost 10% of current Thoughts (minimum 1000)
+		var cost: float = max(1000.0, thoughts * 0.10)
 		
-		if gm.control >= 20:
-			gm.control -= 20
-			print("Control reduced to: ", gm.control)
+		if thoughts >= cost:
+			thoughts -= cost
+			print("Overclock cost %.0f thoughts, remaining: %.0f" % [cost, thoughts])
 			
-			# CRITICAL FIX: Hardcode to your actual cap from screenshot
-			var inst_cap = 26340.0
+			# Get actual cap for this depth
+			var inst_cap: float = get_instability_cap(active_depth)
 			
-			# Calculate 15%
-			var increase_amount = inst_cap * 0.15  # Should be 3951
-			var before_inst = gm.instability
+			# +15% instability (flat percentage)
+			instability += (inst_cap * 0.15)
 			
-			gm.instability += increase_amount
-			
-			print("INSTABILITY CALC: cap=", inst_cap, " 15%=", increase_amount)
-			print("BEFORE: ", before_inst, " AFTER: ", gm.instability)
-			
-			# Add progress bonus (5% of cap)
-			var current = _run_internal[active_depth - 1].get("progress", 0.0)
-			var prog_cap = get_depth_progress_cap(active_depth)
-			var new_prog = minf(prog_cap, current + (prog_cap * 0.05))
+			# +5% instant progress
+			var current_prog: float = _run_internal[active_depth - 1].get("progress", 0.0)
+			var prog_cap: float = get_depth_progress_cap(active_depth)
+			var new_prog: float = minf(prog_cap, current_prog + (prog_cap * 0.05))
 			_run_internal[active_depth - 1]["progress"] = new_prog
 			
-			print("Progress bonus applied: ", current, " -> ", new_prog)
+			print("Overclock complete: +15% inst, +5% progress")
 		else:
-			print("Not enough control!")
+			print("Not enough thoughts for overclock!")
+			# Optional: Show UI feedback
 			
 	elif choice_id == "wait":
-		print("Wait choice - 10s pause, no instability change")
-		# Start 10s timer here if you want
+		print("Wait choice - 10s pause")
+		# Add a 10s timer that pauses progress here if you want
 			
 func _trigger_rift_choice(_event_data: Dictionary = {}) -> void:
 	set_meta("progress_paused", true)
@@ -2241,7 +2314,7 @@ func _sum_run_totals(up_to_depth: int) -> Dictionary:
 	}
 	
 func get_run_upgrade_ids(depth_index: int) -> Array[String]:
-	"""Returns list of upgrade IDs for a specific depth (e.g., ["stabilize", "controlled_fall", ...])"""
+	"""Returns list of upgrade IDs for a specific depth (e.g., ["stabilize", "dreamcloudled_fall", ...])"""
 	var def: Dictionary = get_depth_def(depth_index)
 	var upgrades: Dictionary = def.get("upgrades", {})
 	var ids: Array[String] = []
@@ -2299,8 +2372,8 @@ func get_run_thoughts_mult() -> float:
 	return total_mult
 
 # In DepthRunController.gd
-func get_run_control_mult() -> float:
-	# If you have control upgrades, add them here
+func get_run_dreamcloud_mult() -> float:
+	# If you have dreamcloud upgrades, add them here
 	return 1.0
 
 func get_run_instability_reduction() -> float:

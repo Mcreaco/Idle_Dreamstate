@@ -178,10 +178,10 @@ func get_depth_upgrade_defs(depth_i: int) -> Array:
 	}
 	var c_gain := {
 		"id":"c_gain",
-		"name":"Control Tempering",
-		"desc":"+4% Control gain per level (global).",
+		"name":"dreamcloud Tempering",
+		"desc":"+4% dreamcloud gain per level (global).",
 		"max":50,
-		"kind":"control_mult",
+		"kind":"dreamcloud_mult",
 		"costs": _pick_costs(d, 1)
 	}
 	var idle_soft := {
@@ -213,7 +213,7 @@ func get_depth_upgrade_defs(depth_i: int) -> Array:
 	match d:
 		1:
 			t_gain.name = "Thoughts Flow"
-			c_gain.name = "Control Habit"
+			c_gain.name = "dreamcloud Habit"
 			idle_soft.name = "Idle Instability Dampener"
 			wake_yield.name = "Amethyst Echo"
 			dive_start.name = "Shallow Start"
@@ -262,7 +262,7 @@ func get_depth_upgrade_defs(depth_i: int) -> Array:
 			
 		2:
 			t_gain.name = "Thoughts Compression"
-			c_gain.name = "Control Retention"
+			c_gain.name = "dreamcloud Retention"
 			idle_soft.name = "Spike Dampener"
 			wake_yield.name = "Ruby Resonance"
 			dive_start.name = "Quick Descent"
@@ -372,7 +372,7 @@ func get_depth_upgrade_defs(depth_i: int) -> Array:
 			var rift_harmonics := {
 				"id": "rift_harmonics",
 				"name": "Rift Harmonics",
-				"desc": "Control clicks reduce instability by an additional 20% at this depth.",
+				"desc": "dreamcloud clicks reduce instability by an additional 20% at this depth.",
 				"max": 3,
 				"kind": "depth_specific",
 				"costs": _pick_costs(d, 2)
@@ -735,7 +735,7 @@ func get_global_thoughts_mult() -> float:
 		total_lvl += clampi(get_level(d, "t_gain"), 0, 10)
 	return 1.0 + 0.05 * float(total_lvl)
 
-func get_global_control_mult() -> float:
+func get_global_dreamcloud_mult() -> float:
 	var total_lvl := 0
 	for d in range(1, MAX_DEPTH + 1):
 		total_lvl += clampi(get_level(d, "c_gain"), 0, 10)
@@ -816,7 +816,7 @@ func cost_for(depth_i: int, def: Dictionary) -> float:
 			return 100.0 * pow(3.5, float(d - 1)) * abyss_mult
 		"thoughts_mult":
 			return (base * 1.2) * pow(1.55, float(lvl)) * abyss_mult
-		"control_mult":
+		"dreamcloud_mult":
 			return (base * 1.15) * pow(1.52, float(lvl)) * abyss_mult
 		"idle_instab_down":
 			return (base * 1.35) * pow(1.60, float(lvl)) * abyss_mult

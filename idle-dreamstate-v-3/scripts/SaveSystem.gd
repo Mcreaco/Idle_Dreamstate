@@ -64,6 +64,40 @@ func save_game(data: Dictionary) -> void:
 	file.store_string(JSON.stringify(data))
 	file.close()
 
+# ADD THIS: Helper to collect all game state
+func gather_save_data() -> Dictionary:
+	var data := {}
+	
+	# GameManager data
+	var gm = get_node_or_null("/root/Main/GameManager")
+	if gm:
+		data["thoughts"] = gm.thoughts
+		data["dreamcloud"] = gm.dreamcloud
+		data["gems"] = gm.gems if "gems" in gm else 0
+		data["memories"] = gm.memories if "memories" in gm else 0
+		# ... other GM data
+	
+	# DepthRunController data - THIS IS THE KEY
+	var drc = get_node_or_null("/root/DepthRunController")
+	if drc:
+		data["depth_run_controller"] = {
+			"active_depth": int(drc.active_depth),
+			"max_unlocked_depth": int(drc.max_unlocked_depth),
+			"run": drc._run_internal.duplicate(true),
+			"local_upgrades": drc.local_upgrades.duplicate(true),
+			"frozen_upgrades": drc.frozen_upgrades.duplicate(true),
+			"thoughts": drc.thoughts,
+			"dreamcloud": drc.dreamcloud,
+			"instability": drc.instability
+		}
+	
+	data["last_play_time"] = Time.get_unix_time_from_system()
+	return data
+
+# Convenience method to save everything
+func save_all() -> void:
+	save_game(gather_save_data())
+
 func load_game() -> Dictionary:
 	if not FileAccess.file_exists(SAVE_PATH):
 		return {}
@@ -125,3 +159,18 @@ func _load_shop_data() -> void:
 	var data: Dictionary = SaveSystem.load_game()
 	owned_items = data.get("shop_owned_items", [])
 	active_boost = data.get("shop_active_boost", {"mult": 1.0, "expires": 0})
+
+func migrate_old_save(data: Dictionary) -> Dictionary:
+	# Convert old dreamcloud to Dream Cloud (at 1:1 rate)
+	if data.has("dreamcloud") and not data.has("dreamcloud"):
+		data["dreamcloud"] = data["dreamcloud"]
+		data.erase("dreamcloud")
+	
+	# Initialize empty equipment if missing
+	if not data.has("equipment"):
+		data["equipment"] = {
+			"equipped": {},
+			"inventory": []
+		}
+	
+	return data

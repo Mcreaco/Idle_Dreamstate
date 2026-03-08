@@ -13,7 +13,7 @@ var abyssal_focus_level: int = 0
 @export var abyssal_focus_max: int = 10
 @export var abyssal_focus_base_cost: float = 30.0
 @export var abyssal_focus_cost_growth: float = 1.85
-@export var control_mult_step: float = 0.10
+@export var dreamcloud_mult_step: float = 0.10
 
 var dark_insight_level: int = 0
 @export var dark_insight_max: int = 10
@@ -31,8 +31,8 @@ var abyss_veil_level: int = 0
 func get_start_depth_bonus() -> int:
 	return echoed_descent_level * start_depth_per_level
 
-func get_control_mult() -> float:
-	return 1.0 + float(abyssal_focus_level) * control_mult_step
+func get_dreamcloud_mult() -> float:
+	return 1.0 + float(abyssal_focus_level) * dreamcloud_mult_step
 
 func get_thoughts_mult() -> float:
 	return 1.0 + float(dark_insight_level) * thoughts_mult_step

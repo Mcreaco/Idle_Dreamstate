@@ -59,7 +59,7 @@ func should_wake(instability: float, depth_index: int = 1) -> bool:
 	return instability >= threshold
 
 
-func should_overclock(_control: float, instability: float, can_overclock: bool) -> bool:
+func should_overclock(_dreamcloud: float, instability: float, can_overclock: bool) -> bool:
 	if not auto_overclock:
 		return false
 
