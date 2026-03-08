@@ -890,6 +890,7 @@ func _on_meta_pressed() -> void:
 	if meta_panel == null:
 		push_warning("MetaPanelController not found on MetaPanel.")
 		return
+	
 	_sync_meta_progress()
 	meta_panel.toggle_open()
 	_force_rate_sample()

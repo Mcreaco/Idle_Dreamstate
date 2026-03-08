@@ -101,6 +101,15 @@ func _ready() -> void:
 	left_col.add_theme_constant_override("separation", 12)
 	right_col.add_theme_constant_override("separation", 12)
 
+	# Connect to Meta System for live unlock updates
+	var meta: Node = get_tree().current_scene.find_child("DepthMetaSystem", true, false)
+	if meta != null and meta.has_signal("depth_unlock_changed"):
+		if not meta.is_connected("depth_unlock_changed", _on_meta_unlock_changed):
+			meta.depth_unlock_changed.connect(_on_meta_unlock_changed)
+
+func _on_meta_unlock_changed(_depth_index: int, _unlocked: bool) -> void:
+	_apply_row_states()
+
 	left_col.custom_minimum_size.x = 780
 	right_col.custom_minimum_size.x = 780
 
@@ -272,12 +281,18 @@ func close_all_expanded() -> void:
 		overlay.visible = false
 		
 func _apply_row_states() -> void:
+	var meta: Node = get_tree().current_scene.find_child("DepthMetaSystem", true, false)
 	for depth_index in range(1, 16):
 		var row: Node = _rows.get(depth_index, null)
 		if row == null:
 			continue
 
 		var locked: bool = depth_index > max_unlocked_depth
+		# Never lock if permanently unlocked
+		if meta != null and meta.has_method("is_depth_unlocked"):
+			if meta.call("is_depth_unlocked", depth_index):
+				locked = false
+
 		var frozen: bool = depth_index < active_depth
 		var is_active: bool = depth_index == active_depth
 
@@ -697,12 +712,18 @@ func clear_all_row_data() -> void:
 				row.call("set_locked", false)
 		else:
 			# NOT visited this run - locked, not frozen
+			var is_locked: bool = true
+			var meta: Node = get_tree().current_scene.find_child("DepthMetaSystem", true, false)
+			if meta != null and meta.has_method("is_depth_unlocked"):
+				if meta.call("is_depth_unlocked", depth_index):
+					is_locked = false
+					
 			if row.has_method("set_active"):
 				row.call("set_active", false)
 			if row.has_method("set_frozen"):
 				row.call("set_frozen", false)  # IMPORTANT: locked, not frozen
 			if row.has_method("set_locked"):
-				row.call("set_locked", true)
+				row.call("set_locked", is_locked)
 		
 		# Force data update with zeros
 		if row.has_method("set_data"):

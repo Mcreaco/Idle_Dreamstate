@@ -3,6 +3,7 @@ extends Node
 class_name DepthMetaSystem
 
 const MAX_DEPTH: int = 15
+signal depth_unlock_changed(depth_index: int, unlocked: bool)
 
 # Maps upgrade_id -> which depth's run upgrades it auto-buys
 var auto_buy_unlocks: Dictionary = {
@@ -696,6 +697,12 @@ func get_depth_upgrade_defs(depth_i: int) -> Array:
 		core_unlock,
 	]
 
+func get_max_unlocked_depth() -> int:
+	for d in range(MAX_DEPTH, 0, -1):
+		if is_depth_unlocked(d):
+			return d
+	return 1
+	
 # ---------------------------------------------------
 # LEVEL GET/SET
 # ---------------------------------------------------
@@ -715,7 +722,11 @@ func set_level(depth_i: int, id: String, lvl: int) -> void:
 		instab_reduce_level[d] = clampi(lvl, 0, 10)
 		return
 	if id == "unlock":
+		var old_val := unlock_next_bought[d]
 		unlock_next_bought[d] = clampi(lvl, 0, 1)
+		# EMIT SIGNAL when unlock status changes
+		if old_val != unlock_next_bought[d]:
+			depth_unlock_changed.emit(d + 1, unlock_next_bought[d] > 0)
 		return
 	upgrades[d][id] = lvl
 

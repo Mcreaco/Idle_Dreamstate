@@ -500,23 +500,6 @@ func can_dive() -> bool:
 	if not meta_unlocked:
 		return false
 	
-	# Check depth-specific META upgrade requirements
-	var def: Dictionary = get_depth_def(active_depth)
-	var rules: Dictionary = def.get("rules", {})
-	var dive_req = rules.get("dive_unlock_requirement", null)
-	
-	if dive_req != null:
-		var req_upgrade: String = dive_req.get("upgrade", "")
-		var req_level: int = dive_req.get("level", 0)
-		
-		if req_upgrade != "":
-			var current_level: int = 0
-			if meta != null and meta.has_method("get_level"):
-				current_level = meta.call("get_level", active_depth, req_upgrade)
-			
-			if current_level < req_level:
-				return false
-	
 	return true
 
 func get_perk_index(perk_id: String) -> int:

@@ -250,6 +250,12 @@ func _ready() -> void:
 		if dive_btn:
 			action_row.move_child(auto_dive_checkbox, dive_btn.get_index())
 	
+	# Connect to unlock signal for dynamic updates
+	var meta := _depth_meta()
+	if meta != null and meta.has_signal("depth_unlock_changed"):
+		if not meta.is_connected("depth_unlock_changed", _on_depth_unlock_changed):
+			meta.depth_unlock_changed.connect(_on_depth_unlock_changed)
+			
 	# Create checkbox
 	_create_auto_dive_checkbox()
 	
@@ -268,7 +274,12 @@ func _ready() -> void:
 	# Defer the Murk setup to ensure scene is fully loaded
 	call_deferred("_setup_murk_labels")
 
-	
+func _on_depth_unlock_changed(unlocked_depth: int, _unlocked: bool) -> void:
+	# If this row is the unlocked depth or deeper, refresh state
+	if depth_index == unlocked_depth:
+		refresh_locked_state()
+		_apply_visuals()
+		
 func _setup_murk_labels():
 	"""Find and cache references to Murk display labels"""
 	# Look in DetailsVBox first
@@ -1259,6 +1270,13 @@ func _add_meta_upgrades_section() -> void:
 		row.add_child(buy_btn)
 		upgrades_box.add_child(row)
 
+func refresh_locked_state() -> void:
+	var meta := _depth_meta()
+	if meta != null and meta.has_method("is_depth_unlocked"):
+		var is_unlocked: bool = meta.call("is_depth_unlocked", depth_index)
+		var should_be_locked := not is_unlocked
+		set_locked(should_be_locked)
+		
 func _add_upgrade_row(id: String, label_text: String) -> void:
 	var row := HBoxContainer.new()
 
