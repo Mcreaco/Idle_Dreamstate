@@ -137,7 +137,6 @@ var click_instability_reduction: float = 0.0
 
 # Click upgrade levels (saved with run)
 var click_power_level: int = 0
-var click_dreamcloud_level: int = 0  
 var click_stability_level: int = 0
 var click_flow_level: int = 0
 var click_resonance_level: int = 0
@@ -155,10 +154,9 @@ const CLICK_POWER_GROWTH: float = 1.35  # Exponential scaling
 
 var click_upgrade_sidebar: Control = null
 var click_upgrade_expanded: bool = false
-
+var click_combat_focus_level: int = 0  # Combat Focus (Dreamcloud)
 # Evolution System
 var click_power_evolution: int = 0
-var click_dreamcloud_evolution: int = 0
 var click_stability_evolution: int = 0
 var click_flow_evolution: int = 0
 var click_resonance_evolution: int = 0
@@ -328,8 +326,6 @@ func _connect_click_buttons_debug() -> void:
 			if "Think" in btn_name or "Though" in btn_name:
 				btn.pressed.connect(on_manual_focus_clicked)
 				print("  -> Connected to on_manual_focus_clicked")
-			elif "dreamcloud" in btn_name:
-				btn.pressed.connect(_on_click_dreamcloud)
 				print("  -> Connected to _on_click_dreamcloud")
 			elif "Stabil" in btn_name or "Instab" in btn_name:
 				btn.pressed.connect(_on_click_instability)
@@ -437,8 +433,6 @@ func _force_recreate_click_row() -> void:
 		match cfg["name"]:
 			"Think":
 				btn.pressed.connect(on_manual_focus_clicked)
-			"dreamcloud":
-				btn.pressed.connect(_on_click_dreamcloud)
 			"Stabilize":
 				btn.pressed.connect(_on_click_instability)
 		
@@ -1919,14 +1913,12 @@ func get_save_data() -> Dictionary:
 	
 	# Click upgrades
 	data["click_power_level"] = click_power_level
-	data["click_dreamcloud_level"] = click_dreamcloud_level
 	data["click_stability_level"] = click_stability_level
 	data["click_flow_level"] = click_flow_level
 	data["click_resonance_level"] = click_resonance_level
 	
 		# Click upgrades evolution
 	data["click_power_evolution"] = click_power_evolution
-	data["click_dreamcloud_evolution"] = click_dreamcloud_evolution
 	data["click_stability_evolution"] = click_stability_evolution
 	data["click_flow_evolution"] = click_flow_evolution
 	data["click_resonance_evolution"] = click_resonance_evolution
@@ -2195,7 +2187,6 @@ func load_game() -> void:
 	perk_system.perk3_level = int(data.get("perk3_level", 0))
 	
 	click_power_level = int(data.get("click_power_level", 0))
-	click_dreamcloud_level = int(data.get("click_dreamcloud_level", 0))
 	click_stability_level = int(data.get("click_stability_level", 0))
 	click_flow_level = int(data.get("click_flow_level", 0))
 	click_resonance_level = int(data.get("click_resonance_level", 0))
@@ -2203,7 +2194,6 @@ func load_game() -> void:
 	
 	# Evolution
 	click_power_evolution = int(data.get("click_power_evolution", 0))
-	click_dreamcloud_evolution = int(data.get("click_dreamcloud_evolution", 0))
 	click_stability_evolution = int(data.get("click_stability_evolution", 0))
 	click_flow_evolution = int(data.get("click_flow_evolution", 0))
 	click_resonance_evolution = int(data.get("click_resonance_evolution", 0))
@@ -2909,9 +2899,8 @@ func _process(delta: float) -> void:
 	dreamcloud_mult *= progress_mult
 	
 	# Calculate and add thoughts
-	var thoughts_to_add := idle_thoughts_rate * thoughts_mult * depth_thoughts_mult * _get_shop_boost() * delta
+	var thoughts_to_add := idle_thoughts_rate * thoughts_mult * _get_shop_boost() * delta
 	thoughts += thoughts_to_add
-	dreamcloud += idle_dreamcloud_rate * dreamcloud_mult * delta
 	
 	# ADD DEBUG PRINT
 	if Engine.get_process_frames() % 60 == 0:  # Print once per second
@@ -2976,11 +2965,6 @@ func _process(delta: float) -> void:
 		if buff.time_remaining <= 0:
 			_active_temp_buffs.remove_at(i)
 			print("Temporary buff expired: ", buff.source)
-
-	# NEW: Dream Cloud generation (small passive amount)
-	var cloud_ps := get_dreamcloud_per_sec()
-	dreamcloud += cloud_ps * delta
-	lifetime_cloud += cloud_ps * delta
 	
 	# NEW: Combat encounter spawning (Depth 3+)
 	var combat_depth := get_current_depth()
@@ -3711,34 +3695,43 @@ func fix_depth1_text_color() -> void:
 
 
 func on_manual_focus_clicked() -> void:
-	var drc := get_node_or_null("/root/DepthRunController")
-	var manual_lvl = 0
+	# Use Focus Upgrade level (Mental Strike), NOT DRC manual_click
+	var mental_level: int = click_power_level  # Level 27 from your screenshot
 	
-	if drc != null and drc.has_method("_get_local_level"):
-		manual_lvl = drc.call("_get_local_level", 1, "manual_click")
+	# Calculate percentage (0.1% per level = 0.027 for level 27)
+	var percent: float = float(mental_level) * 0.001
 	
-	var click_bonus = float(manual_lvl) * 0.5
-	var base_power = get_click_power()
+	# CRITICAL FIX: Multiply by current thoughts to get actual gain
+	var base_power: float = thoughts * percent
+	
 	var combo_mult = get_combo_multiplier()
 	var idle_bonus = get_click_idle_bonus()
 	var idle_thoughts = get_idle_thoughts_per_second()
 	
-	# DEBUG PRINT
+	# DEBUG
 	print("THINK CLICK DEBUG:")
-	print("  manual_click level: ", manual_lvl)
-	print("  click_bonus (seconds): ", click_bonus)
-	print("  idle_thoughts/sec: ", idle_thoughts)
-	print("  bonus from manual: ", idle_thoughts * click_bonus)
-	print("  base_power: ", base_power)
+	print("  click_power_level: ", mental_level)
+	print("  percent: ", percent)
+	print("  thoughts: ", thoughts)
+	print("  base_power (after fix): ", base_power)
 	
-	var thoughts_gained = (base_power * combo_mult) + idle_bonus + (idle_thoughts * click_bonus)
+	# Calculate total gain
+	var thoughts_gained = (base_power * combo_mult) + idle_bonus
+	
+	# Bootstrap if 0
+	if thoughts_gained < 1.0:
+		thoughts_gained = 1.0
 	
 	thoughts += thoughts_gained
 	total_thoughts_earned += thoughts_gained
-	_sync_to_drc()  # ADD THIS
+	
+	# Remove the DRC manual_click bonus (it's separate system)
+	# Or keep it as flat bonus if you want: + (idle_thoughts * click_bonus)
+	
+	_sync_to_drc()
 	_register_click_for_combo()
 	_refresh_top_ui()
-
+	
 func get_click_stability_reduction() -> float:
 	var base := 5.0 * pow(1.15, float(click_stability_level))
 	var milestones := _get_milestone_count(click_stability_level)
@@ -3746,14 +3739,6 @@ func get_click_stability_reduction() -> float:
 	var evolution_mult := pow(2.0, click_stability_evolution)
 	
 	return base * milestone_mult * evolution_mult * stability_sacrifice_penalty
-
-func get_click_dreamcloud_gain() -> float:
-	var base := 0.5 * pow(1.2, float(click_dreamcloud_level))
-	var milestones := _get_milestone_count(click_dreamcloud_level)
-	var milestone_mult := pow(1.4, milestones)
-	var evolution_mult := pow(2.0, click_dreamcloud_evolution)
-	
-	return base * milestone_mult * evolution_mult * dreamcloud_sacrifice_penalty
 
 func get_combo_window() -> float:
 	var base := 2.0 + (float(click_flow_level) * 0.02)
@@ -3788,7 +3773,6 @@ func can_evolve(upgrade_type: String) -> bool:
 	var level := 0
 	match upgrade_type:
 		"power": level = click_power_level
-		"dreamcloud": level = click_dreamcloud_level
 		"stability": level = click_stability_level
 		"flow": level = click_flow_level
 		"resonance": level = click_resonance_level
@@ -3801,7 +3785,6 @@ func evolve_upgrade(upgrade_type: String, sacrifice_type: String) -> bool:
 	# Apply evolution
 	match upgrade_type:
 		"power": click_power_evolution += 1
-		"dreamcloud": click_dreamcloud_evolution += 1
 		"stability": click_stability_evolution += 1
 		"flow": click_flow_evolution += 1
 		"resonance": click_resonance_evolution += 1
@@ -3866,19 +3849,10 @@ func try_buy_click_power_upgrade() -> bool:
 	var cost := get_click_power_cost()
 	if thoughts < cost:
 		return false
-	thoughts -= cost
-	click_power_level += 1
-	return true
-
-func try_buy_click_dreamcloud_upgrade() -> bool:
-	var cost := get_click_dreamcloud_cost()
-	if thoughts < cost:
-		return false
 	
 	thoughts -= cost
-	click_dreamcloud_level += 1
-	recalculate_click_stats()
-	save_game()
+	click_power_level += 1  # Ensure this increments!
+	print("UPGRADED: click_power_level now ", click_power_level)  # Debug
 	return true
 
 func try_buy_click_stability_upgrade() -> bool:
@@ -3916,23 +3890,20 @@ func try_buy_click_resonance_upgrade() -> bool:
 
 func recalculate_click_stats() -> void:
 	# Update cached values based on levels
-	click_dreamcloud_gain = float(click_dreamcloud_level) * 0.3
 	click_instability_reduction = float(click_stability_level) * 0.8
 
 func get_click_power_cost() -> float:
 	return 100.0 * pow(1.8, click_power_level)
 
 func get_click_power() -> float:
-	return click_power_level * 0.001  # 0.1% per level
+	# Return percentage from Focus Upgrade (Mental Strike), NOT DRC manual_click
+	return float(click_power_level) * 0.001  # 0.1% per level = 0.027 for level 27
 
 func get_click_power_evolution() -> int:
 	return click_power_evolution
 
 func get_click_stability_cost() -> float:
 	return 100.0 * pow(10.0, float(click_stability_level) / 2.8)
-
-func get_click_dreamcloud_cost() -> float:
-	return 75.0 * pow(10.0, float(click_dreamcloud_level) / 2.6)
 
 func get_click_flow_cost() -> float:
 	return 150.0 * pow(10.0, float(click_flow_level) / 2.4)
@@ -4206,19 +4177,12 @@ func _setup_click_buttons() -> void:
 	
 	# Find the buttons
 	var thoughts_btn := click_row.find_child("ClickThoughts", false, false) as Button
-	var dreamcloud_btn := click_row.find_child("Clickdreamcloud", false, false) as Button
 	var instability_btn := click_row.find_child("ClickInstability", false, false) as Button
 	
 	# Connect to existing functions
 	if thoughts_btn and not thoughts_btn.pressed.is_connected(on_manual_focus_clicked):
 		thoughts_btn.pressed.connect(on_manual_focus_clicked)
 		_style_click_button(thoughts_btn, "🧠 Focus", Color(0.35, 0.8, 0.95))  # Blue
-	
-	if dreamcloud_btn:
-		# You'll need to add this function or use existing logic
-		if not dreamcloud_btn.pressed.is_connected(_on_click_dreamcloud):
-			dreamcloud_btn.pressed.connect(_on_click_dreamcloud)
-		_style_click_button(dreamcloud_btn, "🛡️ Breathe", Color(0.4, 0.9, 0.5))  # Green
 	
 	if instability_btn:
 		if not instability_btn.pressed.is_connected(_on_click_instability):
@@ -4268,11 +4232,9 @@ func _connect_click_buttons() -> void:
 	# Map button names to functions
 	var connections := {
 		"Think": on_manual_focus_clicked,           # or _on_click_think
-		"dreamcloud": _on_click_dreamcloud,
 		"Stabilize": _on_click_stabilize,
 		# Fallback names if different
 		"ClickThoughts": on_manual_focus_clicked,
-		"Clickdreamcloud": _on_click_dreamcloud,
 		"ClickInstability": _on_click_stabilize
 	}
 	
@@ -4283,26 +4245,42 @@ func _connect_click_buttons() -> void:
 			print("Connected: ", btn_name)
 
 func _on_click_think() -> void:
-	# Generate thoughts based on click power upgrade
-	var base_power := get_click_power()
-	var combo := get_combo_multiplier()
-	var idle_bonus := get_click_idle_bonus()
+	# AGGRESSIVE DEBUG - Verify this code runs
+	print("=== CLICK FIX v2 ===")
+	print("click_power_level = ", click_power_level)
+	print("thoughts before = ", thoughts)
 	
-	var thoughts_gained := (base_power * combo) + (get_idle_thoughts_per_second() * idle_bonus)
+	# Calculate percentage from Focus Upgrade level
+	var percent: float = float(click_power_level) * 0.001  # 0.027 for level 27
+	print("percent = ", percent)
+	
+	# CRITICAL: Multiply by thoughts
+	var base_power: float = thoughts * percent
+	print("base_power (should be huge) = ", base_power)
+	
+	var combo: float = get_combo_multiplier()
+	var thoughts_gained := base_power * combo
+	
+	# Fallback if somehow still 0
+	if thoughts_gained <= 0.0:
+		thoughts_gained = 1.0
+		print("FALLBACK: Set to 1.0")
+	
+	print("FINAL GAIN = ", thoughts_gained)
+	
 	thoughts += thoughts_gained
 	total_thoughts_earned += thoughts_gained
+	
+	# Dreamcloud from Combat Focus only
+	if "click_combat_focus_level" in self and click_combat_focus_level > 0:
+		dreamcloud += float(click_combat_focus_level)
 	
 	_register_click_for_combo()
 	_show_click_feedback(thoughts_gained, "thoughts")
 	_refresh_top_ui()
-
-func _on_click_dreamcloud() -> void:
-	var gain := click_dreamcloud_gain * get_combo_multiplier()
-	dreamcloud += gain
-	_sync_to_drc()  # ADD THIS
-	_register_click_for_combo()
-	_show_click_feedback(gain, "dreamcloud")
-	_refresh_top_ui()
+	
+	print("thoughts after = ", thoughts)
+	print("=== END CLICK ===")
 
 func _on_click_stabilize() -> void:
 	var reduction := click_instability_reduction

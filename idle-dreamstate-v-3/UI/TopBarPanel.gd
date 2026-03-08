@@ -58,6 +58,12 @@ func _ready() -> void:
 	if inst_title:
 		inst_title.tooltip_text = "Time to fail (TTF) is estimated from current idle instability gain."
 	
+	# HIDE dreamcloud button if it exists
+	var dreamcloud_btn = find_child("DreamcloudButton", true, false)
+	if dreamcloud_btn:
+		dreamcloud_btn.visible = false
+		dreamcloud_btn.queue_free()
+		
 	_style_inst_bar()
 	# CRITICAL FIX: Ensure all buttons can receive input
 	call_deferred("_fix_button_input")

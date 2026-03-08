@@ -236,9 +236,6 @@ script = ExtResource("8_x3yn0")
 
 [node name="GameManager" type="Node" parent="."]
 script = ExtResource("1_r0du0")
-dive_cd_min = null
-perk2_cd_reduction_per_level = null
-auto_overclock_instability_limit = null
 
 [node name="OfflineProgress" type="Node" parent="GameManager"]
 
@@ -302,7 +299,7 @@ offset_bottom = 27.0
 grow_horizontal = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_3ccbu")
 
-[node name="CenterContainer" type="CenterContainer" parent="MainUI/Root/TopBarPanel/TopBar" index="3"]
+[node name="CenterContainer" type="CenterContainer" parent="MainUI/Root/TopBarPanel/TopBar" index="2"]
 layout_mode = 2
 
 [node name="BottomBarPanel" parent="MainUI/Root" index="4"]
@@ -1186,6 +1183,7 @@ size_flags_horizontal = 3
 text = "Watch Ad (+100% Memories)"
 
 [node name="PauseMenu" type="CanvasLayer" parent="MainUI"]
+layer = 100000
 script = ExtResource("9_5vvyt")
 
 [node name="CenterContainer" type="CenterContainer" parent="MainUI/PauseMenu"]

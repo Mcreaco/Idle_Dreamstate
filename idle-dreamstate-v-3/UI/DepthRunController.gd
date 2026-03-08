@@ -248,26 +248,17 @@ func _tick_active_depth(delta: float) -> void:
 	var inst_cap: float = applied.get("instability_cap", 1000.0)
 	var rules: Dictionary = applied.get("rules", {})
 	
-	# Update instability
+	# CRITICAL FIX: Apply instability increase
 	if d >= 2 and rules.get("instability_enabled", false):
-		var inst_per_sec: float = instability_per_sec
+		var inst_per_sec: float = applied.get("instability_per_sec", 0.0)
+		
+		# THIS LINE WAS MISSING - actually add to instability
 		instability += (inst_per_sec * delta)
 		
-		# Cap check
-		var max_inst: float = inst_cap
-		var gm_check = get_node_or_null("/root/Main/GameManager")
-		if gm_check:
-			var void_walker_lvl: int = 0
-			if gm_check.has_method("get_perk_level"):
-				void_walker_lvl = gm_check.get_perk_level("void_walker")
-			elif "permanent_upgrades" in gm_check:
-				void_walker_lvl = int(gm_check.permanent_upgrades.get("void_walker", 0))
-			
-			max_inst += (void_walker_lvl * 0.05 * inst_cap)
-		
-		if instability >= max_inst:
-			instability = max_inst
-			wake_cashout(1.0, true)
+		# Check for death
+		if instability >= inst_cap:
+			instability = inst_cap
+			wake_cashout(1.0, true)  # Force wake
 			return
 			
 	var current_time := Time.get_ticks_msec() / 1000.0
@@ -836,7 +827,17 @@ func preview_wake(ad_multiplier: float, forced: bool) -> Dictionary:
 		"crystals_by_name": crystals_by_name
 	}
 
-
+func get_upgrade_cost(depth: int, tier: int, level: int) -> float:
+	# tier 0-5 (6 upgrades per depth)
+	var base_exponent: float = pow(depth, 1.9)  # 1^1.9=1, 15^1.9=~105
+	var base: float = 10.0 * pow(10.0, base_exponent / 2.5)  # Scaled to reach 1e300
+	
+	# Tier multiplier (0=cheap, 5=expensive)
+	var tier_mult: float = 1.0 + (tier * 0.8)  # 1.0, 1.8, 2.6, 3.4, 4.2, 5.0
+	
+	var cost: float = base * tier_mult * pow(1.4, level)
+	return cost
+	
 func _build_depth_defs() -> void:
 	_depth_defs.clear()
 	
@@ -858,86 +859,114 @@ func _build_depth_defs() -> void:
 			"dive_unlock_requirement": {"upgrade": "manual_click", "level": 10}
 		},
 		"upgrades": {
-			"manual_click": {
-				"name": "Focused Intention",
-				"description": "Manual Think button grants +0.5s of Thoughts per level",
-				"max_level": 10,  # Exactly 10 to unlock dive
-				"base_cost": 25.0,
-				"cost_growth": 1.4,
+			"thought_stream": {  # Replaces Mental Strike
+				"name": "Thought Stream",
+				"description": "+0.5 idle Thoughts per second per level",
+				"max_level": 10,
+				"base_cost": 10.0,  # Starts at 10 as requested
+				"cost_growth": 1.35,
 				"effect_per_level": 0.5,
 				"cost_currency": "thoughts"
 			},
-			"progress_speed": {
-				"name": "Velocity",
-				"description": "+20% progress speed per level",
-				"max_level": 25,  # Cap tutorial upgrades low
-				"base_cost": 50.0,
+			"focus_training": {
+				"name": "Lucid Training", 
+				"description": "+15% progress speed per level",
+				"max_level": 8,
+				"base_cost": 25.0,
 				"cost_growth": 1.4,
-				"effect_per_level": 0.20,
-				"cost_currency": "thoughts"
-			},
-			"memories_gain": {
-				"name": "Dream Recall",
-				"description": "+15% Memory Gain per level",
-				"max_level": 20,
-				"base_cost": 75.0,
-				"cost_growth": 1.5,
 				"effect_per_level": 0.15,
 				"cost_currency": "thoughts"
 			},
-			"crystals_gain": {
+			"velocity": {
+				"name": "Velocity",
+				"description": "+20% idle progress speed per level (stacks with Lucid)",
+				"max_level": 5,
+				"base_cost": 60.0,
+				"cost_growth": 1.45,
+				"effect_per_level": 0.20,
+				"cost_currency": "thoughts"
+			},
+			"dream_recall": {
+				"name": "Dream Recall",
+				"description": "+15% Memory Gain per level",
+				"max_level": 6,
+				"base_cost": 150.0,
+				"cost_growth": 1.55,
+				"effect_per_level": 0.15,
+				"cost_currency": "thoughts"
+			},
+			"mnemonic_anchor": {
 				"name": "Mnemonic Anchor",
 				"description": "+12% Amethyst Crystal Gain per level",
-				"max_level": 15,
-				"base_cost": 100.0,
+				"max_level": 4,
+				"base_cost": 400.0,
 				"cost_growth": 1.6,
 				"effect_per_level": 0.12,
+				"cost_currency": "thoughts"
+			},
+			"combat_reflexes": {  # Keep this one - it's the bridge to combat
+				"name": "Combat Reflexes",
+				"description": "+10% damage in Dream Combat per level",
+				"max_level": 3,
+				"base_cost": 800.0,
+				"cost_growth": 1.5,
+				"effect_per_level": 0.10,
 				"cost_currency": "thoughts"
 			}
 		},
 		"events": []
 	}
 	
-	# ============================================
-	# DEPTH 2 — DESCENT (Instability Gate - 5 upgrades)
-	# ============================================
+	## ============================================
+# DEPTH 2 — DESCENT (Instability Gate)
+# ============================================
 	_depth_defs[2] = {
 		"new_title": "Descent",
-		"desc": "The first stirrings of chaos. Instability rises. Stabilize to proceed deeper.",
+		"desc": "The first stirrings of chaos. Stabilize to survive.",
 		"ui_unlocks": ["instability_bar", "wake_button"],
 		"rules": {
 			"instability_enabled": true,
+			"instability_base_rate": 0.025,  # 2.5%/s - scary but manageable
 			"progress_mul": 1.0,
-			"mem_mul": 1.08,  # Slightly buffed from 1.05
-			"cry_mul": 1.04,  # Slightly buffed from 1.02
+			"mem_mul": 1.08,
+			"cry_mul": 1.04,
 			"forced_wake_at_100": true,
-			"event_enabled": false,
-			"dive_unlock_requirement": {"upgrade": "stab", "level": 10}
+			"combat_available": true,
+			"dive_unlock_requirement": {"upgrade": "stabilize", "level": 3}
 		},
 		"upgrades": {
 			"stabilize": {
 				"name": "Stabilize",
-				"description": "-5% Instability gain per level (multiplicative)",
-				"max_level": 20,  # Cap at 20 = ~64% reduction max
-				"base_cost": 200.0,  # 4x Depth 1 costs
+				"description": "-4% Instability gain per level (multiplicative)",
+				"max_level": 8,  # More levels, cheaper
+				"base_cost": 1000.0,  # 1k (was 2k)
 				"cost_growth": 1.45,
-				"effect_per_level": -0.05,  # 0.95^level multiplier
+				"effect_per_level": -0.04,
 				"cost_currency": "thoughts"
 			},
-			"dreamcloudled_fall": {
-				"name": "dreamcloudled Fall",
-				"description": "+0.1 Dream Current per level (Global Speed)",
-				"max_level": 10,  # Cap at +1.0 total
-				"base_cost": 500.0,  # Expensive - affects all depths
-				"cost_growth": 1.6,
-				"effect_per_level": 0.2,  # Hooks to buy_dream_current_upgrade(0.1)
+			"abyssal_current": {
+				"name": "Abyssal Current",
+				"description": "+0.08 Global Progress Speed per level",
+				"max_level": 10,
+				"base_cost": 2000.0,
+				"cost_growth": 1.5,
+				"effect_per_level": 0.08,
 				"cost_currency": "thoughts"
 			},
 			"trauma_inoculation": {
 				"name": "Trauma Inoculation",
-				"description": "+10% Memory retention if forced Wake/Fail",
-				"max_level": 5,  # Max 50% retention bonus
-				"base_cost": 350.0,
+				"description": "+10% Memory retention if forced Wake",
+				"max_level": 5,
+				"base_cost": 5000.0,
+				"cost_growth": 1.6,
+				"effect_per_level": 0.10,
+				"cost_currency": "thoughts"
+			},
+			"combat_stance": {  # NEW
+				"name": "Defensive Stance",
+				"description": "-10% damage taken in combat per level",
+				"max_level": 3,
+				"base_cost": 8000.0,
 				"cost_growth": 1.7,
 				"effect_per_level": 0.10,
 				"cost_currency": "thoughts"
@@ -945,19 +974,19 @@ func _build_depth_defs() -> void:
 			"ruby_focus": {
 				"name": "Ruby Focus",
 				"description": "+15% Ruby Crystal gain per level",
-				"max_level": 50,
-				"base_cost": 250.0,
-				"cost_growth": 1.55,
-				"effect_per_level": 0.15,  # Buffed from 12%
+				"max_level": 6,
+				"base_cost": 15000.0,
+				"cost_growth": 1.5,
+				"effect_per_level": 0.15,
 				"cost_currency": "thoughts"
 			},
-			"breath_dreamcloud": {
-				"name": "Breath dreamcloud",
-				"description": "+0.2 Max dreamcloud capacity per level",
-				"max_level": 25,  # Max +5.0 dreamcloud
-				"base_cost": 150.0,
-				"cost_growth": 1.5,
-				"effect_per_level": 0.2,  # Buffed from 0.1
+			"pressure_tolerance": {  # Replaces breath dreamcloud
+				"name": "Pressure Tolerance",
+				"description": "+3% Max Instability cap per level",
+				"max_level": 5,
+				"base_cost": 25000.0,
+				"cost_growth": 1.6,
+				"effect_per_level": 0.03,
 				"cost_currency": "thoughts"
 			}
 		},
@@ -986,7 +1015,7 @@ func _build_depth_defs() -> void:
 				"name": "Pressure Hardening",
 				"description": "Instability slows Progress 12% less per level",
 				"max_level": 5,  # Max 60% reduction of penalty (0.6 + 0.6 = 1.2 capped at 1.0)
-				"base_cost": 2000.0,  # 10x Depth 2 costs
+				"base_cost": 25000.0,  # 10x Depth 2 costs
 				"cost_growth": 1.6,
 				"effect_per_level": 0.12,
 				"cost_currency": "thoughts"
@@ -995,7 +1024,7 @@ func _build_depth_defs() -> void:
 				"name": "Crush Resistance",
 				"description": "-6% Instability gain per level (multiplicative)",
 				"max_level": 15,
-				"base_cost": 1500.0,
+				"base_cost": 40000.0,
 				"cost_growth": 1.5,
 				"effect_per_level": -0.06,  # Changed to multiplicative like Depth 2
 				"cost_currency": "thoughts"
@@ -1004,8 +1033,8 @@ func _build_depth_defs() -> void:
 				"name": "Emerald Focus",
 				"description": "+18% Emerald Crystal gain per level",
 				"max_level": 50,
-				"base_cost": 1800.0,
-				"cost_growth": 1.55,
+				"base_cost": 150000.0,
+				"cost_growth": 1.5,
 				"effect_per_level": 0.18,
 				"cost_currency": "thoughts"
 			},
@@ -1013,7 +1042,7 @@ func _build_depth_defs() -> void:
 				"name": "Risky Compression",
 				"description": "+20% Thoughts, +10% Instability (Trade-off)",
 				"max_level": 3,
-				"base_cost": 5000.0,
+				"base_cost": 500000.0,
 				"cost_growth": 2.0,
 				"effect_per_level": 0.20,  # Multiplicative bonuses
 				"cost_currency": "thoughts"
@@ -1022,7 +1051,7 @@ func _build_depth_defs() -> void:
 				"name": "Safety Valves",
 				"description": "Instability cap -8% per level (emergency buffer)",
 				"max_level": 3,  # Cap 76% of normal (safety net)
-				"base_cost": 8000.0,
+				"base_cost": 800000.0,
 				"cost_growth": 2.2,
 				"effect_per_level": -0.08,  # Flat -8% cap reduction
 				"cost_currency": "thoughts"
@@ -1052,7 +1081,7 @@ func _build_depth_defs() -> void:
 				"name": "Dark Adaptation",
 				"description": "Reveal 15% of hidden crystal rewards per level",
 				"max_level": 7,  # 105% total, ensures you see all hidden rewards eventually
-				"base_cost": 10000.0,  # 10x Depth 3 costs
+				"base_cost": 300000.0,  # 10x Depth 3 costs
 				"cost_growth": 1.6,
 				"effect_per_level": 0.15,
 				"cost_currency": "thoughts"
@@ -1061,7 +1090,7 @@ func _build_depth_defs() -> void:
 				"name": "Echo Navigation",
 				"description": "+12% progress speed per level",
 				"max_level": 25,
-				"base_cost": 8000.0,
+				"base_cost": 600000.0,
 				"cost_growth": 1.5,
 				"effect_per_level": 0.12,
 				"cost_currency": "thoughts"
@@ -1070,7 +1099,7 @@ func _build_depth_defs() -> void:
 				"name": "Whisper Harvest",
 				"description": "+8% thoughts when instability >60% per level",
 				"max_level": 5,  # Max 40% bonus
-				"base_cost": 15000.0,
+				"base_cost": 1500000.0,
 				"cost_growth": 1.8,
 				"effect_per_level": 0.08,
 				"cost_currency": "thoughts"
@@ -1079,7 +1108,7 @@ func _build_depth_defs() -> void:
 				"name": "Sapphire Focus",
 				"description": "+18% Sapphire crystals per level",
 				"max_level": 50,
-				"base_cost": 12000.0,
+				"base_cost": 4000000.0,
 				"cost_growth": 1.6,
 				"effect_per_level": 0.18,
 				"cost_currency": "thoughts"
@@ -1102,11 +1131,11 @@ func _build_depth_defs() -> void:
 					},
 					{
 						"id": "overclock",
-						"text": "Overclock through (-20 dreamcloud, +15% Instability)",
+						"text": "Overclock through (-10% Thoughts, +15% Instability)",
 						"effect": {
-							"cost_dreamcloud": 20,
-							"instability_bonus": 0.15,  # 15% of cap, not 15 points!
-							"progress_bonus": 0.05       # 5% progress
+							"cost_thoughts_percent": 0.10,  # Costs 10% of current thoughts
+							"instability_bonus": 0.15,
+							"progress_bonus": 0.05
 						}
 					}
 				]
@@ -1199,7 +1228,7 @@ func _build_depth_defs() -> void:
 							"instability_bonus": 0.35,   # High risk
 							"mem_mul": 2.0,              # Double memories
 							"duration": 15.0,            # 15 seconds
-							"cost_dreamcloud": 50.0         # Also costs dreamcloud
+							"cost_thoughts_percent": 0.25,         # Also costs dreamcloud
 						}
 					}
 				],
@@ -2036,12 +2065,8 @@ func _apply_depth_rules(d: int) -> Dictionary:
 	
 	# Calculate instability rate for depth 2+
 	if d >= 2 and rules.get("instability_enabled", false):
-		# New aggressive curve:
-		# Depth 2: 2%/s (50s to fill)
-		# Depth 5: 6.5%/s (15s to fill)
-		# Depth 10: 35%/s (3s to fill)
-		# Depth 15: 150%/s (0.6s to fill - virtually instant without upgrades)
-		var base_rate: float = 0.02 * pow(1.5, d - 2)
+	# FASTER: 3.5% at depth 2 (fills in ~28s), scales aggressively
+		var base_rate: float = 0.035 * pow(1.45, d - 2)
 		
 		# Time pressure: +0.2% per second spent in depth
 		_ensure_depth_runtime(d)

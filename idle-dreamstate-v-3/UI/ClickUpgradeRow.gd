@@ -175,14 +175,26 @@ func _ready() -> void:
 
 func _on_buy() -> void:
 	if gm == null:
+		print("ERROR: No GameManager")
 		return
+		
+	# Debug which upgrade type
+	print("BUY CLICK: type=", upgrade_type)
+	
 	var success := false
 	match upgrade_type:
-		"power": success = gm.try_buy_click_power_upgrade()
-		"stability": success = gm.try_buy_click_stability_upgrade()
-		"flow": success = gm.try_buy_click_flow_upgrade()
-		"resonance": success = gm.try_buy_click_resonance_upgrade()
-		"combat_focus": success = gm.try_buy_click_combat_focus_upgrade()
+		"power": 
+			success = gm.try_buy_click_power_upgrade()
+			print("Bought Mental Strike, new level=", gm.click_power_level)
+		"stability": 
+			success = gm.try_buy_click_stability_upgrade()
+		"flow": 
+			success = gm.try_buy_click_flow_upgrade()
+		"resonance": 
+			success = gm.try_buy_click_resonance_upgrade()
+		"combat_focus": 
+			success = gm.try_buy_click_combat_focus_upgrade()
+	
 	if success:
 		refresh()
 
