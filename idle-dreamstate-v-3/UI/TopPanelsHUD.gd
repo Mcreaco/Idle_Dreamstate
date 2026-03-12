@@ -17,10 +17,10 @@ func _ready() -> void:
 	if run: 
 		run.call("bind_hud", self)
 
-func set_values(thoughts: float, thoughts_per_s: float, dreamcloud: float, dreamcloud_per_s: float, instability: float) -> void:
+func set_values(thoughts: float, thoughts_per_s: float, _dreamcloud: float, _dreamcloud_per_s: float, instability: float) -> void:
 	if _thoughts_label:
 		_thoughts_label.text = "Thoughts %d %+d/s" % [int(round(thoughts)), int(round(thoughts_per_s))]
 	if _dreamcloud_label:
-		_dreamcloud_label.text = "dreamcloud %d %+d/s" % [int(round(dreamcloud)), int(round(dreamcloud_per_s))]
+		_dreamcloud_label.visible = false # removed from base UI
 	if _instability_label:
 		_instability_label.text = "Instability %d%%" % int(round(instability * 100.0))

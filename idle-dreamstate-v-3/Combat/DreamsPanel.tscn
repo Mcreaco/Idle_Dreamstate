@@ -1,0 +1,394 @@
+[gd_scene load_steps=3 format=3 uid="uid://dreams_panel_scene"]
+
+[ext_resource type="Script" path="res://Combat/DreamsPanel.gd" id="1_dpanel"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_panel"]
+bg_color = Color(0.04, 0.05, 0.09, 0.97)
+border_color = Color(0.3, 0.5, 0.85, 0.9)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+corner_radius_top_left = 0
+corner_radius_top_right = 0
+corner_radius_bottom_left = 0
+corner_radius_bottom_right = 0
+content_margin_left = 0.0
+content_margin_right = 0.0
+content_margin_top = 0.0
+content_margin_bottom = 0.0
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_inv"]
+bg_color = Color(0.05, 0.05, 0.07, 0.95)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.15, 0.3, 0.5, 0.8)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+expand_margin_left = 2.0
+expand_margin_top = 2.0
+expand_margin_right = 2.0
+expand_margin_bottom = 2.0
+
+[node name="DreamsPanel" type="PanelContainer"]
+visible = false
+z_index = 50
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
+script = ExtResource("1_dpanel")
+
+[node name="MainLayout" type="HBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="Sidebar" type="PanelContainer" parent="MainLayout"]
+layout_mode = 2
+custom_minimum_size = Vector2(130, 0)
+
+[node name="SidebarVBox" type="VBoxContainer" parent="MainLayout/Sidebar"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="TitleLbl" type="Label" parent="MainLayout/Sidebar/SidebarVBox"]
+layout_mode = 2
+horizontal_alignment = 1
+text = "✦ DREAMS ✦"
+theme_override_font_sizes/font_size = 16
+
+[node name="BtnCombat" type="Button" parent="MainLayout/Sidebar/SidebarVBox"]
+layout_mode = 2
+text = "⚔  Combat"
+custom_minimum_size = Vector2(0, 40)
+
+[node name="BtnEquipment" type="Button" parent="MainLayout/Sidebar/SidebarVBox"]
+layout_mode = 2
+text = "🛡  Equipment"
+custom_minimum_size = Vector2(0, 40)
+
+[node name="BtnForge" type="Button" parent="MainLayout/Sidebar/SidebarVBox"]
+layout_mode = 2
+text = "🔥  Forge"
+custom_minimum_size = Vector2(0, 40)
+
+[node name="Spacer" type="Control" parent="MainLayout/Sidebar/SidebarVBox"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="BtnClose" type="Button" parent="MainLayout/Sidebar/SidebarVBox"]
+layout_mode = 2
+text = "✕  Close"
+custom_minimum_size = Vector2(0, 36)
+
+[node name="ContentArea" type="Control" parent="MainLayout"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="CombatView" type="VBoxContainer" parent="MainLayout/ContentArea"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+theme_override_constants/separation = 10
+visible = true
+
+[node name="HeaderRow" type="HBoxContainer" parent="MainLayout/ContentArea/CombatView"]
+layout_mode = 2
+theme_override_constants/separation = 20
+
+[node name="WaveLabel" type="Label" parent="MainLayout/ContentArea/CombatView/HeaderRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Wave 1  (Best: 1)"
+theme_override_font_sizes/font_size = 18
+
+[node name="MasteryLabel" type="Label" parent="MainLayout/ContentArea/CombatView/HeaderRow"]
+layout_mode = 2
+text = "Mastery: 0/10"
+theme_override_font_sizes/font_size = 11
+modulate = Color(0.6, 0.8, 1, 0.8)
+
+[node name="PrevWaveBtn" type="Button" parent="MainLayout/ContentArea/CombatView/HeaderRow"]
+layout_mode = 2
+text = " < "
+custom_minimum_size = Vector2(40, 44)
+
+[node name="NextWaveBtn" type="Button" parent="MainLayout/ContentArea/CombatView/HeaderRow"]
+layout_mode = 2
+text = " > "
+custom_minimum_size = Vector2(40, 44)
+
+[node name="StartWaveBtn" type="Button" parent="MainLayout/ContentArea/CombatView/HeaderRow"]
+layout_mode = 2
+text = "Start Wave 1"
+custom_minimum_size = Vector2(160, 44)
+
+[node name="EnemyNameLbl" type="Label" parent="MainLayout/ContentArea/CombatView"]
+layout_mode = 2
+horizontal_alignment = 1
+text = "—"
+theme_override_font_sizes/font_size = 20
+
+[node name="EnemySprite" type="TextureRect" parent="MainLayout/ContentArea/CombatView"]
+custom_minimum_size = Vector2(0, 160)
+layout_mode = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="EnemyStatsRow" type="HBoxContainer" parent="MainLayout/ContentArea/CombatView"]
+layout_mode = 2
+theme_override_constants/separation = 20
+
+[node name="PlayerStatsPanel" type="PanelContainer" parent="MainLayout/ContentArea/CombatView/EnemyStatsRow"]
+custom_minimum_size = Vector2(140, 90)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
+
+[node name="VBox" type="VBoxContainer" parent="MainLayout/ContentArea/CombatView/EnemyStatsRow/PlayerStatsPanel"]
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="Title" type="Label" parent="MainLayout/ContentArea/CombatView/EnemyStatsRow/PlayerStatsPanel/VBox"]
+layout_mode = 2
+text = "✦ YOU ✦"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 12
+
+[node name="PHP" type="Label" parent="MainLayout/ContentArea/CombatView/EnemyStatsRow/PlayerStatsPanel/VBox"]
+layout_mode = 2
+text = "HP: 0/0"
+theme_override_font_sizes/font_size = 11
+
+[node name="PATK" type="Label" parent="MainLayout/ContentArea/CombatView/EnemyStatsRow/PlayerStatsPanel/VBox"]
+layout_mode = 2
+text = "ATK: 0"
+theme_override_font_sizes/font_size = 11
+
+[node name="PDEF" type="Label" parent="MainLayout/ContentArea/CombatView/EnemyStatsRow/PlayerStatsPanel/VBox"]
+layout_mode = 2
+text = "DEF: 0"
+theme_override_font_sizes/font_size = 11
+
+[node name="PlayerStatusBox" type="HBoxContainer" parent="MainLayout/ContentArea/CombatView/EnemyStatsRow/PlayerStatsPanel/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="Spacer" type="Control" parent="MainLayout/ContentArea/CombatView/EnemyStatsRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="EnemyStatsPanel" type="PanelContainer" parent="MainLayout/ContentArea/CombatView/EnemyStatsRow"]
+custom_minimum_size = Vector2(140, 90)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
+
+[node name="VBox" type="VBoxContainer" parent="MainLayout/ContentArea/CombatView/EnemyStatsRow/EnemyStatsPanel"]
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="Title" type="Label" parent="MainLayout/ContentArea/CombatView/EnemyStatsRow/EnemyStatsPanel/VBox"]
+layout_mode = 2
+text = "✦ ENEMY ✦"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 12
+
+[node name="EHP" type="Label" parent="MainLayout/ContentArea/CombatView/EnemyStatsRow/EnemyStatsPanel/VBox"]
+layout_mode = 2
+text = "HP: 0/0"
+theme_override_font_sizes/font_size = 11
+
+[node name="EATK" type="Label" parent="MainLayout/ContentArea/CombatView/EnemyStatsRow/EnemyStatsPanel/VBox"]
+layout_mode = 2
+text = "ATK: 0"
+theme_override_font_sizes/font_size = 11
+
+[node name="EDEF" type="Label" parent="MainLayout/ContentArea/CombatView/EnemyStatsRow/EnemyStatsPanel/VBox"]
+layout_mode = 2
+text = "DEF: 0"
+theme_override_font_sizes/font_size = 11
+
+[node name="EnemyStatusBox" type="HBoxContainer" parent="MainLayout/ContentArea/CombatView/EnemyStatsRow/EnemyStatsPanel/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 4
+alignment = 2
+
+[node name="HpBarsBox" type="HBoxContainer" parent="MainLayout/ContentArea/CombatView"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="YouLbl" type="Label" parent="MainLayout/ContentArea/CombatView/HpBarsBox"]
+layout_mode = 2
+text = "You"
+theme_override_font_sizes/font_size = 13
+
+[node name="PlayerHpBar" type="ProgressBar" parent="MainLayout/ContentArea/CombatView/HpBarsBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+custom_minimum_size = Vector2(0, 20)
+show_percentage = true
+
+[node name="EnemyLbl" type="Label" parent="MainLayout/ContentArea/CombatView/HpBarsBox"]
+layout_mode = 2
+text = "Enemy"
+theme_override_font_sizes/font_size = 13
+
+[node name="EnemyHpBar" type="ProgressBar" parent="MainLayout/ContentArea/CombatView/HpBarsBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+custom_minimum_size = Vector2(0, 20)
+show_percentage = true
+
+[node name="IntentLbl" type="Label" parent="MainLayout/ContentArea/CombatView"]
+layout_mode = 2
+horizontal_alignment = 1
+text = "—"
+theme_override_font_sizes/font_size = 15
+
+[node name="AttackGrid" type="GridContainer" parent="MainLayout/ContentArea/CombatView"]
+layout_mode = 2
+columns = 3
+theme_override_constants/h_separation = 8
+theme_override_constants/v_separation = 8
+
+[node name="ResultBanner" type="VBoxContainer" parent="MainLayout/ContentArea/CombatView"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="SmoothAutoBox" type="VBoxContainer" parent="MainLayout/ContentArea/CombatView"]
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 10
+alignment = 1
+
+[node name="SmoothLabel" type="Label" parent="MainLayout/ContentArea/CombatView/SmoothAutoBox"]
+layout_mode = 2
+text = "✦ OVERPOWERED AUTO-BATTLING... ✦"
+horizontal_alignment = 1
+theme_override_colors/font_color = Color(0.4, 1, 0.4, 1)
+theme_override_font_sizes/font_size = 16
+
+[node name="SmoothProgressBar" type="ProgressBar" parent="MainLayout/ContentArea/CombatView/SmoothAutoBox"]
+custom_minimum_size = Vector2(0, 30)
+layout_mode = 2
+size_flags_horizontal = 3
+show_percentage = false
+
+[node name="EquipmentView" type="VBoxContainer" parent="MainLayout/ContentArea"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+theme_override_constants/separation = 10
+visible = false
+
+[node name="EquipHeader" type="Label" parent="MainLayout/ContentArea/EquipmentView"]
+layout_mode = 2
+text = "Equipped Gear"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 18
+
+[node name="EquipLayout" type="HBoxContainer" parent="MainLayout/ContentArea/EquipmentView"]
+layout_mode = 2
+theme_override_constants/separation = 20
+
+[node name="TotalStatsPanel" type="PanelContainer" parent="MainLayout/ContentArea/EquipmentView/EquipLayout"]
+custom_minimum_size = Vector2(180, 0)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_inv")
+
+[node name="VBox" type="VBoxContainer" parent="MainLayout/ContentArea/EquipmentView/EquipLayout/TotalStatsPanel"]
+layout_mode = 2
+theme_override_constants/separation = 5
+
+[node name="Title" type="Label" parent="MainLayout/ContentArea/EquipmentView/EquipLayout/TotalStatsPanel/VBox"]
+layout_mode = 2
+text = " Total Bonuses "
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 14
+
+[node name="StatsLbl" type="RichTextLabel" parent="MainLayout/ContentArea/EquipmentView/EquipLayout/TotalStatsPanel/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+bbcode_enabled = true
+text = "[center]—[/center]"
+theme_override_font_sizes/normal_font_size = 13
+
+[node name="EquipSlotsBox" type="CenterContainer" parent="MainLayout/ContentArea/EquipmentView/EquipLayout"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="InventoryPanel" type="PanelContainer" parent="MainLayout/ContentArea/EquipmentView"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleBoxFlat_inv")
+
+[node name="CustomTooltip" type="PanelContainer" parent="MainLayout/ContentArea/EquipmentView"]
+visible = false
+z_index = 20
+layout_mode = 0
+mouse_filter = 2
+custom_minimum_size = Vector2(280, 160)
+theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
+
+[node name="VBox" type="VBoxContainer" parent="MainLayout/ContentArea/EquipmentView/CustomTooltip"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Title" type="Label" parent="MainLayout/ContentArea/EquipmentView/CustomTooltip/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+
+[node name="Stats" type="RichTextLabel" parent="MainLayout/ContentArea/EquipmentView/CustomTooltip/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+bbcode_enabled = true
+theme_override_font_sizes/normal_font_size = 15
+
+[node name="VBox" type="VBoxContainer" parent="MainLayout/ContentArea/EquipmentView/InventoryPanel"]
+layout_mode = 2
+
+[node name="InvHeader" type="Label" parent="MainLayout/ContentArea/EquipmentView/InventoryPanel/VBox"]
+layout_mode = 2
+text = " Inventory"
+theme_override_font_sizes/font_size = 16
+
+[node name="InventoryScroll" type="ScrollContainer" parent="MainLayout/ContentArea/EquipmentView/InventoryPanel/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="InventoryBox" type="VBoxContainer" parent="MainLayout/ContentArea/EquipmentView/InventoryPanel/VBox/InventoryScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
+
+[node name="ForgeView" type="VBoxContainer" parent="MainLayout/ContentArea"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+theme_override_constants/separation = 10
+visible = false
+
+[node name="ForgeInfoLbl" type="Label" parent="MainLayout/ContentArea/ForgeView"]
+layout_mode = 2
+text = "Forge"
+theme_override_font_sizes/font_size = 18
+autowrap_mode = 3
+
+[node name="ForgeInventoryScroll" type="ScrollContainer" parent="MainLayout/ContentArea/ForgeView"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="ForgeInventoryBox" type="VBoxContainer" parent="MainLayout/ContentArea/ForgeView/ForgeInventoryScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4

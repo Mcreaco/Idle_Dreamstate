@@ -168,6 +168,11 @@ func show_event(event_data: Dictionary, depth_def: Dictionary, risk_assessment_u
 			
 		vbox.add_child(btn)
 	
+	# Add extra details if revealed_index >= 0 to handle complex effects
+	if revealed_index >= 0:
+		var revealed_effects = choices[revealed_index].get("effect", {})
+		_append_complex_details(vbox, revealed_effects)
+	
 	# CRITICAL FIX: Center properly
 	set_anchors_preset(Control.PRESET_CENTER)
 	set_size(Vector2(500, 300))  # Force size first
@@ -180,26 +185,38 @@ func show_event(event_data: Dictionary, depth_def: Dictionary, risk_assessment_u
 	visible = true
 	_fade_in()
 
+func _append_complex_details(vbox: VBoxContainer, effects: Dictionary) -> void:
+	if effects.has("random_upgrade_level_down"):
+		var l: Label = Label.new()
+		l.text = "[!] Warning: May decay a local upgrade level"
+		l.add_theme_color_override("font_color", Color(1, 0.4, 0.4))
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		vbox.add_child(l)
+	
+	if effects.has("thoughts_sacrifice"):
+		var l: Label = Label.new()
+		l.text = "[!] Note: Sacrifices %d%% of current Thoughts" % int(effects["thoughts_sacrifice"] * 100)
+		l.add_theme_color_override("font_color", Color(1, 0.8, 0.4))
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		vbox.add_child(l)
+
 func _on_choice_selected(id: String, effects: Dictionary) -> void:
 	_pending_effects = effects
 	
-	if effects.has("cost_dreamcloud"):
-		var cost := float(effects["cost_dreamcloud"])
-		if _gm != null:
-			_gm.dreamcloud = maxf(0.0, _gm.dreamcloud - cost)
+	# Handle instant effects that ChoiceModal can do directly (costs)
+	if _gm != null:
+		if effects.has("cost_thoughts"):
+			_gm.thoughts = maxf(0.0, _gm.thoughts - float(effects["cost_thoughts"]))
+		if effects.has("thoughts_sacrifice"):
+			_gm.thoughts = maxf(0.0, _gm.thoughts * (1.0 - float(effects["thoughts_sacrifice"])))
 	
-	if effects.has("cost_thoughts"):
-		var cost := float(effects["cost_thoughts"])
-		if _gm != null:
-			_gm.thoughts = maxf(0.0, _gm.thoughts - cost)
-	
-	# Duration effects (handled by DepthRunController)
+	# Duration effects and stat changes (handled by DepthRunController)
 	choice_made.emit(id, effects)
 	
 	# Resume
 	visible = false
 	if _drc != null:
-		_drc.set_process(true)
+		_drc.set_meta("progress_paused", false)
 
 func _is_risky_choice(effects: Dictionary) -> bool:
 	if effects.has("instability_bonus") and float(effects["instability_bonus"]) > 0.1:

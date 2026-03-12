@@ -10,6 +10,8 @@
 [ext_resource type="PackedScene" uid="uid://bsx0cageg3stg" path="res://TimeWarpPanel.tscn" id="8_ahrf8"]
 [ext_resource type="Texture2D" uid="uid://cgc4eaq0mkd4k" path="res://UI/BG/BG1.png" id="8_uqb74"]
 
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_spacer"]
+
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_xv1u1"]
 content_margin_left = 0.0
 content_margin_top = 0.0
@@ -81,10 +83,6 @@ layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = 32.0
-offset_top = 24.0
-offset_right = -32.0
-offset_bottom = -24.0
 grow_horizontal = 2
 grow_vertical = 2
 size_flags_horizontal = 3
@@ -96,24 +94,26 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-
-[node name="TopBarPanel" type="PanelContainer" parent="Root"]
+[node name="MainLayoutVBox" type="VBoxContainer" parent="Root"]
 layout_mode = 1
-anchors_preset = -1
-anchor_left = 0.5
-anchor_right = 0.5
-offset_left = -460.0
-offset_top = 20.0
-offset_right = 460.0
-offset_bottom = 80.0
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="TopBarPanel" type="PanelContainer" parent="Root/MainLayoutVBox"]
+custom_minimum_size = Vector2(0, 60)
+layout_mode = 2
+size_flags_horizontal = 3
 theme_override_styles/panel = SubResource("StyleBoxFlat_xv1u1")
 script = ExtResource("1_wwh41")
 
-[node name="TopBar" type="HBoxContainer" parent="Root/TopBarPanel"]
+[node name="TopBar" type="HBoxContainer" parent="Root/MainLayoutVBox/TopBarPanel"]
 layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="MarginContainer" type="MarginContainer" parent="Root/TopBarPanel/TopBar"]
+[node name="MarginContainer" type="MarginContainer" parent="Root/MainLayoutVBox/TopBarPanel/TopBar"]
 custom_minimum_size = Vector2(180, 0)
 layout_mode = 2
 size_flags_horizontal = 3
@@ -123,21 +123,21 @@ theme_override_constants/margin_right = 8
 theme_override_constants/margin_bottom = 8
 script = ExtResource("3_uqb74")
 
-[node name="InstabilityCenter" type="CenterContainer" parent="Root/TopBarPanel/TopBar"]
+[node name="InstabilityCenter" type="CenterContainer" parent="Root/MainLayoutVBox/TopBarPanel/TopBar"]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="InstabilityVBox" type="VBoxContainer" parent="Root/TopBarPanel/TopBar/InstabilityCenter"]
+[node name="InstabilityVBox" type="VBoxContainer" parent="Root/MainLayoutVBox/TopBarPanel/TopBar/InstabilityCenter"]
 layout_mode = 2
 theme_override_constants/separation = 6
 alignment = 1
 
-[node name="InstabilityTitle" type="Label" parent="Root/TopBarPanel/TopBar/InstabilityCenter/InstabilityVBox"]
+[node name="InstabilityTitle" type="Label" parent="Root/MainLayoutVBox/TopBarPanel/TopBar/InstabilityCenter/InstabilityVBox"]
 layout_mode = 2
 text = "Instability"
 horizontal_alignment = 1
 
-[node name="InstabilityBar" type="ProgressBar" parent="Root/TopBarPanel/TopBar/InstabilityCenter/InstabilityVBox"]
+[node name="InstabilityBar" type="ProgressBar" parent="Root/MainLayoutVBox/TopBarPanel/TopBar/InstabilityCenter/InstabilityVBox"]
 custom_minimum_size = Vector2(360, 30)
 layout_mode = 2
 size_flags_horizontal = 3
@@ -146,7 +146,7 @@ tooltip_text = "Instability"
 theme_override_styles/background = SubResource("StyleBoxFlat_wa2eh")
 theme_override_styles/fill = SubResource("StyleBoxFlat_fdbdo")
 
-[node name="InstabilityHint" type="Label" parent="Root/TopBarPanel/TopBar/InstabilityCenter/InstabilityVBox"]
+[node name="InstabilityHint" type="Label" parent="Root/MainLayoutVBox/TopBarPanel/TopBar/InstabilityCenter/InstabilityVBox"]
 visible = false
 layout_mode = 2
 text = "Consider Wake"
@@ -208,39 +208,26 @@ mode = "overclockmastery"
 layout_mode = 2
 mode = "overclocksafety"
 
-[node name="DepthBarCenter" type="CenterContainer" parent="Root"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-
-[node name="DepthBarsPanel" parent="Root/DepthBarCenter" instance=ExtResource("3_8cqdv")]
+[node name="MiddleSpacer" type="Control" parent="Root/MainLayoutVBox"]
+custom_minimum_size = Vector2(0, 16)
 layout_mode = 2
 
-[node name="BottomBarPanel" type="VBoxContainer" parent="Root"]
-custom_minimum_size = Vector2(1000, 0)
-layout_mode = 1
-anchors_preset = 7
-anchor_left = 0.5
-anchor_top = 1.0
-anchor_right = 0.5
-anchor_bottom = 1.0
-offset_left = -500.0
-offset_top = -128.0
-offset_right = 500.0
-grow_horizontal = 2
-grow_vertical = 0
+[node name="DepthBarsPanel" parent="Root/MainLayoutVBox" instance=ExtResource("3_8cqdv")]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="BottomBarPanel" type="VBoxContainer" parent="Root/MainLayoutVBox"]
+layout_mode = 2
+size_flags_horizontal = 3
 theme_override_constants/separation = 8
 
-[node name="ClickRow" type="HBoxContainer" parent="Root/BottomBarPanel"]
+[node name="ClickRow" type="HBoxContainer" parent="Root/MainLayoutVBox/BottomBarPanel"]
 custom_minimum_size = Vector2(0, 70)
 layout_mode = 2
 size_flags_vertical = 4
 theme_override_constants/separation = 12
 
-[node name="Think" type="Button" parent="Root/BottomBarPanel/ClickRow"]
+[node name="Think" type="Button" parent="Root/MainLayoutVBox/BottomBarPanel/ClickRow"]
 custom_minimum_size = Vector2(140, 60)
 layout_mode = 2
 size_flags_horizontal = 3
@@ -248,7 +235,7 @@ size_flags_vertical = 4
 theme_override_font_sizes/font_size = 18
 text = "🧠 Think"
 
-[node name="Stabilize" type="Button" parent="Root/BottomBarPanel/ClickRow"]
+[node name="Stabilize" type="Button" parent="Root/MainLayoutVBox/BottomBarPanel/ClickRow"]
 custom_minimum_size = Vector2(140, 60)
 layout_mode = 2
 size_flags_horizontal = 3
@@ -256,23 +243,23 @@ size_flags_vertical = 4
 theme_override_font_sizes/font_size = 18
 text = "❄️ Stabilize"
 
-[node name="BottomBar" type="HBoxContainer" parent="Root/BottomBarPanel"]
+[node name="BottomBar" type="HBoxContainer" parent="Root/MainLayoutVBox/BottomBarPanel"]
 layout_mode = 2
 size_flags_vertical = 4
 
-[node name="OverclockButton" type="Button" parent="Root/BottomBarPanel/BottomBar"]
+[node name="OverclockButton" type="Button" parent="Root/MainLayoutVBox/BottomBarPanel/BottomBar"]
 custom_minimum_size = Vector2(0, 54)
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Overclock"
 
-[node name="WakeButton" type="Button" parent="Root/BottomBarPanel/BottomBar"]
+[node name="WakeButton" type="Button" parent="Root/MainLayoutVBox/BottomBarPanel/BottomBar"]
 custom_minimum_size = Vector2(0, 54)
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Wake"
 
-[node name="Meta" type="Button" parent="Root/BottomBarPanel/BottomBar"]
+[node name="Meta" type="Button" parent="Root/MainLayoutVBox/BottomBarPanel/BottomBar"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Meta"
@@ -354,11 +341,6 @@ layout_mode = 2
 [node name="Actions" type="HBoxContainer" parent="Root/SettingsPanel/Root"]
 layout_mode = 2
 
-[node name="SaveButton" type="Button" parent="Root/SettingsPanel/Root/Actions"]
-layout_mode = 2
-
-[node name="LoadButton" type="Button" parent="Root/SettingsPanel/Root/Actions"]
-layout_mode = 2
 
 [node name="StatsButton" type="Button" parent="Root/SettingsPanel/Root/Actions"]
 layout_mode = 2

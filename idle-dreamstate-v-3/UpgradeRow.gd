@@ -226,8 +226,8 @@ func _get_cost() -> float:
 func _get_mini_text() -> String:
 	match mode.to_lower():
 		"deepdives": return "Depth scales harder (reward + risk)."
-		"mentalbuffer": return "Dive grants extra dreamcloud based on Depth."
-		"overclockmastery": return "+Power +Duration, but higher dreamcloud cost."
+		"mentalbuffer": return "Dive grants extra Thoughts based on Depth."
+		"overclockmastery": return "+Power +Duration, but higher Thoughts cost."
 		"overclocksafety": return "Lower Overclock Instability, slightly lower Overclock Thoughts."
 		"thoughts": return "More Thoughts gain."
 		"stability": return "Less Instability gain."

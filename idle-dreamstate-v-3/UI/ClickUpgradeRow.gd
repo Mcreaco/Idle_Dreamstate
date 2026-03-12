@@ -12,6 +12,8 @@ var main_hbox: HBoxContainer
 
 @export var upgrade_type: String = "power"
 var gm: Node
+var _is_blinded: bool = false
+var _inner_eye_lvl: int = 0
 
 func _ready() -> void:
 	gm = get_tree().current_scene.find_child("GameManager", true, false)
@@ -21,7 +23,7 @@ func _ready() -> void:
 	
 	# Blue border style matching Reset tab
 	var panel_style := StyleBoxFlat.new()
-	panel_style.bg_color = Color(0.08, 0.10, 0.14, 0.95)
+	panel_style.bg_color = Color(0.08, 0.10, 0.14, 0.88)
 	panel_style.border_color = Color(0.24, 0.67, 0.94, 0.8)
 	panel_style.border_width_left = 2
 	panel_style.border_width_top = 2
@@ -73,7 +75,7 @@ func _ready() -> void:
 	bar_vbox.add_child(_lvl_lbl)
 	
 	_bar = ProgressBar.new()
-	_bar.custom_minimum_size = Vector2(120, 16)
+	_bar.custom_minimum_size = Vector2(120, 20)
 	_bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_bar.show_percentage = false
 	
@@ -94,6 +96,8 @@ func _ready() -> void:
 	
 	_bar.add_theme_stylebox_override("background", bar_bg)
 	_bar.add_theme_stylebox_override("fill", bar_fill)
+	_bar.custom_minimum_size.y = 20
+	_bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	bar_vbox.add_child(_bar)
 	
 	# Milestone label
@@ -171,6 +175,11 @@ func _ready() -> void:
 	
 	right_hbox.add_child(evolve_btn)
 	
+	refresh()
+
+func set_blinded(enabled: bool, inner_eye_level: int) -> void:
+	_is_blinded = enabled
+	_inner_eye_lvl = inner_eye_level
 	refresh()
 
 func _on_buy() -> void:
@@ -308,10 +317,14 @@ func refresh() -> void:
 	
 	# Calculate milestones
 	next_milestone = _get_next_milestone(level)
-	if level >= 10:
-		prev_milestone = _get_next_milestone(level - 1)
-	else:
-		prev_milestone = 0
+	# Current tier start (prev milestone)
+	var milestones := [0, 10, 25, 50, 100, 200, 300, 400, 500, 750, 1000]
+	prev_milestone = 0
+	for i in range(milestones.size()):
+		if milestones[i] == next_milestone:
+			if i > 0:
+				prev_milestone = milestones[i-1]
+			break
 	
 	# Update name
 	if _name_lbl:
@@ -336,6 +349,7 @@ func refresh() -> void:
 	
 	if _lvl_lbl:
 		_lvl_lbl.text = "Level %d" % level
+		_lvl_lbl.visible = not (_is_blinded and _inner_eye_lvl < 3)
 	
 	# Update buy button
 	if _buy_btn:
@@ -361,6 +375,10 @@ func refresh() -> void:
 				_cost_lbl.modulate = Color(0.9, 0.3, 0.3)
 			else:
 				_cost_lbl.modulate = Color(1, 1, 1)
+		
+		if _is_blinded and _inner_eye_lvl < 4:
+			_cost_lbl.text = "???"
+			_cost_lbl.modulate = Color(0.7, 0.7, 0.7)
 	
 	# CRITICAL FIX: Update progress bar with proper reset
 	if _bar:
@@ -369,17 +387,14 @@ func refresh() -> void:
 		else:
 			_bar.visible = true
 			
-			# Calculate milestones
-			next_milestone = _get_next_milestone(level)
-			if level >= 10:
-				prev_milestone = _get_next_milestone(level - 1)
-			else:
-				prev_milestone = 0
-			
 			# Set values as floats to ensure proper calculation
 			_bar.min_value = float(prev_milestone)
 			_bar.max_value = float(next_milestone)
 			_bar.value = float(level)
+			
+			# Enforce height
+			_bar.custom_minimum_size.y = 20
+			_bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 			
 			# Force update
 			_bar.queue_redraw()
@@ -391,6 +406,9 @@ func refresh() -> void:
 					milestone_lbl.text = "Next: Evolution"
 				else:
 					milestone_lbl.text = "Next: Lv %d" % next_milestone
+			
+			_bar.visible = not (_is_blinded and _inner_eye_lvl < 3)
+			if milestone_lbl: milestone_lbl.visible = _bar.visible
 	
 	# Evolution button
 	if level >= 1000:

@@ -26,6 +26,8 @@
 [ext_resource type="Script" uid="uid://dlv3wtk1sfosk" path="res://InputDebugger.gd" id="16_fpfj3"]
 [ext_resource type="Script" uid="uid://ijwvjm64or0p" path="res://DepthMetaSystem.gd" id="16_o7g6l"]
 [ext_resource type="Script" uid="uid://cluspjh7ln06w" path="res://ButtonStyleDebugger.gd" id="16_sc1dx"]
+[ext_resource type="Script" path="res://Combat/CombatEngine.gd" id="combat_engine_script"]
+[ext_resource type="Script" path="res://Combat/EquipmentManager.gd" id="equipment_manager_script"]
 [ext_resource type="Script" uid="uid://bbgh8wo1i25v1" path="res://AutomationBinder.gd" id="18_3b0ty"]
 [ext_resource type="Script" uid="uid://bgoolv2njw6y" path="res://AbyssButtonBinder.gd" id="19_5mvff"]
 [ext_resource type="Script" uid="uid://u7x63hulqmsx" path="res://PrestigePanel.gd" id="19_bg4s2"]
@@ -42,6 +44,7 @@
 [ext_resource type="Script" uid="uid://ddbkueb1sta6k" path="res://scripts/AbyssShop.gd" id="27_gngx1"]
 [ext_resource type="Script" uid="uid://40sp2ybhrvuh" path="res://PillarSmokeSpawner.gd" id="39_ny7u2"]
 [ext_resource type="Script" uid="uid://t1l570qbptfq" path="res://LifetimeStatsTracker.gd" id="41_1w2xm"]
+[ext_resource type="PackedScene" path="res://Combat/DreamsPanel.tscn" id="dreams_panel_scene"]
 
 [sub_resource type="Environment" id="Environment_o7g6l"]
 background_mode = 1
@@ -271,6 +274,12 @@ script = ExtResource("15_40n85")
 [node name="DepthMetaSystem" type="Node" parent="Systems"]
 script = ExtResource("16_o7g6l")
 
+[node name="CombatEngine" type="Node" parent="Systems"]
+script = ExtResource("combat_engine_script")
+
+[node name="EquipmentManager" type="Node" parent="Systems"]
+script = ExtResource("equipment_manager_script")
+
 [node name="AbyssUnlockFX" type="CanvasLayer" parent="."]
 script = ExtResource("23_w3rk5")
 flash_path = NodePath("Flash")
@@ -286,27 +295,6 @@ mouse_filter = 2
 color = Color(0, 0, 0, 1)
 
 [node name="MainUI" parent="." instance=ExtResource("15_3ccbu")]
-
-[node name="TopBarPanel" parent="MainUI/Root" index="0"]
-custom_minimum_size = Vector2(0, 80)
-anchors_preset = 10
-anchor_left = 0.0
-anchor_right = 1.0
-offset_left = 0.0
-offset_top = 0.0
-offset_right = 0.0
-offset_bottom = 27.0
-grow_horizontal = 2
-theme_override_styles/panel = SubResource("StyleBoxFlat_3ccbu")
-
-[node name="CenterContainer" type="CenterContainer" parent="MainUI/Root/TopBarPanel/TopBar" index="2"]
-layout_mode = 2
-
-[node name="BottomBarPanel" parent="MainUI/Root" index="4"]
-mouse_filter = 2
-
-[node name="VBoxContainer" type="VBoxContainer" parent="MainUI/Root/BottomBarPanel" index="1"]
-layout_mode = 2
 
 [node name="RightRail" parent="MainUI/Root" index="6"]
 settings_panel_path = NodePath("")
@@ -1224,6 +1212,14 @@ script = ExtResource("18_3b0ty")
 
 [node name="AbyssBarBinder" type="Node" parent="MainUI"]
 script = ExtResource("12_hri7i")
+
+[node name="DreamsPanel" parent="MainUI" instance=ExtResource("dreams_panel_scene")]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 
 [node name="AbyssPanel" type="PanelContainer" parent="MainUI"]
 visible = false

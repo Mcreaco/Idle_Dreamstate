@@ -55,7 +55,7 @@ const TUTORIALS: Dictionary = {
 		"steps": [
 			{
 				"header": "Consciousness Awakens",
-				"body": "You exist in the void. Thoughts crystallize from nothing - your only currency. dreamcloud keeps you stable. Gather Thoughts to purchase upgrades and descend deeper into the Dreamstate.",
+				"body": "You exist in the void. Thoughts crystallize from nothing - your only currency. Gather Thoughts to purchase upgrades and descend deeper into the Dreamstate.",
 				"highlight": "ThoughtsLabel",
 				"wait_for_click": false
 			},
@@ -135,7 +135,7 @@ const TUTORIALS: Dictionary = {
 			},
 			{
 				"header": "Overclock Unlocked",
-				"body": "OVERCLOCK is now available! Spend dreamcloud to temporarily boost thought generation. Use it wisely - it increases instability while active!",
+				"body": "OVERCLOCK is now available! Spend Thoughts to temporarily boost thought generation. Use it wisely - it increases instability while active!",
 				"highlight": "OverclockButton",
 				"wait_for_click": false
 			}

@@ -8,10 +8,10 @@ class_name DepthBarsPanel
 @export var bars_margin_right: float = 220.0 # leaves room for Settings/Shop
 @export var bars_margin_top: float = 60
 @export var bars_margin_bottom: float = 0.0 # keeps bottom buttons safe
-@export var safe_top: int = 74        # keeps off the top HUD bar
-@export var safe_bottom: int = 110    # keeps off the bottom buttons bar
-@export var safe_right: int = 240     # keeps off Settings/Shop
-@export var safe_left: int = 240      # match right to keep bars centered
+@export var safe_top: int = 86        # tightly tracks the 80px HUD
+@export var safe_bottom: int = 180    # Large gap explicitly clearing the buttons
+@export var safe_right: int = 100     # keeps off Settings/Shop
+@export var safe_left: int = 100      # match right to keep bars centered
 
 @onready var left_col: VBoxContainer = $BarsRoot/BarsGrid/LeftColumn
 @onready var right_col: VBoxContainer = $BarsRoot/BarsGrid/RightColumn
@@ -91,15 +91,22 @@ func _apply_bars_margins_force() -> void:
 func _ready() -> void:
 	_depth_run = get_node_or_null("/root/DepthRunController")
 	_build_rows()
-	 # Force refresh after a brief delay to ensure controller has loaded data
+	# Force refresh after a brief delay to ensure controller has loaded data
 	call_deferred("_refresh_all_rows")
-	_apply_bars_root_rect()
 	_ensure_overlay()
-	call_deferred("_apply_safe_margins_centered")
+	
+	# Apply strictly horizontal padding; vertical is handled natively by MainLayoutVBox
+	add_theme_constant_override("margin_left", safe_left)
+	add_theme_constant_override("margin_right", safe_right)
+	
 	if _depth_run != null and _depth_run.has_method("bind_panel"):
 		_depth_run.call("bind_panel", self)
-	left_col.add_theme_constant_override("separation", 12)
-	right_col.add_theme_constant_override("separation", 12)
+	
+	if _depth_run != null and _depth_run.has_signal("blindness_changed"):
+		_depth_run.blindness_changed.connect(_on_blindness_changed)
+	
+	left_col.add_theme_constant_override("separation", 4)
+	right_col.add_theme_constant_override("separation", 4)
 
 	# Connect to Meta System for live unlock updates
 	var meta: Node = get_tree().current_scene.find_child("DepthMetaSystem", true, false)
@@ -110,18 +117,15 @@ func _ready() -> void:
 func _on_meta_unlock_changed(_depth_index: int, _unlocked: bool) -> void:
 	_apply_row_states()
 
-	left_col.custom_minimum_size.x = 780
-	right_col.custom_minimum_size.x = 780
-
-	_ensure_overlay()
-	if _depth_run != null and _depth_run.has_method("bind_panel"):
-		_depth_run.call("bind_panel", self)
-
-# ---- FIX: move bars DOWN so they don't overlap top HUD ----
-	var root := $BarsRoot
-	if root != null:
-		root.offset_top += bars_margin_top
-		root.offset_right -= bars_margin_right
+func _on_blindness_changed(enabled: bool, inner_eye_level: int) -> void:
+	# Propagate to all rows
+	for row in _rows.values():
+		if row.has_method("set_blinded"):
+			row.call("set_blinded", enabled, inner_eye_level)
+	
+	# Also update overlay row if open
+	if _overlay_row != null and _overlay_row.has_method("set_blinded"):
+		_overlay_row.call("set_blinded", enabled, inner_eye_level)
 
 func get_expanded_row() -> DepthBarRow:
 	for child in get_children():
@@ -620,55 +624,7 @@ func _apply_bars_root_rect() -> void:
 	root.offset_bottom = -bars_margin_bottom
 
 func _apply_safe_margins_centered() -> void:
-	var bars_root := $BarsRoot as Control
-	if bars_root == null:
-		push_warning("DepthBarsPanel: BarsRoot not found.")
-		return
-
-	# Let containers finish their layout first
-	await get_tree().process_frame
-
-	# If already wrapped, just update margins
-	var parent := bars_root.get_parent()
-	if parent is MarginContainer:
-		var mc := parent as MarginContainer
-		mc.add_theme_constant_override("margin_top", safe_top)
-		mc.add_theme_constant_override("margin_bottom", safe_bottom)
-		mc.add_theme_constant_override("margin_left", safe_left)
-		mc.add_theme_constant_override("margin_right", safe_right)
-		return
-
-	# Wrap BarsRoot so margins can't be overridden by Containers
-	var p := parent
-	var idx := -1
-	if p != null:
-		idx = p.get_children().find(bars_root)
-
-	var bars_wrap := MarginContainer.new()
-	bars_wrap.name = "BarsRootWrap"
-	bars_wrap.set_anchors_preset(Control.PRESET_FULL_RECT)
-	bars_wrap.mouse_filter = Control.MOUSE_FILTER_IGNORE
-
-	p.remove_child(bars_root)
-	p.add_child(bars_wrap)
-	if idx >= 0:
-		p.move_child(bars_wrap, idx)
-
-	bars_wrap.add_child(bars_root)
-
-	# apply margins on bars_wrap (not bars_root!)
-	bars_wrap.add_theme_constant_override("margin_top", safe_top)
-	bars_wrap.add_theme_constant_override("margin_bottom", safe_bottom)
-	bars_wrap.add_theme_constant_override("margin_left", safe_left)
-	bars_wrap.add_theme_constant_override("margin_right", safe_right)
-
-
-	# BarsRoot fills the wrapper
-	bars_root.set_anchors_preset(Control.PRESET_FULL_RECT)
-	bars_root.offset_left = 0
-	bars_root.offset_right = 0
-	bars_root.offset_top = 0
-	bars_root.offset_bottom = 0
+	pass
 
 func _on_viewport_resized() -> void:
 	if _overlay != null and is_instance_valid(_overlay):

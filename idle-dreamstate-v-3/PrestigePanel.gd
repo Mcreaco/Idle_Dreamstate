@@ -170,7 +170,6 @@ func open_with_depth(mem: float, crystals_dict: Dictionary, wake_depth: int) -> 
 	if reset_label != null:
 		reset_label.text = """You Reset:
 • Thoughts (return to 0)
-• dreamcloud (return to 0)
 • Instability (return to 0)
 • Run Upgrades (Thoughts Flow, Stability, etc.)
 • Current Depth (return to 1)
@@ -289,34 +288,79 @@ func _on_ad_reward_wake_bonus(multiplier: float) -> void:
 	_update_confirm_button()
 	_update_ad_button_state()
 
+func _get_fuzzy_bounds(value: float, level: int) -> Array:
+	if level >= 7:
+		return [value, value, false] # [low, high, is_fuzzy]
+	if level == 0:
+		return [0.0, 0.0, true]
+	
+	var variance: float = (7.0 - float(level)) / 6.0
+	var low := value * (1.0 - variance)
+	var high := value * (1.0 + variance)
+	if low < 0: low = 0
+	return [low, high, true]
+
+func _get_fuzzy_range(value: float, level: int) -> String:
+	var bounds = _get_fuzzy_bounds(value, level)
+	if not bounds[2]:
+		return _fmt_num(value)
+	if level == 0:
+		return "???"
+	return "%s-%s" % [_fmt_num(bounds[0]), _fmt_num(bounds[1])]
+
 func _update_summary_text() -> void:
 	var lines: Array[String] = []
 	lines.append("If you wake now:")
 
+	# Get Dark Adaptation level for Depth 4
+	var drc := get_node_or_null("/root/DepthRunController")
+	var da_lvl: int = drc.call("_get_local_level", 4, "dark_adaptation") if drc != null else 7
+
 	# NEW path: show full preview (memories + thoughts + all gems)
 	if _pending_preview.size() > 0:
-		var mem := float(_pending_preview.get("memories", 0.0))
+		var total_mem := float(_pending_preview.get("memories", 0.0))
+		var mem_by_depth: Dictionary = _pending_preview.get("memories_by_depth", {})
 		var th := float(_pending_preview.get("thoughts", 0.0))
 		var gems: Dictionary = _pending_preview.get("crystals_by_name", {})
 
-		# Apply ad bonus ONLY to memories (your current design)
-		if _ad_bonus > 0.0:
-			mem = mem * (1.0 + _ad_bonus)
-			lines.append("• +" + _fmt_num(mem) + " Memories (Ad)")
+		# Handle fuzzy memories
+		var mem_str := ""
+		if da_lvl < 7 and mem_by_depth.has(4):
+			var d4_mem := float(mem_by_depth[4])
+			var other_mem := total_mem - d4_mem
+			var bounds = _get_fuzzy_bounds(d4_mem, da_lvl)
+			
+			if da_lvl == 0:
+				mem_str = "%s + ???" % _fmt_num(other_mem)
+			else:
+				mem_str = "%s-%s" % [_fmt_num(other_mem + bounds[0]), _fmt_num(other_mem + bounds[1])]
 		else:
-			lines.append("• +" + _fmt_num(mem) + " Memories")
+			mem_str = _fmt_num(total_mem)
 
-		# Thoughts (optional display — remove if you don't want it shown)
+		if _ad_bonus > 0.0:
+			# Multiplier applies to both bounds if fuzzy
+			# but for simplicity we'll just show the boosted range
+			lines.append("• +" + mem_str + " Memories (Ad)")
+		else:
+			lines.append("• +" + mem_str + " Memories")
+
+		# Thoughts
 		if th > 0.0:
 			lines.append("• +" + _fmt_num(th) + " Thoughts")
 
-		# All depth currencies (sorted for stable UI)
+		# All depth currencies
 		var names := gems.keys()
 		names.sort()
 		for gem_name in names:
 			var amt := float(gems[gem_name])
 			if amt > 0.0:
-				lines.append("• +" + _fmt_num(amt) + " " + str(gem_name))
+				# Check if this gem belongs to Depth 4 (Sapphire)
+				# DepthMetaSystem works here
+				var g_depth: int = DepthMetaSystem.get_depth_by_currency_name(gem_name)
+				if g_depth == 4:
+					lines.append("• +" + _get_fuzzy_range(amt, da_lvl) + " " + str(gem_name))
+				else:
+					lines.append("• +" + _fmt_num(amt) + " " + str(gem_name))
 
 		if summary != null:
 			summary.text = "\n".join(lines)
@@ -348,10 +392,32 @@ func _update_confirm_button() -> void:
 		confirm_btn.disabled = true
 		return
 
+	var total_mem := float(_pending_preview.get("memories", 0.0))
+	var mem_by_depth: Dictionary = _pending_preview.get("memories_by_depth", {})
+	
 	if _ad_bonus > 0.0:
-		mem = mem * (1.0 + _ad_bonus)
+		total_mem = total_mem * (1.0 + _ad_bonus)
+		# Update mbd for ad bonus if needed? 
+		# For simplicity we'll just use the total_mem fuzzy check
+	
+	# Check if we need to fuzz
+	var drc := get_node_or_null("/root/DepthRunController")
+	var da_lvl: int = drc.call("_get_local_level", 4, "dark_adaptation") if drc != null else 7
+	
+	var final_mem_str := ""
+	if da_lvl < 7 and mem_by_depth.has(4):
+		var d4_mem := float(mem_by_depth[4]) * (1.0 + _ad_bonus)
+		var other_mem := total_mem - d4_mem
+		var bounds = _get_fuzzy_bounds(d4_mem, da_lvl)
+		
+		if da_lvl == 0:
+			final_mem_str = "%s + ???" % _fmt_num(other_mem)
+		else:
+			final_mem_str = "%s-%s" % [_fmt_num(other_mem + bounds[0]), _fmt_num(other_mem + bounds[1])]
+	else:
+		final_mem_str = _fmt_num(total_mem)
 
-	confirm_btn.text = "Wake (+" + _fmt_num(mem) + ")"
+	confirm_btn.text = "Wake (+" + final_mem_str + ")"
 	confirm_btn.disabled = false
 
 

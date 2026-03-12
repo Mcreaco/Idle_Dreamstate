@@ -9,6 +9,12 @@ const COLOR_BAR_RED: Color = Color(0.85, 0.18, 0.18)
 @export var depth_label_path: NodePath
 @onready var depth_label: Label = _resolve_depth_label()
 
+func _print_button_anomalies(node: Node, indent: String) -> void:
+	if node is Button:
+		print(indent + "BUTTON: '" + node.name + "' Text: '" + node.text + "' Size: " + str(node.size) + " Vis: " + str(node.visible) + " Parent: " + str(node.get_parent().name))
+	for c in node.get_children():
+		_print_button_anomalies(c, indent + "  ")
+
 # Center elements (keep existing references)
 @onready var inst_title: Label = $TopBar/InstabilityCenter/InstabilityVBox/InstabilityTitle
 @onready var inst_bar: ProgressBar = $TopBar/InstabilityCenter/InstabilityVBox/InstabilityBar
@@ -20,7 +26,6 @@ var currencies_container: HBoxContainer
 
 # Currency displays (Right side)
 var thoughts_display: HBoxContainer
-var dreamcloud_display: HBoxContainer
 var gems_display: HBoxContainer
 
 # Left side buttons
@@ -33,6 +38,8 @@ var dream_current: float = 1.0
 # References
 var _run: Node = null
 var time_warp_panel: Control
+var _is_blinded: bool = false
+var _inner_eye_lvl: int = 0
 
 func _ready() -> void:
 	_style_top_bar_panel()
@@ -41,8 +48,12 @@ func _ready() -> void:
 	_create_piggy_bank_ui()
 	_create_watch_ad_button()
 	_create_time_warp_button()
+	_create_dreams_button()
 	_setup_currency_displays()
 	_hide_old_ui()
+	print(">>> INSPECTING BUTTON ANOMALIES in TopBarPanel <<<")
+	_print_button_anomalies(self, "")
+	print(">>> END ANOMALY REPORT <<<")
 	
 	# CRITICAL FIX: Hide the TimeWarpPanel's internal Watch Ad button
 	_hide_timewarp_watch_ad()
@@ -69,6 +80,16 @@ func _ready() -> void:
 	call_deferred("_fix_button_input")
 	
 	set_process(true)
+	
+	if _run == null:
+		_run = get_node_or_null("/root/DepthRunController")
+	
+	if _run != null and _run.has_signal("blindness_changed"):
+		_run.blindness_changed.connect(_on_blindness_changed)
+
+func _on_blindness_changed(enabled: bool, inner_eye_level: int) -> void:
+	_is_blinded = enabled
+	_inner_eye_lvl = inner_eye_level
 
 func _input(event: InputEvent) -> void:
 	if not (event is InputEventMouseButton and event.pressed):
@@ -267,14 +288,43 @@ func _create_time_warp_button() -> void:
 	time_warp_button.pressed.connect(_on_time_warp_pressed)
 	left_buttons_container.add_child(time_warp_button)
 
+func _create_dreams_button() -> void:
+	var btn := Button.new()
+	btn.name = "DreamsButton"
+	btn.text = "✦ Dreams"
+	btn.custom_minimum_size = Vector2(80, 28)
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.12, 0.08, 0.22)
+	sb.border_color = Color(0.6, 0.4, 0.9)
+	sb.border_width_left = 2
+	sb.border_width_top = 2
+	sb.border_width_right = 2
+	sb.border_width_bottom = 2
+	sb.corner_radius_top_left = 6
+	sb.corner_radius_top_right = 6
+	sb.corner_radius_bottom_left = 6
+	sb.corner_radius_bottom_right = 6
+	btn.add_theme_stylebox_override("normal", sb)
+	btn.add_theme_color_override("font_color", Color(0.85, 0.7, 1.0))
+	btn.pressed.connect(_on_dreams_pressed)
+	left_buttons_container.add_child(btn)
+
+func _on_dreams_pressed() -> void:
+	var dp := get_tree().current_scene.find_child("DreamsPanel", true, false)
+	if dp != null:
+		if dp.has_method("open_panel"):
+			dp.call("open_panel")
+		else:
+			dp.visible = not dp.visible
+
+
 func _setup_currency_displays() -> void:
 	# Thoughts: 🧠 icon + value
 	thoughts_display = _create_currency_display("🧠", Color(1.0, 0.85, 0.4))
 	currencies_container.add_child(thoughts_display)
 	
-	# dreamcloud: 🛡️ icon + value  
-	dreamcloud_display = _create_currency_display("🛡️", Color(0.4, 0.85, 1.0))
-	currencies_container.add_child(dreamcloud_display)
+	# dreamcloud removed from base UI - combat only
+
 	
 	# Gems: 💎 icon + value
 	gems_display = _create_currency_display("💎", Color(0.2, 0.8, 1.0))
@@ -380,14 +430,18 @@ func _process(_delta: float) -> void:
 	# CRITICAL FIX: Calculate percentage (0-100)
 	var inst_percent: float = (inst_value / inst_cap) * 100.0 if inst_cap > 0 else 0.0
 	
-	# Update title
+	# Update title (Hide if blinded and inner_eye_lvl < 2)
 	if inst_title:
-		inst_title.text = "Instability (+%.0f/s)" % inst_rate
+		if _is_blinded and _inner_eye_lvl < 2:
+			inst_title.text = "Instability (+???/s)"
+		else:
+			inst_title.text = "Instability (+%.0f/s)" % inst_rate
 	
 	# CRITICAL FIX: Update bar value
 	if inst_bar:
 		inst_bar.max_value = 100.0
 		inst_bar.value = inst_percent  # This MUST be between 0 and 100
+		inst_bar.visible = not (_is_blinded and _inner_eye_lvl < 2)
 		
 		# Debug print
 		if Engine.get_process_frames() % 60 == 0:
@@ -405,21 +459,17 @@ func _process(_delta: float) -> void:
 		return
 		
 	var thoughts: float = gm.thoughts
-	var dreamcloud: float = gm.dreamcloud
 	var thoughts_ps: float = gm._thoughts_ps
 	
 	# ADD DEBUG PRINT
 	if Engine.get_process_frames() % 60 == 0:
-		print("TOPBAR READ FROM DRC: thoughts=", thoughts, " dreamcloud=", dreamcloud)
+		print("TOPBAR READ FROM GM: thoughts=", thoughts)
 	
 	if _run == null:
 		_run = get_node_or_null("/root/DepthRunController")
 		if _run == null:
 			return
 
-	var dreamcloud_ps: float = 0.0
-	if _run.has_method("get_dreamcloud_per_sec"):
-		dreamcloud_ps = float(_run.call("get_dreamcloud_per_sec"))
 
 	var active_depth: int = int(_run.get("active_depth"))
 	var max_depth: int = 0
@@ -437,8 +487,10 @@ func _process(_delta: float) -> void:
 		inst_title.text = "Instability (+%s/s)" % _fmt_num(inst_gain)
 	
 	# Update currency displays with tooltips
-	_update_currency_display(thoughts_display, thoughts, thoughts_ps, "Thoughts")
-	_update_currency_display(dreamcloud_display, dreamcloud, dreamcloud_ps, "dreamcloud")
+	var hide_thoughts = _is_blinded and _inner_eye_lvl < 1
+	_update_currency_display(thoughts_display, thoughts, thoughts_ps, "Thoughts", hide_thoughts)
+	# dreamcloud removed from base UI
+
 	
 	# Update gems
 	if gems_display and gm:
@@ -465,10 +517,14 @@ func _process(_delta: float) -> void:
 			if label and "dream_current" in gm:
 				label.text = "%.1f/s" % gm.dream_current
 			
-func _update_currency_display(container: HBoxContainer, value: float, rate: float, display_name: String) -> void:
+func _update_currency_display(container: HBoxContainer, value: float, rate: float, display_name: String, hide_value: bool = false) -> void:
 	var label = container.get_node("ValueLabel")
-	label.text = _fmt_num_compact(value)
-	container.tooltip_text = "%s\n+%s per second" % [display_name, _fmt_num(rate)]
+	if hide_value:
+		label.text = "???"
+		container.tooltip_text = "%s\n+??? per second" % display_name
+	else:
+		label.text = _fmt_num_compact(value)
+		container.tooltip_text = "%s\n+%s per second" % [display_name, _fmt_num(rate)]
 
 func _update_piggy_display() -> void:
 	if piggy_value == null or piggy_button == null:

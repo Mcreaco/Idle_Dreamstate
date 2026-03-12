@@ -37,8 +37,6 @@ var _stats_mode: int = StatsMode.RUN
 @onready var close_button: Button = $"Root/CloseButton"
 @onready var tutorial_toggle: CheckButton = get_node_or_null("Root/TutorialToggle")
 
-@onready var save_btn: Button = $"Root/Actions/SaveButton"
-@onready var load_btn: Button = $"Root/Actions/LoadButton"
 @onready var stats_btn: Button = $"Root/Actions/StatsButton"
 
 @onready var stats_box: VBoxContainer = $"Root/StatsBox"
@@ -58,8 +56,6 @@ func _ready() -> void:
 	# Default text
 	if is_instance_valid(title_label): title_label.text = "Settings"
 	if is_instance_valid(mute_toggle): mute_toggle.text = "Mute"
-	if is_instance_valid(save_btn): save_btn.text = "Save"
-	if is_instance_valid(load_btn): load_btn.text = "Load"
 	if is_instance_valid(stats_btn): stats_btn.text = "Stats"
 	if is_instance_valid(run_tab): run_tab.text = "Run"
 	if is_instance_valid(lifetime_tab): lifetime_tab.text = "Lifetime"
@@ -78,9 +74,10 @@ func _ready() -> void:
 		volume_slider.step = 0.01
 
 	# Blue-outline buttons in SettingsPanel
-	_apply_blue_button_style_to_panel()
-
-	visible = false
+	_style_button(stats_btn)
+	_style_button(run_tab)
+	_style_button(lifetime_tab)
+	_style_basebutton(mute_toggle)
 	z_index = 220
 	mouse_filter = Control.MOUSE_FILTER_STOP
 
@@ -90,8 +87,6 @@ func _ready() -> void:
 	_connect_once(close_button.pressed, Callable(self, "close"))
 	_connect_once(mute_toggle.toggled, Callable(self, "_on_mute_toggled"))
 	_connect_once(volume_slider.value_changed, Callable(self, "_on_volume_changed"))
-	_connect_once(save_btn.pressed, Callable(self, "_on_save_pressed"))
-	_connect_once(load_btn.pressed, Callable(self, "_on_load_pressed"))
 	_connect_once(stats_btn.pressed, Callable(self, "_on_stats_pressed"))
 	_connect_once(run_tab.pressed, Callable(self, "_on_run_tab"))
 	_connect_once(lifetime_tab.pressed, Callable(self, "_on_lifetime_tab"))
@@ -219,8 +214,6 @@ func _apply_panel_frame() -> void:
 # -------------------------
 func _apply_blue_button_style_to_panel() -> void:
 	_style_button(close_button)
-	_style_button(save_btn)
-	_style_button(load_btn)
 	_style_button(stats_btn)
 	_style_button(run_tab)
 	_style_button(lifetime_tab)
@@ -368,14 +361,8 @@ func _update_volume_text(vol: float) -> void:
 		volume_label.text = "Volume  %d%%" % int(round(vol * 100.0))
 
 # -------------------------
-# Save / Load / Stats
+# Stats
 # -------------------------
-func _on_save_pressed() -> void:
-	_save_settings_from_ui()
-
-func _on_load_pressed() -> void:
-	_load_settings_into_ui()
-	_apply_audio()
 
 func _on_stats_pressed() -> void:
 	# This MUST NOT close the panel: only toggles StatsBox

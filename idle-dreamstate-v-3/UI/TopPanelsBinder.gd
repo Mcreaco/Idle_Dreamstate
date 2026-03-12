@@ -25,11 +25,11 @@ func _ready() -> void:
 	run.instability_changed.connect(_on_instability_changed)
 	run.depth_progress_changed.connect(_on_depth_progress_changed)
 
-func _on_top_stats_changed(thoughts: float, tps: float, dreamcloud: float, cps: float) -> void:
+func _on_top_stats_changed(thoughts: float, tps: float, _dreamcloud: float, _cps: float) -> void:
 	if _thoughts_label != null:
 		_thoughts_label.text = "Thoughts %d %+0.1f/s" % [int(thoughts), tps]
 	if _dreamcloud_label != null:
-		_dreamcloud_label.text = "dreamcloud %d %+0.1f/s" % [int(dreamcloud), cps]
+		_dreamcloud_label.visible = false # removed from base UI
 
 func _on_instability_changed(instability: float) -> void:
 	if _instability_label != null:

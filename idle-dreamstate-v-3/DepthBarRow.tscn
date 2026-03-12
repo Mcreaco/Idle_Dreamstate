@@ -3,19 +3,12 @@
 [ext_resource type="Script" uid="uid://dmvqhlkle5qaa" path="res://DepthBarRow.gd" id="1_3n1db"]
 
 [node name="DepthBarRow" type="PanelContainer"]
-custom_minimum_size = Vector2(0, 80)
+custom_minimum_size = Vector2(0, 72)
 offset_right = 32.0
-offset_bottom = 78.0
+offset_bottom = 72.0
 size_flags_horizontal = 3
+size_flags_vertical = 0
 script = ExtResource("1_3n1db")
-details_open_height = null
-row_height = null
-bar_height = null
-title_font = null
-reward_font = null
-percent_font = null
-top_bottom_padding = null
-v_separation = null
 
 [node name="Hbox" type="HBoxContainer" parent="."]
 layout_mode = 2
@@ -45,7 +38,7 @@ layout_mode = 2
 layout_mode = 2
 
 [node name="Progress" type="ProgressBar" parent="."]
-custom_minimum_size = Vector2(0, 22)
+custom_minimum_size = Vector2(0, 26)
 layout_mode = 2
 show_percentage = false
 

@@ -1,7 +1,7 @@
 extends Node
 class_name OverclockSystem
 
-@export var base_dreamcloud_cost: float = 12.0
+@export var base_cost: float = 250.0 # Changed from dreamcloud to Thoughts
 @export var base_duration: float = 8.0
 
 @export var base_thoughts_mult: float = 2.0
@@ -11,14 +11,14 @@ var active: bool = false
 var timer: float = 0.0
 
 # Effective values (computed on activate)
-var dreamcloud_cost: float = 12.0
+var cost: float = 250.0
 var duration: float = 8.0
 var thoughts_mult: float = 2.0
 var instability_mult: float = 1.6
 
 
-func can_activate(dreamcloud: float) -> bool:
-	return (not active) and dreamcloud >= dreamcloud_cost
+func can_activate(thoughts: float) -> bool:
+	return (not active) and thoughts >= cost
 
 
 # Params order:
@@ -34,7 +34,7 @@ func activate(
 	duration_mul: float = 1.0,
 	cost_mul: float = 1.0
 ) -> void:
-	dreamcloud_cost = base_dreamcloud_cost * cost_mul
+	cost = base_cost * cost_mul
 	duration = base_duration * duration_mul
 
 	thoughts_mult = (base_thoughts_mult + thoughts_mult_add) * thoughts_mult_mul
@@ -53,7 +53,7 @@ func update(delta: float) -> void:
 		active = false
 
 		# reset effective values
-		dreamcloud_cost = base_dreamcloud_cost
+		cost = base_cost
 		duration = base_duration
 		thoughts_mult = base_thoughts_mult
 		instability_mult = base_instability_mult

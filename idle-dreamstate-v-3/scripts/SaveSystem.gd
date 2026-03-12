@@ -59,44 +59,42 @@ func _debug_check_save_file():
 	else:
 		print("No save file found")
 		
-func save_game(data: Dictionary) -> void:
-	var file: FileAccess = FileAccess.open(SAVE_PATH, FileAccess.WRITE)
-	file.store_string(JSON.stringify(data))
+func save_game(data: Dictionary) -> bool:
+	var json_str = JSON.stringify(data)
+	if json_str == null or json_str.is_empty() or json_str == "{}":
+		print("CRITICAL: JSON serialization failed or empty!")
+		return false
+	
+	# ATOMIC SAVE: Write to temp first
+	var temp_path = SAVE_PATH + ".tmp"
+	var bak_path = SAVE_PATH + ".bak"
+	
+	var file: FileAccess = FileAccess.open(temp_path, FileAccess.WRITE)
+	if not file:
+		print("CRITICAL: Failed to open temp save file!")
+		return false
+		
+	file.store_string(json_str)
 	file.close()
+	
+	# Rotate backups: existing save becomes .bak
+	if FileAccess.file_exists(SAVE_PATH):
+		if FileAccess.file_exists(bak_path):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(bak_path))
+		DirAccess.rename_absolute(ProjectSettings.globalize_path(SAVE_PATH), ProjectSettings.globalize_path(bak_path))
+	
+	# Move temp to final
+	var err = DirAccess.rename_absolute(ProjectSettings.globalize_path(temp_path), ProjectSettings.globalize_path(SAVE_PATH))
+	if err != OK:
+		print("CRITICAL: Failed to finalize atomic save! Error: ", err)
+		return false
 
-# ADD THIS: Helper to collect all game state
-func gather_save_data() -> Dictionary:
-	var data := {}
-	
-	# GameManager data
-	var gm = get_node_or_null("/root/Main/GameManager")
-	if gm:
-		data["thoughts"] = gm.thoughts
-		data["dreamcloud"] = gm.dreamcloud
-		data["gems"] = gm.gems if "gems" in gm else 0
-		data["memories"] = gm.memories if "memories" in gm else 0
-		# ... other GM data
-	
-	# DepthRunController data - THIS IS THE KEY
-	var drc = get_node_or_null("/root/DepthRunController")
-	if drc:
-		data["depth_run_controller"] = {
-			"active_depth": int(drc.active_depth),
-			"max_unlocked_depth": int(drc.max_unlocked_depth),
-			"run": drc._run_internal.duplicate(true),
-			"local_upgrades": drc.local_upgrades.duplicate(true),
-			"frozen_upgrades": drc.frozen_upgrades.duplicate(true),
-			"thoughts": drc.thoughts,
-			"dreamcloud": drc.dreamcloud,
-			"instability": drc.instability
-		}
-	
-	data["last_play_time"] = Time.get_unix_time_from_system()
-	return data
+	print("SAVE SUCCESS: %d bytes written via atomic swap to %s" % [json_str.length(), SAVE_PATH])
+	return true
 
-# Convenience method to save everything
-func save_all() -> void:
-	save_game(gather_save_data())
+# Removed gather_save_data and save_all as they were bypasses 
+# that didn't include all necessary game state (like equipment).
+# Always use GameManager.save_game().
 
 func load_game() -> Dictionary:
 	if not FileAccess.file_exists(SAVE_PATH):
@@ -162,8 +160,8 @@ func _load_shop_data() -> void:
 
 func migrate_old_save(data: Dictionary) -> Dictionary:
 	# Convert old dreamcloud to Dream Cloud (at 1:1 rate)
-	if data.has("dreamcloud") and not data.has("dreamcloud"):
-		data["dreamcloud"] = data["dreamcloud"]
+	if data.has("dreamcloud") and not data.has("dream_cloud"):
+		data["dream_cloud"] = data["dreamcloud"]
 		data.erase("dreamcloud")
 	
 	# Initialize empty equipment if missing

@@ -6,14 +6,14 @@ signal clicked_depth(depth_index: int)
 signal request_close(depth_index: int)
 
 const COLOR_BLUE: Color = Color(0.24, 0.67, 0.94)
-@export var details_open_height: float = 260.0
-@export var row_height := 64.0
-@export var bar_height := 14.0
+@export var details_open_height: float = 190.0
+@export var row_height := 66.0
+@export var bar_height := 26.0
 @export var title_font := 18
 @export var reward_font := 16
 @export var percent_font := 14
 @export var top_bottom_padding: float = 6.0
-@export var v_separation := 2
+@export var v_separation := 8
 @onready var abyss_shop_ref = get_node_or_null("/root/Main/MainUI/Root/MetaPanel/Window/RootVBox/PetaPages/AbyssPage")
 # Row background images
 const BG_DIR := "res://UI/DepthBarBG/"
@@ -35,6 +35,9 @@ var _run: Node = null
 var auto_dive_checkbox: CheckBox = null
 var mem_label: Label = null
 var cry_label: Label = null
+var _is_blinded: bool = false
+var _inner_eye_lvl: int = 0
+
 # Scene nodes
 var progress_bar: ProgressBar = null
 var percent_label: Label = null
@@ -42,6 +45,7 @@ var details: Control = null
 var upgrades_box: VBoxContainer = null
 var dive_button: Button = null
 var close_button: Button = null
+var _details_wrapper: Control = null
 
 # Runtime UI
 var _margin: MarginContainer = null
@@ -161,9 +165,29 @@ func update_depth_display(_depth_index: int, data: Dictionary):
 		else:
 			crystal_label.text = "+%s %s (???)" % [_fmt_num(crystals), currency_name]
 		crystal_label.modulate = Color(0.7, 0.7, 0.7, 0.8)  # Faded for hidden
-		
+
+func _get_fuzzy_range(value: float, level: int) -> String:
+	if level >= 7:
+		return _fmt_num(value)
+	if level == 0:
+		return "???"
+	
+	# Variance narrows as level increases
+	# level 1: 1.0 (100% variance, e.g. 0 to 2X)
+	# level 6: 0.16 (approx 16% variance)
+	var variance: float = (7.0 - float(level)) / 6.0
+	var low := value * (1.0 - variance)
+	var high := value * (1.0 + variance)
+	
+	if low < 0: low = 0
+	
+	return "%s-%s" % [_fmt_num(low), _fmt_num(high)]
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
+	# Balanced refined height
+	bar_height = 26.0
+	row_height = 72.0
+	v_separation = 4
 	custom_minimum_size.y = row_height
 	_run = get_node_or_null("/root/DepthRunController")
 	progress_bar = null
@@ -191,15 +215,36 @@ func _ready() -> void:
 		print("GameManager is null")
 
 	if details != null:
-		details.visible = false
-		details.custom_minimum_size.y = 0.0
+		details.visible = true # Must remain true so scroll container handles visibility by height
+		
 		# Make details background transparent so the row image shows through when expanded
 		if details is PanelContainer:
 			(details as PanelContainer).add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 
-		# Also remove any PanelContainer backgrounds inside Details (common cause)
+		# Also remove any PanelContainer backgrounds inside Details
 		for n in details.find_children("", "PanelContainer", true, false):
 			(n as PanelContainer).add_theme_stylebox_override("panel", StyleBoxEmpty.new())
+			
+		# RE-PARENT FIX: Move details out of the PanelContainer Z-stack and into the dynamic VBox layout
+		var parent = details.get_parent()
+		if parent != null:
+			parent.remove_child(details)
+			
+		_details_wrapper = Control.new()
+		_details_wrapper.name = "DetailsWrapper"
+		_details_wrapper.clip_contents = true
+		_details_wrapper.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_details_wrapper.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+		_details_wrapper.custom_minimum_size.y = 0.0
+
+		# Force child to stretch horizontally and anchor top-wide
+		details.set_anchors_preset(Control.PRESET_TOP_WIDE)
+		details.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		
+		_details_wrapper.add_child(details)
+			
+		if _layout_root != null:
+			_layout_root.add_child(_details_wrapper)
 
 	if dive_button != null:
 		# Disconnect any existing connections first
@@ -320,7 +365,17 @@ func _update_murk_display():
 	# Show labels for Murk
 	mem_label.visible = true
 	cry_label.visible = true
-
+	
+	var drc := get_node_or_null("/root/DepthRunController")
+	var da_lvl := 0
+	if drc != null:
+		da_lvl = drc.call("_get_local_level", 4, "dark_adaptation")
+	
+	var mem := float(_data.get("memories", 0.0))
+	var cry := float(_data.get("crystals", 0.0))
+	
+	mem_label.text = "+%s Mem" % _get_fuzzy_range(mem, da_lvl)
+	cry_label.text = "+%s %s" % [_get_fuzzy_range(cry, da_lvl), _crystal_name()]
 
 	# CRITICAL FIX: Connect to run controller's upgrade signal if available
 	if _run != null and _run.has_signal("local_upgrade_added"):
@@ -541,6 +596,11 @@ func set_overlay_mode(v: bool) -> void:
 	if _details_open:
 		call_deferred("_ensure_buttons_clickable")
 
+func set_blinded(enabled: bool, inner_eye_level: int) -> void:
+	_is_blinded = enabled
+	_inner_eye_lvl = inner_eye_level
+	_apply_visuals()
+
 func _ensure_buttons_clickable() -> void:
 	# Force all buttons to have proper mouse filter
 	for btn in find_children("*", "Button", true):
@@ -588,24 +648,35 @@ func set_details_open(open: bool) -> void:
 	if details == null:
 		return
 
-	if open:
+	if _details_open:
 		details.visible = true
-		set_overlay_mode(true)  # Enable overlay mode when opening
-		var tw := create_tween()
-		tw.tween_property(details, "custom_minimum_size:y", details_open_height, 0.18)\
-			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		set_overlay_mode(true)
 		_build_upgrades_ui()
 		_hide_extra_progress_bars()
+		
+		# CRITICAL FIX: Give Godot a frame to delete old queue_free() nodes and recalculate exact bounds
+		await get_tree().process_frame
+		if not is_instance_valid(self): return
+		
+		var target_h: float = details.get_minimum_size().y + 8 # Add minimal 8px padding buffer
+		if target_h < 190: target_h = 190 # Safe fallback
+			
+		var tw := create_tween()
+		if _details_wrapper != null:
+			tw.tween_property(_details_wrapper, "custom_minimum_size:y", target_h, 0.18)\
+				.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	else:
 		set_overlay_mode(false)  # CRITICAL: Disable overlay mode when closing
+		
 		var tw2 := create_tween()
-		tw2.tween_property(details, "custom_minimum_size:y", 0.0, 0.16)\
-			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-		tw2.tween_callback(func(): 
-			details.visible = false
-			# Ensure mouse filter is reset
-			mouse_filter = Control.MOUSE_FILTER_STOP
-		)
+		if _details_wrapper != null:
+			tw2.tween_property(_details_wrapper, "custom_minimum_size:y", 0.0, 0.16)\
+				.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+			tw2.tween_callback(func(): 
+				details.visible = false
+				# Ensure mouse filter is reset
+				mouse_filter = Control.MOUSE_FILTER_STOP
+			)
 
 	_apply_visuals()
 	_apply_bar_style()
@@ -654,6 +725,7 @@ func _build_layout_bar_then_bottom_text() -> void:
 	progress_bar = ProgressBar.new()
 	progress_bar.name = "ProgressBar"
 	progress_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	progress_bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	progress_bar.custom_minimum_size.x = 0
 	progress_bar.custom_minimum_size.y = bar_height
 	progress_bar.show_percentage = false
@@ -797,8 +869,20 @@ func _apply_visuals() -> void:
 			modulate = Color(1, 1, 1, 0.45)
 		elif _frozen:
 			modulate = Color(1, 1, 1, 0.70)
+		elif not _active:
+			modulate = Color(1, 1, 1, 0.55)
 		else:
 			modulate = Color(1, 1, 1, 1.0)
+
+	# Handle Blindness (Depth 9) logic for hiding elements
+	var hide_progress = _is_blinded and _inner_eye_lvl < 3
+	var hide_rewards = _is_blinded and _inner_eye_lvl < 4
+
+	# Set bar height every visual update to be safe
+	if progress_bar != null:
+		var target_h := 30.0 if (_overlay_mode or _details_open) else 26.0
+		progress_bar.custom_minimum_size.y = target_h
+		progress_bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 
 	# Determine what to show in progress bar
 	var display_pct: float = 0.0
@@ -825,6 +909,9 @@ func _apply_visuals() -> void:
 	if progress_bar != null:
 		progress_bar.value = display_pct
 		progress_bar.show_percentage = false
+		progress_bar.min_value = 0.0
+		progress_bar.max_value = 100.0
+		progress_bar.visible = not hide_progress
 	
 	# Update text label to show "X / X" format
 	if percent_label != null:
@@ -834,25 +921,29 @@ func _apply_visuals() -> void:
 			cap = drc.call("get_depth_progress_cap", depth_index)
 		var current: float = float(_data.get("progress", 0.0))
 		percent_label.text = "%s / %s" % [_fmt_num(current), _fmt_num(cap)]
+		percent_label.visible = not hide_progress
 
 	# Update title and rewards
 	if _title_label != null:
 		_title_label.text = _depth_title_text()
 
 	if _reward_label != null:
-		# Check if this is Murk (Depth 4) with hidden rewards
-		var show_hidden := false
-		if depth_index == 4:
-			var drc := get_node_or_null("/root/DepthRunController")
-			if drc != null:
-				var local_upgs = drc.get("local_upgrades")
-				if local_upgs is Dictionary and local_upgs.has(4):
-					var dark_adapt := int(local_upgs[4].get("dark_adaptation", 0))
-					if dark_adapt == 0:
-						show_hidden = true
-		
-		if show_hidden:
+		if hide_rewards:
 			_reward_label.text = "+??? Mem  +??? %s" % _crystal_name()
+		# Check if this is Murk (Depth 4) with hidden rewards
+		elif depth_index == 4:
+			var drc := get_node_or_null("/root/DepthRunController")
+			var da_lvl := 0
+			if drc != null:
+				da_lvl = drc.call("_get_local_level", 4, "dark_adaptation")
+			
+			var mem := float(_data.get("memories", 0.0))
+			var cry := float(_data.get("crystals", 0.0))
+			
+			var mem_str := _get_fuzzy_range(mem, da_lvl)
+			var cry_str := _get_fuzzy_range(cry, da_lvl)
+			
+			_reward_label.text = "+%s Mem  +%s %s" % [mem_str, cry_str, _crystal_name()]
 		else:
 			var mem := float(_data.get("memories", 0.0))
 			var cry := float(_data.get("crystals", 0.0))
@@ -881,6 +972,8 @@ func _apply_visuals() -> void:
 			a = 0.45
 		elif _active:
 			a = 0.80
+		else:
+			a = 0.35
 		if _overlay_mode or _details_open:
 			a = 1.0
 		_row_bg.modulate = Color(1, 1, 1, a)
@@ -982,36 +1075,40 @@ func _apply_bar_style() -> void:
 	add_theme_stylebox_override("panel", sb)
 	
 	# Thicker progress bar when expanded
-	if progress_bar != null and (_overlay_mode or _details_open):
-		progress_bar.custom_minimum_size.y = 24  # Was 14, now thicker
-		progress_bar.add_theme_constant_override("outline_size", 2)
+	if progress_bar != null:
+		var target_pb_height: float = 26.0 if (_overlay_mode or _details_open) else bar_height
+		progress_bar.custom_minimum_size.y = target_pb_height
+		if _overlay_mode or _details_open:
+			progress_bar.add_theme_constant_override("outline_size", 2)
 
 
 func _style_progress_bar() -> void:
 	if progress_bar == null:
 		return
 	
-	# Thicker when expanded
-	var target_height: float = 24.0 if (_overlay_mode or _details_open) else bar_height
-	progress_bar.custom_minimum_size.y = target_height
-
-	progress_bar.custom_minimum_size.y = bar_height
+	# Match current state
+	var target_pb_height: float = 26.0 if (_overlay_mode or _details_open) else bar_height
+	progress_bar.custom_minimum_size.y = target_pb_height
 	progress_bar.custom_minimum_size.x = 0
 	progress_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	progress_bar.show_percentage = false
 
-	# Track (dark)
+	# Track (visible dark bar - contrast against space bg)
 	var bg := StyleBoxFlat.new()
-	bg.bg_color = Color(0.05, 0.07, 0.10, 0.85)
-	bg.border_color = Color(0.20, 0.35, 0.55, 0.45)
+	bg.bg_color = Color(0.12, 0.18, 0.28, 0.95)  # Visible dark blue, not near-black
+	bg.border_color = Color(0.24, 0.55, 0.85, 0.8)  # Brighter blue border
 	bg.border_width_left = 1
 	bg.border_width_top = 1
 	bg.border_width_right = 1
 	bg.border_width_bottom = 1
-	bg.corner_radius_top_left = 10
-	bg.corner_radius_top_right = 10
-	bg.corner_radius_bottom_left = 10
-	bg.corner_radius_bottom_right = 10
+	bg.corner_radius_top_left = 4
+	bg.corner_radius_top_right = 4
+	bg.corner_radius_bottom_left = 4
+	bg.corner_radius_bottom_right = 4
+	bg.content_margin_left = 0
+	bg.content_margin_right = 0
+	bg.content_margin_top = 0
+	bg.content_margin_bottom = 0
 
 	# Fill (blue gradient)
 	var grad := Gradient.new()
@@ -1140,6 +1237,7 @@ func _build_upgrades_ui() -> void:
 		
 	# Clear existing children first
 	for c in upgrades_box.get_children():
+		upgrades_box.remove_child(c)
 		c.queue_free()
 	
 	# --- HEADER ---
@@ -1220,6 +1318,7 @@ func _add_meta_upgrades_section() -> void:
 		# Name & Desc
 		var vbox := VBoxContainer.new()
 		vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		vbox.alignment = BoxContainer.ALIGNMENT_CENTER
 		
 		var name_label := Label.new()
 		name_label.text = def.get("name", id.capitalize())
@@ -1449,8 +1548,6 @@ func _show_dive_confirmation() -> void:
 	_apply_blue_button_style(dive_btn)
 	
 	dive_btn.pressed.connect(func():
-		print("DIVE CONFIRMED - executing dive from depth ", depth_index)
-		
 		# Execute the actual dive
 		var gm = get_tree().current_scene.find_child("GameManager", true, false)
 		if gm != null and gm.has_method("do_dive"):
@@ -1567,8 +1664,8 @@ func _add_upgrade_row_dynamic(id: String, data: Dictionary) -> void:
 	panel_style.corner_radius_bottom_right = 6
 	panel_style.content_margin_left = 8
 	panel_style.content_margin_right = 8
-	panel_style.content_margin_top = 6
-	panel_style.content_margin_bottom = 6
+	panel_style.content_margin_top = 4
+	panel_style.content_margin_bottom = 4
 	row_panel.add_theme_stylebox_override("panel", panel_style)
 	
 	var row := HBoxContainer.new()
@@ -1605,6 +1702,7 @@ func _add_upgrade_row_dynamic(id: String, data: Dictionary) -> void:
 	# NAME + DESCRIPTION
 	var name_desc_vbox := VBoxContainer.new()
 	name_desc_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	name_desc_vbox.alignment = BoxContainer.ALIGNMENT_CENTER
 	
 	var name_label := Label.new()
 	name_label.text = data.get("name", id.capitalize())
@@ -1676,11 +1774,12 @@ func _add_upgrade_row_dynamic(id: String, data: Dictionary) -> void:
 	
 	row.add_child(cost_container)
 	
-	# BUY BUTTON (with blue border)
-	var btn_container := PanelContainer.new()
-	btn_container.custom_minimum_size = Vector2(50, 50)
-	btn_container.mouse_filter = Control.MOUSE_FILTER_PASS
-	
+	# BUY BUTTONS (with blue borders)
+	var btns_hbox := HBoxContainer.new()
+	btns_hbox.add_theme_constant_override("separation", 6)
+	btns_hbox.mouse_filter = Control.MOUSE_FILTER_PASS
+	row.add_child(btns_hbox)
+
 	var btn_style := StyleBoxFlat.new()
 	btn_style.bg_color = Color(0.08, 0.14, 0.22, 0.9)
 	btn_style.border_color = Color(0.24, 0.67, 0.94, 1.0)
@@ -1692,23 +1791,50 @@ func _add_upgrade_row_dynamic(id: String, data: Dictionary) -> void:
 	btn_style.corner_radius_top_right = 6
 	btn_style.corner_radius_bottom_left = 6
 	btn_style.corner_radius_bottom_right = 6
-	btn_container.add_theme_stylebox_override("panel", btn_style)
+	btn_style.content_margin_left = 8
+	btn_style.content_margin_right = 8
+
+	var btn_1 := Button.new()
+	btn_1.text = "+1"
+	btn_1.custom_minimum_size = Vector2(40, 46)
+	btn_1.add_theme_stylebox_override("normal", btn_style)
+	btn_1.add_theme_stylebox_override("hover", btn_style)
+	btn_1.add_theme_stylebox_override("pressed", btn_style)
+	btn_1.add_theme_stylebox_override("disabled", btn_style)
+	btn_1.mouse_filter = Control.MOUSE_FILTER_STOP
+	btn_1.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	btn_1.pressed.connect(_attempt_purchase.bind(id, data, 1))
+	btns_hbox.add_child(btn_1)
 	
-	var btn := Button.new()
-	btn.text = "+"
-	btn.custom_minimum_size = Vector2(46, 46)
-	btn.flat = true
-	btn.mouse_filter = Control.MOUSE_FILTER_STOP
-	btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	var btn_10 := Button.new()
+	btn_10.text = "+10"
+	btn_10.custom_minimum_size = Vector2(40, 46)
+	btn_10.add_theme_stylebox_override("normal", btn_style)
+	btn_10.add_theme_stylebox_override("hover", btn_style)
+	btn_10.add_theme_stylebox_override("pressed", btn_style)
+	btn_10.add_theme_stylebox_override("disabled", btn_style)
+	btn_10.mouse_filter = Control.MOUSE_FILTER_STOP
+	btn_10.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	btn_10.pressed.connect(_attempt_purchase.bind(id, data, 10))
+	btns_hbox.add_child(btn_10)
 	
-	btn.pressed.connect(_attempt_purchase.bind(id, data))
-	
-	btn_container.add_child(btn)
-	row.add_child(btn_container)
+	var btn_max := Button.new()
+	btn_max.text = "MAX"
+	btn_max.custom_minimum_size = Vector2(40, 46)
+	btn_max.add_theme_stylebox_override("normal", btn_style)
+	btn_max.add_theme_stylebox_override("hover", btn_style)
+	btn_max.add_theme_stylebox_override("pressed", btn_style)
+	btn_max.add_theme_stylebox_override("disabled", btn_style)
+	btn_max.mouse_filter = Control.MOUSE_FILTER_STOP
+	btn_max.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	btn_max.pressed.connect(_attempt_purchase.bind(id, data, -1))
+	btns_hbox.add_child(btn_max)
 	
 	# Store references - CRITICAL FIX: auto_check is now in scope
 	_upgrade_ui_refs[id] = {
-		"button": btn,
+		"btn_1": btn_1,
+		"btn_10": btn_10,
+		"btn_max": btn_max,
 		"cost_label": cost_label,
 		"lvl_label": lvl_label,
 		"cost_container": cost_container,
@@ -1729,7 +1855,7 @@ func _add_upgrade_row_dynamic(id: String, data: Dictionary) -> void:
 	
 	_update_upgrade_row_ui(id)
 
-func _attempt_purchase(id: String, data: Dictionary) -> bool:
+func _attempt_purchase(id: String, data: Dictionary, amount: int = 1) -> bool:
 	var game_mgr = get_tree().current_scene.find_child("GameManager", true, false)
 	if game_mgr == null:
 		return false
@@ -1740,17 +1866,43 @@ func _attempt_purchase(id: String, data: Dictionary) -> bool:
 	if current_lvl >= max_lvl:
 		return false
 	
-	# CRITICAL FIX: Declare all variables here before using them
 	var base_cost: float = data.get("base_cost", 100.0)
 	var growth: float = data.get("cost_growth", 1.5)
 	var depth_multiplier := pow(float(depth_index), 2.5) * 3.0
-	var current_cost := base_cost * depth_multiplier * pow(growth, current_lvl)
+	var effective_base := base_cost * depth_multiplier
 	
-	if game_mgr.thoughts >= current_cost:
-		game_mgr.thoughts -= current_cost
+	var actual_amount := amount
+	var total_cost := 0.0
+	
+	if amount == -1: # MAX
+		actual_amount = 0
+		var sim_lvl := current_lvl
+		var remaining_thoughts: float = game_mgr.thoughts
+		var max_possible := max_lvl - current_lvl
+		if max_possible > 2000:
+			max_possible = 2000 # Sanity cap to avoid huge loops
+			
+		while sim_lvl < max_lvl and remaining_thoughts >= 0 and actual_amount < max_possible:
+			var cost := effective_base * pow(growth, sim_lvl)
+			if remaining_thoughts >= cost:
+				remaining_thoughts -= cost
+				total_cost += cost
+				sim_lvl += 1
+				actual_amount += 1
+			else:
+				break
+	else:
+		actual_amount = min(amount, max_lvl - current_lvl)
+		if actual_amount <= 0:
+			return false
+		for i in range(actual_amount):
+			total_cost += effective_base * pow(growth, current_lvl + i)
+	
+	if actual_amount > 0 and game_mgr.thoughts >= total_cost:
+		game_mgr.thoughts -= total_cost
 		
 		if _run != null and _run.has_method("add_local_upgrade"):
-			_run.call("add_local_upgrade", depth_index, id, 1)
+			_run.call("add_local_upgrade", depth_index, id, actual_amount)
 		
 		if game_mgr.has_method("_refresh_top_ui"):
 			game_mgr._refresh_top_ui()
@@ -1765,7 +1917,9 @@ func _update_upgrade_row_ui(id: String) -> void:
 		return
 	
 	var refs := _upgrade_ui_refs[id] as Dictionary
-	var btn: Button = refs["button"]
+	var btn_1: Button = refs["btn_1"]
+	var btn_10: Button = refs["btn_10"]
+	var btn_max: Button = refs["btn_max"]
 	var cost_label: Label = refs["cost_label"]
 	var lvl_label: Label = refs["lvl_label"]
 	var base_cost: float = refs["base_cost"]
@@ -1783,15 +1937,17 @@ func _update_upgrade_row_ui(id: String) -> void:
 	var depth_locals = run_locals.get(depth_index, {}) if run_locals is Dictionary else {}
 	var lvl := int(depth_locals.get(id, 0))
 	
-	# CRITICAL FIX: Declare variables here so they're accessible in both blocks
-	var cost: float = 0.0
-	var depth_multiplier: float = 0.0
-	var effective_base: float = 0.0
+	var cost_1 := 0.0
+	var cost_10 := 0.0
 		
 	if lvl < max_lvl:
-		depth_multiplier = pow(float(depth_index), 2.5) * 3.0
-		effective_base = base_cost * depth_multiplier
-		cost = effective_base * pow(growth, lvl)
+		var depth_multiplier := pow(float(depth_index), 2.5) * 3.0
+		var effective_base := base_cost * depth_multiplier
+		cost_1 = effective_base * pow(growth, lvl)
+		
+		var levels_to_simulate = min(10, max_lvl - lvl)
+		for i in range(levels_to_simulate):
+			cost_10 += effective_base * pow(growth, lvl + i)
 	
 	if max_lvl >= 999:
 		lvl_label.text = "Lv %d" % lvl
@@ -1799,8 +1955,9 @@ func _update_upgrade_row_ui(id: String) -> void:
 		lvl_label.text = "Lv %d/%d" % [lvl, max_lvl]
 	
 	if lvl >= max_lvl:
-		btn.text = "MAX"
-		btn.disabled = true
+		btn_1.disabled = true
+		btn_10.disabled = true
+		btn_max.disabled = true
 		cost_label.text = "MAX"
 		cost_label.modulate = Color(0.5, 0.5, 0.5)
 		
@@ -1809,18 +1966,20 @@ func _update_upgrade_row_ui(id: String) -> void:
 			dim_style.border_color = Color(0.4, 0.4, 0.4, 0.4)
 			lvl_container.add_theme_stylebox_override("panel", dim_style)
 	else:
-		# Now 'cost' is accessible here because we declared it above
-		var can_afford := current_thoughts >= cost
+		var can_afford_1 := current_thoughts >= cost_1
+		var can_afford_10 := current_thoughts >= cost_10
 		
-		btn.text = "+"
-		btn.disabled = not can_afford
+		btn_1.disabled = not can_afford_1
+		btn_10.disabled = not can_afford_10 or ((max_lvl - lvl) < 10 and max_lvl < 999)
+		btn_max.disabled = not can_afford_1
+		
 		# Show brain icon with cost
-		cost_label.text = "%s 🧠" % _fmt_num(cost)
-		cost_label.modulate = Color(1, 1, 1) if can_afford else Color(0.8, 0.5, 0.5)
+		cost_label.text = "%s 🧠" % _fmt_num(cost_1)
+		cost_label.modulate = Color(1, 1, 1) if can_afford_1 else Color(0.8, 0.5, 0.5)
 		
 		var cost_style := cost_container.get_theme_stylebox("panel").duplicate()
 		if cost_style is StyleBoxFlat:
-			if can_afford:
+			if can_afford_1:
 				cost_style.border_color = Color(0.4, 0.9, 0.4, 1.0)
 			else:
 				cost_style.border_color = Color(0.8, 0.4, 0.4, 0.8)

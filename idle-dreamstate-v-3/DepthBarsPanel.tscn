@@ -4,21 +4,20 @@
 [ext_resource type="PackedScene" uid="uid://b4v27paimyq1l" path="res://DepthBarRow.tscn" id="2_k70dt"]
 
 [node name="DepthBarsPanel" type="MarginContainer"]
-custom_minimum_size = Vector2(1400, 0)
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
-grow_vertical = 2
-size_flags_horizontal = 6
-size_flags_vertical = 6
+grow_vertical = 1
+size_flags_horizontal = 3
+size_flags_vertical = 3
 script = ExtResource("1_6hu1h")
 depth_row_scene = ExtResource("2_k70dt")
 
 [node name="BarsRoot" type="VBoxContainer" parent="."]
 layout_mode = 2
 theme_override_constants/separation = 16
-alignment = 1
+alignment = 0
 
 [node name="BarsGrid" type="HBoxContainer" parent="BarsRoot"]
 layout_mode = 2
@@ -27,12 +26,14 @@ theme_override_constants/separation = 24
 [node name="LeftColumn" type="VBoxContainer" parent="BarsRoot/BarsGrid"]
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_constants/separation = 12
+alignment = 0
+theme_override_constants/separation = 4
 
 [node name="RightColumn" type="VBoxContainer" parent="BarsRoot/BarsGrid"]
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_constants/separation = 12
+alignment = 0
+theme_override_constants/separation = 4
 
 [node name="Depth15Slot" type="VBoxContainer" parent="BarsRoot"]
 custom_minimum_size = Vector2(0, 90)

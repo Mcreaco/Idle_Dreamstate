@@ -179,10 +179,10 @@ func get_depth_upgrade_defs(depth_i: int) -> Array:
 	}
 	var c_gain := {
 		"id":"c_gain",
-		"name":"dreamcloud Tempering",
-		"desc":"+4% dreamcloud gain per level (global).",
+		"name":"Internal Drive",
+		"desc":"+3% Thoughts gain per level (stacking).",
 		"max":50,
-		"kind":"dreamcloud_mult",
+		"kind":"thoughts_mult", # Changed to reuse thoughts_mult
 		"costs": _pick_costs(d, 1)
 	}
 	var idle_soft := {
@@ -214,7 +214,7 @@ func get_depth_upgrade_defs(depth_i: int) -> Array:
 	match d:
 		1:
 			t_gain.name = "Thoughts Flow"
-			c_gain.name = "dreamcloud Habit"
+			c_gain.name = "Focus Flow"
 			idle_soft.name = "Idle Instability Dampener"
 			wake_yield.name = "Amethyst Echo"
 			dive_start.name = "Shallow Start"
@@ -263,7 +263,7 @@ func get_depth_upgrade_defs(depth_i: int) -> Array:
 			
 		2:
 			t_gain.name = "Thoughts Compression"
-			c_gain.name = "dreamcloud Retention"
+			c_gain.name = "Mental Fortitude"
 			idle_soft.name = "Spike Dampener"
 			wake_yield.name = "Ruby Resonance"
 			dive_start.name = "Quick Descent"
@@ -373,7 +373,7 @@ func get_depth_upgrade_defs(depth_i: int) -> Array:
 			var rift_harmonics := {
 				"id": "rift_harmonics",
 				"name": "Rift Harmonics",
-				"desc": "dreamcloud clicks reduce instability by an additional 20% at this depth.",
+				"desc": "Focus button clicks reduce instability by an additional 20% at this depth.",
 				"max": 3,
 				"kind": "depth_specific",
 				"costs": _pick_costs(d, 2)
@@ -747,10 +747,7 @@ func get_global_thoughts_mult() -> float:
 	return 1.0 + 0.05 * float(total_lvl)
 
 func get_global_dreamcloud_mult() -> float:
-	var total_lvl := 0
-	for d in range(1, MAX_DEPTH + 1):
-		total_lvl += clampi(get_level(d, "c_gain"), 0, 10)
-	return 1.0 + 0.04 * float(total_lvl)
+	return 1.0 # dreamcloud is combat-only now
 
 func get_global_idle_instability_mult() -> float:
 	var total_lvl := 0
@@ -909,6 +906,25 @@ static func get_depth_currency_name(d: int) -> String:
 		14: return "Citrine"
 		15: return "Quartz"
 		_:  return "Crystal"
+
+static func get_depth_by_currency_name(c_name: String) -> int:
+	match c_name:
+		"Amethyst": return 1
+		"Ruby": return 2
+		"Emerald": return 3
+		"Sapphire": return 4
+		"Diamond": return 5
+		"Topaz": return 6
+		"Garnet": return 7
+		"Opal": return 8
+		"Aquamarine": return 9
+		"Onyx": return 10
+		"Jade": return 11
+		"Moonstone": return 12
+		"Obsidian": return 13
+		"Citrine": return 14
+		"Quartz": return 15
+		_: return -1
 
 static func get_depth_name(d: int) -> String:
 	match d:

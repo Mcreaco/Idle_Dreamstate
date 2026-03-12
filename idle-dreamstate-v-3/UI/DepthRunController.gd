@@ -6,7 +6,7 @@ extends Node
 
 # top panel base rates (tune later)
 @export var thoughts_per_sec: float = 0.0
-@export var dreamcloud_per_sec: float = 0.0
+@export var dreamcloud_per_sec: float = 0.0 # Combat only now, zeroed in base game
 @export var instability_per_sec: float = 0.0
 
 @export var base_progress_per_sec: float = 1 # 1/1200 = 0.000833 (20 min base)
@@ -50,6 +50,7 @@ var local_upgrades: Dictionary = {}
 
 # Top HUD values (if you’re using this controller to drive a HUD)
 var thoughts: float = 0.0
+# dreamcloud is now moved to Combat side exclusively
 var dreamcloud: float = 0.0
 var instability: float = 0.0
 
@@ -64,6 +65,10 @@ var _last_debug_print_time: float = 0.0
 var _last_progress_value: float = -1.0
 
 signal active_depth_changed(new_depth: int)
+signal blindness_changed(enabled: bool, inner_eye_level: int)
+
+var _last_blindness_state: bool = false
+var _last_inner_eye_lvl: int = 0
 
 func set_active_depth(d: int) -> void:
 	active_depth = clampi(d, 1, max_depth)
@@ -122,16 +127,17 @@ func _process(delta: float) -> void:
 	_tick_top(delta)
 	
 	# Check for death/fail when instability hits the cap (only depth 2+)
-	# Check for death/fail when instability hits the cap (only depth 2+)
 	if active_depth >= 2:
-		var game_mgr = get_node_or_null("/root/GameManager")
-		var actual_cap := 1000.0
-		if game_mgr != null and game_mgr.depth_meta_system != null:
-			actual_cap = game_mgr.depth_meta_system.get_instability_cap(active_depth)
-		
-		if instability >= actual_cap:
+		if instability >= get_instability_cap(active_depth):
 			wake_cashout(1.0, true)
 			return
+	
+	# Expire timed buffs
+	var now_sec: float = Time.get_ticks_msec() / 1000.0
+	for buff_key in _temp_buffs.keys():
+		var buff = _temp_buffs[buff_key]
+		if buff.has("expires_at") and now_sec >= float(buff["expires_at"]):
+			_temp_buffs.erase(buff_key)
 	
 # Call this for the active depth (make sure this is OUTSIDE any if blocks that might skip it)
 	if active_depth >= 4:
@@ -142,6 +148,17 @@ func _process(delta: float) -> void:
 			
 	# CRITICAL FIX: Auto-Dive Check (moved outside depth 2+ block, runs for all depths)
 	_check_auto_dive()
+
+	# Check blindness state (Depth 9)
+	var d_def = get_depth_def(active_depth)
+	var d_rules = d_def.get("rules", {})
+	var is_blind = d_rules.get("hide_all_numbers", false)
+	var ie_lvl = _get_local_level(active_depth, "inner_eye")
+	
+	if is_blind != _last_blindness_state or ie_lvl != _last_inner_eye_lvl:
+		_last_blindness_state = is_blind
+		_last_inner_eye_lvl = ie_lvl
+		blindness_changed.emit(is_blind, ie_lvl)
 
 	var shop = get_node_or_null("/root/Main/MainUI/Root/MetaPanel/Window/RootVBox/PetaPages/AbyssPage")
 	if shop and shop.has_method("is_item_active"):
@@ -351,6 +368,27 @@ func _tick_active_depth(delta: float) -> void:
 	p = minf(cap, p + per_sec * delta)  # Use the actual cap (1000, 2500, etc.)
 	data["progress"] = p
 
+	# Apply temporary multipliers from buffs
+	var all_mul: float = 1.0
+	var temp_mem_mul: float = 1.0
+	for buff in _temp_buffs.values():
+		if buff.get("type") == "all_mult":
+			all_mul *= float(buff.get("value", 1.0))
+		if buff.get("type") == "memory_mult":
+			temp_mem_mul *= float(buff.get("value", 1.0))
+	
+	mem_mul *= all_mul * temp_mem_mul
+	cry_mul *= all_mul
+	
+	# Depth 9 Sixth Sense: +15% all gains while UI is hidden
+	if d == 9:
+		var six_lvl = _get_local_level(d, "sixth_sense")
+		if six_lvl > 0:
+			var bonus = 1.0 + (float(six_lvl) * 0.15)
+			mem_mul *= bonus
+			cry_mul *= bonus
+			per_sec *= bonus
+
 	# Update memories and crystals
 	data["memories"] = float(data.get("memories", 0.0)) + base_memories_per_sec * mem_mul * depth_mem_mul * delta
 	data["crystals"] = float(data.get("crystals", 0.0)) + base_crystals_per_sec * cry_mul * depth_cry_mul * delta
@@ -401,12 +439,10 @@ func _calculate_thoughts_per_sec(d: int) -> float:
 	return base * multipliers
 
 func _calculate_dreamcloud_per_sec(_d: int) -> float:
-	# Minimal passive generation - Dreamcloud is now primarily from clicks/combat
-	var base: float = 0.05  # Very small passive gain
-	return base * (1.0 + (_d * 0.02))  # Slight scaling with depth
+	return 0.0 # Combat only now
 
 func get_dreamcloud_per_sec() -> float:
-	return _calculate_dreamcloud_per_sec(active_depth)
+	return 0.0 # Combat only now
 	
 func add_local_upgrade(depth_index: int, upgrade_id: String, amount: int = 1) -> void:
 	if depth_index != active_depth:
@@ -631,9 +667,9 @@ func _frozen_effect(current_depth: int, upgrade_id: String, per_level: float) ->
 func get_thoughts_per_sec() -> float:
 	return _thoughts_per_sec_cached
 
-func get_instability_cap(depth: int) -> float:
+func get_instability_cap(_depth: int) -> float:
 	# Scale with progress cap (120% of progress required)
-	return get_depth_progress_cap(depth) * 1.2
+	return 100.0
 
 func get_depth_length(depth_index: int) -> float:
 	var d: float = float(max(depth_index, 1))
@@ -794,9 +830,13 @@ func preview_wake(ad_multiplier: float, forced: bool) -> Dictionary:
 
 	# Count everything up to the current active depth
 	var totals := _sum_run_totals(active_depth)
-
-	var mem := float(totals["memories"]) * memories_mult * ad_multiplier
+	var total_mem := float(totals["memories"]) * memories_mult * ad_multiplier
 	var crystals_by_name: Dictionary = (totals["crystals_by_name"] as Dictionary).duplicate(true)
+	
+	var mem_by_depth: Dictionary = {}
+	var mbd_raw: Dictionary = totals.get("memories_by_depth", {})
+	for d_idx in mbd_raw.keys():
+		mem_by_depth[d_idx] = float(mbd_raw[d_idx]) * memories_mult * ad_multiplier
 
 	# Apply multipliers to each named currency
 	for k in crystals_by_name.keys():
@@ -806,7 +846,8 @@ func preview_wake(ad_multiplier: float, forced: bool) -> Dictionary:
 		"depth": active_depth,
 		"forced": forced,
 		"thoughts": float(thoughts) * thoughts_mult * ad_multiplier,
-		"memories": mem,
+		"memories": total_mem,
+		"memories_by_depth": mem_by_depth,
 		"crystals_by_name": crystals_by_name
 	}
 
@@ -1172,15 +1213,6 @@ func _build_depth_defs() -> void:
 				"effect_per_level": 0.12,
 				"cost_currency": "thoughts"
 			},
-			"fractured_mirage": {
-				"name": "Fractured Mirage",
-				"description": "+0.15 Max dreamcloud per level",
-				"max_level": 999,
-				"base_cost": 120.0,
-				"cost_growth": 1.5,
-				"effect_per_level": 0.15,
-				"cost_currency": "thoughts"
-			},
 			"rift_mining": {
 				"name": "Rift Mining",
 				"description": "Choices grant +8% Thoughts per level",
@@ -1207,11 +1239,11 @@ func _build_depth_defs() -> void:
 						"id": "risk",
 						"text": "Risky leap",
 						"effect": {
-							"progress_bonus": 0.40,      # Big jump
-							"instability_bonus": 0.35,   # High risk
-							"mem_mul": 2.0,              # Double memories
-							"duration": 15.0,            # 15 seconds
-							"cost_thoughts_percent": 0.25,         # Also costs dreamcloud
+							"progress_bonus": 0.40,
+							"instability_bonus": 0.35,
+							"mem_mul": 2.0,
+							"mem_mul_duration": 15.0,
+							"cost_thoughts_percent": 0.25,
 						}
 					}
 				],
@@ -1767,11 +1799,11 @@ func _build_depth_defs() -> void:
 			},
 			"eclipse_burst": {
 				"name": "Eclipse Burst",
-				"description": "Every 45s, gain instant 8% progress + Dreamcloud generation burst",
+				"description": "Every 45s, gain instant 8% progress + Thoughts generation burst",
 				"max_level": 5,
 				"base_cost": 1.0e58,
 				"cost_growth": 2.5,
-				"effect_per_level": 0.02,  # +2% progress and +10% Dreamcloud gen per level
+				"effect_per_level": 0.02,  # +2% progress and +10% Thoughts gen per level
 				"cost_currency": "thoughts"
 			}
 		},
@@ -1788,8 +1820,8 @@ func _build_depth_defs() -> void:
 					},
 					{
 						"id": "separate",
-						"text": "Remain Separate (+20% Dreamcloud generation for combat)",
-						"effect": {"dreamcloud_gen_mul": 1.2, "duration": 30.0}
+						"text": "Remain Separate (+20% Thoughts generation)",
+						"effect": {"thoughts_gen_mul": 1.2, "duration": 30.0}
 					}
 				]
 			}
@@ -2046,6 +2078,11 @@ func _apply_depth_rules(d: int) -> Dictionary:
 	var cry_mul: float = float(rules.get("cry_mul", 1.0))
 	var inst_cap: float = get_instability_cap(d)
 	
+	# Apply temporary stability/cap buffs from events
+	for buff in _temp_buffs.values():
+		if buff.get("type") == "inst_cap_bonus":
+			inst_cap *= (1.0 + float(buff.get("value", 0.0)))
+	
 	# Calculate instability rate for depth 2+
 	if d >= 2 and rules.get("instability_enabled", false):
 	# FASTER: 3.5% at depth 2 (fills in ~28s), scales aggressively
@@ -2069,8 +2106,28 @@ func _apply_depth_rules(d: int) -> Dictionary:
 			if crush_level > 0:
 				base_rate *= pow(0.94, crush_level)
 		
+		# Depth 9 Silent Running (-12% instability while blind)
+		if d == 9:
+			var silent_lvl = _get_local_level(d, "silent_running")
+			if silent_lvl > 0:
+				base_rate *= pow(0.88, silent_lvl)
+
+		# Apply temporary instability multipliers from events
+		var inst_mul: float = 1.0
+		for buff in _temp_buffs.values():
+			if buff.get("type") == "inst_mult":
+				inst_mul *= float(buff.get("value", 1.0))
+		base_rate *= inst_mul
+
 		inst_rate = base_rate * 100.0  # Convert to percentage points
 	
+	# Apply temporary progress multipliers from events
+	var event_p_mul: float = 1.0
+	for buff in _temp_buffs.values():
+		if buff.get("type") == "prog_mult":
+			event_p_mul *= float(buff.get("value", 1.0))
+	prog_mul *= event_p_mul
+
 	# Pressure mechanic (Depth 3)
 	if d == 3 and rules.has("pressure_threshold"):
 		var pressure_threshold: float = rules.get("pressure_threshold", 60.0)
@@ -2088,6 +2145,42 @@ func _apply_depth_rules(d: int) -> Dictionary:
 				slow_mult = maxf(0.0, 0.4 - (hardening_effect * hardening_level))
 			
 			prog_mul *= (1.0 - (pressure_severity * slow_mult))
+	
+	# Momentum mechanic (Depth 8)
+	if d == 8:
+		_ensure_depth_runtime(d)
+		var rt: Dictionary = _depth_runtime[d]
+		var time_in_depth: float = rt.get("time_in_depth", 0.0)
+		# Gain +2% speed per 10 seconds spent in depth (uncapped but resets on WAKE)
+		var momentum: float = 1.0 + (time_in_depth / 10.0) * 0.02
+		prog_mul *= momentum
+	
+	# Void Drain mechanic (Depth 13)
+	if d == 13 and rules.get("void_drain_enabled", false):
+		# Base drain is 0.5% progress per second
+		var drain_rate: float = 0.005
+		
+		# Void Anchor reduction (15% per level)
+		var anchor_lvl: int = _get_local_level(d, "void_anchor")
+		if anchor_lvl > 0:
+			drain_rate *= pow(0.85, anchor_lvl)
+		
+		# Apply negative progress directly (hacky but effective for this mechanic)
+		var data: Dictionary = _run_internal[d - 1]
+		var current_p: float = float(data.get("progress", 0.0))
+		var cap: float = get_depth_progress_cap(d)
+		
+		# Null field immunity (first X seconds)
+		var rt: Dictionary = _depth_runtime[d]
+		var time_in_depth: float = rt.get("time_in_depth", 0.0)
+		var null_field_seconds: float = float(_get_local_level(d, "null_field")) * 60.0
+		
+		if time_in_depth > null_field_seconds:
+			# Draining progress points
+			var _drain_amount: float = (cap * drain_rate) * (1.0 / 60.0) # normalize to frame? no, wait.
+			# Actually let's just adjust prog_mul to be negative or subtract in _tick_active_depth
+			# But for now, let's just subtract it here if not nullified
+			_run_internal[d - 1]["progress"] = maxf(0.0, current_p - (cap * drain_rate * (1.0/60.0))) # Rough frame estimate
 	
 	return {
 		"instability_per_sec": inst_rate,  # This is % per second (e.g., 0.5 means +0.5%/s)
@@ -2136,17 +2229,8 @@ func _tick_depth_events(d: int, delta: float, rules: Dictionary) -> void:
 	
 	if rt["event_timer"] >= interval:
 		rt["event_timer"] = 0.0
-		
-		# Trigger specific events based on depth
-		if d == 4:
-			_trigger_flicker_event({})
-			print("TRIGGERED: Flicker event at Depth 4")
-		elif d == 5:
-			_trigger_rift_choice({})
-			print("TRIGGERED: Rift choice at Depth 5")
-	
-	_depth_runtime[d] = rt
-	
+		_trigger_depth_event(d)
+
 func _trigger_depth_event(d: int) -> void:
 	var def: Dictionary = get_depth_def(d)
 	var events: Array = def.get("events", [])
@@ -2155,35 +2239,129 @@ func _trigger_depth_event(d: int) -> void:
 		return
 	
 	var event_data: Dictionary = events[0]  # Get first event for now
+	var event_id: String = event_data.get("id", "")
 	
-	# For Depth 4: Flicker event
-	if d == 4:
-		_trigger_flicker_event(event_data)
-	# For Depth 5: Rift Choice event
-	elif d == 5:
-		_trigger_rift_choice(event_data)
+	# Pause progress during modal
+	set_meta("progress_paused", true)
+	
+	match event_id:
+		"flicker": _trigger_flicker_event(event_data)
+		"the_choice": _trigger_rift_choice(event_data)
+		"frozen_resonance": _trigger_frozen_resonance(d, event_data)
+		"phantom_spike": _trigger_phantom_spike(d, event_data)
+		"schrodinger_box": _trigger_schrodinger_box(d, event_data)
+		"structural_collapse": _trigger_structural_collapse(d, event_data)
+		"shadow_merge": _trigger_shadow_merge(d, event_data)
+		"dark_tide": _trigger_dark_tide(d, event_data)
+		"final_test": _trigger_abyss_random_event(d, event_data)
+		_:
+			# If no specific handler, try generic modal
+			if choice_modal != null:
+				choice_modal.show_event(event_data, def)
+				if not choice_modal.choice_made.is_connected(_on_rift_choice_resolved):
+					choice_modal.choice_made.connect(_on_rift_choice_resolved)
 
 
 func _on_rift_choice_resolved(_choice_id: String, effects: Dictionary) -> void:
 	set_meta("progress_paused", false)
 	_rift_event_active = false
 	
-	# Get instability cap
 	var inst_cap: float = get_instability_cap(active_depth)
 	
+	# Apply instability increase
 	if effects.has("instability_bonus"):
 		var percent: float = float(effects["instability_bonus"])
-		instability += (inst_cap * percent)
+		instability = clampf(instability + (inst_cap * percent), 0.0, inst_cap)
+		print("Rift: +%.0f%% instability" % [percent * 100.0])
 	
+	# Apply progress bonus
 	if effects.has("progress_bonus"):
 		var prog_cap: float = get_depth_progress_cap(active_depth)
 		var current: float = _run_internal[active_depth - 1].get("progress", 0.0)
 		_run_internal[active_depth - 1]["progress"] = minf(prog_cap, current + (prog_cap * float(effects["progress_bonus"])))
 	
-	# Handle costs if any (now in thoughts, not dreamcloud)
+	# Thoughts percentage cost
+	if effects.has("cost_thoughts_percent"):
+		thoughts = maxf(0.0, thoughts - (thoughts * float(effects["cost_thoughts_percent"])))
+	
+	# Thoughts flat cost
 	if effects.has("cost_thoughts"):
-		var cost: float = float(effects["cost_thoughts"])
-		thoughts = max(0.0, thoughts - cost)
+		thoughts = maxf(0.0, thoughts - float(effects["cost_thoughts"]))
+	
+	# Random Gain/Loss Range
+	if effects.has("random_range"):
+		var ranges = effects["random_range"]
+		if ranges.has("progress"):
+			var r = ranges["progress"]
+			var p_bonus = randf_range(r[0], r[1])
+			var p_cap = get_depth_progress_cap(active_depth)
+			var current_p = _run_internal[active_depth - 1].get("progress", 0.0)
+			_run_internal[active_depth - 1]["progress"] = clampf(current_p + (p_cap * p_bonus), 0.0, p_cap)
+		if ranges.has("instability"):
+			var r = ranges["instability"]
+			var i_bonus = randf_range(r[0], r[1])
+			instability = clampf(instability + (inst_cap * i_bonus), 0.0, inst_cap)
+
+	# Upgrade Decay (Depth 11)
+	if effects.has("random_upgrade_level_down"):
+		var amt = int(effects["random_upgrade_level_down"])
+		# 40% chance per level to resist shield (Entropy Shield)
+		var resist_chance = float(_get_local_level(active_depth, "entropy_shield")) * 0.40
+		if randf() > resist_chance:
+			var local = local_upgrades.get(active_depth, {}) as Dictionary
+			if local.size() > 0:
+				var keys = local.keys()
+				var k = keys[randi() % keys.size()]
+				local[k] = maxi(0, int(local[k]) - amt)
+				local_upgrades[active_depth] = local
+				print("COLLAPSE: Upgrade %s decayed by %d" % [k, amt])
+				if _panel: _panel.request_refresh_details(active_depth)
+
+	# Set Instability Absolute
+	if effects.has("set_instability"):
+		instability = clampf(float(effects["set_instability"]) * inst_cap, 0.0, inst_cap)
+
+	# All Mul (Depth 12 Shadow Merge)
+	if effects.has("all_mul"):
+		var duration = float(effects.get("duration", 15.0))
+		_temp_buffs["shadow_merge"] = {
+			"type": "all_mult",
+			"value": float(effects["all_mul"]),
+			"expires_at": Time.get_ticks_msec() / 1000.0 + duration
+		}
+	
+	# Event-based multipliers (Progress/Instability)
+	if effects.has("progress_mul") or effects.has("instability_mul"):
+		var duration = float(effects.get("duration", 10.0))
+		if effects.has("progress_mul"):
+			_temp_buffs["event_prog_mul"] = {
+				"type": "prog_mult",
+				"value": float(effects["progress_mul"]),
+				"expires_at": Time.get_ticks_msec() / 1000.0 + duration
+			}
+		if effects.has("instability_mul"):
+			_temp_buffs["event_inst_mul"] = {
+				"type": "inst_mult",
+				"value": float(effects["instability_mul"]),
+				"expires_at": Time.get_ticks_msec() / 1000.0 + duration
+			}
+	
+	if effects.has("instability_cap_bonus"):
+		var duration = float(effects.get("duration", 30.0))
+		_temp_buffs["event_inst_cap"] = {
+			"type": "inst_cap_bonus",
+			"value": float(effects["instability_cap_bonus"]),
+			"expires_at": Time.get_ticks_msec() / 1000.0 + duration
+		}
+
+	# Sync instability to GameManager so Top Bar updates immediately
+	var gm = get_node_or_null("/root/Main/GameManager")
+	if gm == null:
+		gm = get_node_or_null("/root/GameManager")
+	if gm != null:
+		gm.set("instability", instability)
+		if gm.has_method("_refresh_top_ui"):
+			gm._refresh_top_ui()
 		
 func get_temporary_memory_multiplier() -> float:
 	var mult = 1.0
@@ -2196,58 +2374,53 @@ func _trigger_flicker_event(_event_data: Dictionary = {}) -> void:
 	set_meta("progress_paused", true)
 	
 	if choice_modal != null:
-		# CRITICAL: Disconnect first to prevent error
+		# Disconnect first to prevent duplicate connections
 		if choice_modal.choice_made.is_connected(_on_flicker_choice):
 			choice_modal.choice_made.disconnect(_on_flicker_choice)
-			print("Disconnected existing flicker connection")
 		
 		choice_modal.show_choice(
 			"The Murk flickers...",
 			[
 				{"id": "wait", "text": "Wait it out (Pause 10s)"},
-				{"id": "overclock", "text": "Overclock through (-20 dreamcloud, +15% Instability)"}
+				{"id": "overclock", "text": "Overclock through (-10% Thoughts, +15% Instability)"}
 			]
 		)
 		
-		# Connect fresh
 		choice_modal.choice_made.connect(_on_flicker_choice)
-		print("Connected flicker choice handler")
 
 func _on_flicker_choice(choice_id: String, _effects: Dictionary) -> void:
-	print("FLICKER CHOICE: ", choice_id)
 	set_meta("progress_paused", false)
 	
 	if choice_modal and choice_modal.choice_made.is_connected(_on_flicker_choice):
 		choice_modal.choice_made.disconnect(_on_flicker_choice)
 	
+	var inst_cap: float = get_instability_cap(active_depth)
+	
 	if choice_id == "overclock":
-		# NEW: Cost 10% of current Thoughts (minimum 1000)
-		var cost: float = max(1000.0, thoughts * 0.10)
+		# Cost 10% of current Thoughts
+		var cost: float = thoughts * 0.10
+		thoughts = maxf(0.0, thoughts - cost)
 		
-		if thoughts >= cost:
-			thoughts -= cost
-			print("Overclock cost %.0f thoughts, remaining: %.0f" % [cost, thoughts])
-			
-			# Get actual cap for this depth
-			var inst_cap: float = get_instability_cap(active_depth)
-			
-			# +15% instability (flat percentage)
-			instability += (inst_cap * 0.15)
-			
-			# +5% instant progress
-			var current_prog: float = _run_internal[active_depth - 1].get("progress", 0.0)
-			var prog_cap: float = get_depth_progress_cap(active_depth)
-			var new_prog: float = minf(prog_cap, current_prog + (prog_cap * 0.05))
-			_run_internal[active_depth - 1]["progress"] = new_prog
-			
-			print("Overclock complete: +15% inst, +5% progress")
-		else:
-			print("Not enough thoughts for overclock!")
-			# Optional: Show UI feedback
-			
-	elif choice_id == "wait":
-		print("Wait choice - 10s pause")
-		# Add a 10s timer that pauses progress here if you want
+		# +15% instability
+		instability = clampf(instability + (inst_cap * 0.15), 0.0, inst_cap)
+		
+		# +5% instant progress
+		var current_prog: float = _run_internal[active_depth - 1].get("progress", 0.0)
+		var prog_cap: float = get_depth_progress_cap(active_depth)
+		_run_internal[active_depth - 1]["progress"] = minf(prog_cap, current_prog + (prog_cap * 0.05))
+		
+		print("Flicker overclock: cost %.0f thoughts, +15 instability (now %.1f)" % [cost, instability])
+	
+	# elif choice_id == "wait": — no penalty, just resume
+	
+	# Sync instability back to GameManager so UI updates
+	var gm = get_node_or_null("/root/Main/GameManager")
+	if gm == null:
+		gm = get_node_or_null("/root/GameManager")
+	if gm != null:
+		gm.set("instability", instability)
+		if gm.has_method("_refresh_top_ui"):
+			gm._refresh_top_ui()
 			
 func _trigger_rift_choice(_event_data: Dictionary = {}) -> void:
 	set_meta("progress_paused", true)
@@ -2264,6 +2437,71 @@ func _trigger_rift_choice(_event_data: Dictionary = {}) -> void:
 		choice_modal.show_event(evt, def, risk_assess_lvl > 0)
 		if not choice_modal.choice_made.is_connected(_on_rift_choice_resolved):
 			choice_modal.choice_made.connect(_on_rift_choice_resolved)
+
+func _trigger_frozen_resonance(d: int, event_data: Dictionary) -> void:
+	if choice_modal != null:
+		choice_modal.show_event(event_data, get_depth_def(d))
+		if not choice_modal.choice_made.is_connected(_on_rift_choice_resolved):
+			choice_modal.choice_made.connect(_on_rift_choice_resolved)
+
+func _trigger_phantom_spike(d: int, event_data: Dictionary) -> void:
+	# 70% chance to be fake
+	var is_fake: bool = randf() < 0.70
+	var final_event = event_data.duplicate(true)
+	final_event["is_actually_fake"] = is_fake
+	
+	if choice_modal != null:
+		choice_modal.show_event(final_event, get_depth_def(d))
+		if not choice_modal.choice_made.is_connected(_on_rift_choice_resolved):
+			choice_modal.choice_made.connect(_on_rift_choice_resolved)
+
+func _trigger_schrodinger_box(d: int, event_data: Dictionary) -> void:
+	if choice_modal != null:
+		choice_modal.show_event(event_data, get_depth_def(d))
+		if not choice_modal.choice_made.is_connected(_on_rift_choice_resolved):
+			choice_modal.choice_made.connect(_on_rift_choice_resolved)
+
+func _trigger_structural_collapse(d: int, event_data: Dictionary) -> void:
+	# Trigger "random upgrade down" effect immediately on opening if not resisted
+	if choice_modal != null:
+		choice_modal.show_event(event_data, get_depth_def(d))
+		if not choice_modal.choice_made.is_connected(_on_rift_choice_resolved):
+			choice_modal.choice_made.connect(_on_rift_choice_resolved)
+
+func _trigger_shadow_merge(d: int, event_data: Dictionary) -> void:
+	if choice_modal != null:
+		choice_modal.show_event(event_data, get_depth_def(d))
+		if not choice_modal.choice_made.is_connected(_on_rift_choice_resolved):
+			choice_modal.choice_made.connect(_on_rift_choice_resolved)
+
+func _trigger_dark_tide(d: int, event_data: Dictionary) -> void:
+	if choice_modal != null:
+		choice_modal.show_event(event_data, get_depth_def(d))
+		if not choice_modal.choice_made.is_connected(_on_rift_choice_resolved):
+			choice_modal.choice_made.connect(_on_rift_choice_resolved)
+
+func _trigger_abyss_random_event(d: int, _event_data: Dictionary) -> void:
+	var pool: Array = get_depth_def(d).get("rules", {}).get("random_event_pool", [])
+	if pool.size() == 0: return
+	
+	var random_event_id = pool[randi() % pool.size()]
+	var _random_event_data = {} # You'd normally fetch the actual definition here
+	
+	# For simplicity, we'll just fire _trigger_depth_event with a mock index
+	# or better yet, just pick a manual trigger
+	match random_event_id:
+		"phantom_spike": _trigger_phantom_spike(d, _get_event_def_by_id(7, "phantom_spike"))
+		"schrodinger_box": _trigger_schrodinger_box(d, _get_event_def_by_id(10, "schrodinger_box"))
+		"structural_collapse": _trigger_structural_collapse(d, _get_event_def_by_id(11, "structural_collapse"))
+		"shadow_merge": _trigger_shadow_merge(d, _get_event_def_by_id(12, "shadow_merge"))
+		"dark_tide": _trigger_dark_tide(d, _get_event_def_by_id(14, "dark_tide"))
+
+func _get_event_def_by_id(depth_idx: int, event_id: String) -> Dictionary:
+	var def = get_depth_def(depth_idx)
+	for evt in def.get("events", []):
+		if evt.get("id") == event_id:
+			return evt
+	return {}
 
 func _fire_depth_event(depth_index: int, event_id: String) -> void:
 	var def: Dictionary = get_depth_def(depth_index)
@@ -2302,6 +2540,7 @@ func _sum_run_totals(up_to_depth: int) -> Dictionary:
 	var total_mem := 0.0
 	var total_cry := 0.0
 	var crystals_by_name: Dictionary = {} # name -> amount
+	var memories_by_depth: Dictionary = {} # depth -> amount
 
 	for d in range(1, max_d + 1):
 		var data: Dictionary = _run_internal[d - 1]
@@ -2310,12 +2549,14 @@ func _sum_run_totals(up_to_depth: int) -> Dictionary:
 
 		total_mem += mem
 		total_cry += cry
+		memories_by_depth[d] = mem
 
 		var nm := _get_depth_currency_name(d)
 		crystals_by_name[nm] = float(crystals_by_name.get(nm, 0.0)) + cry
 
 	return {
 		"memories": total_mem,
+		"memories_by_depth": memories_by_depth,
 		"crystals_total": total_cry,
 		"crystals_by_name": crystals_by_name,
 		"depth_counted": max_d

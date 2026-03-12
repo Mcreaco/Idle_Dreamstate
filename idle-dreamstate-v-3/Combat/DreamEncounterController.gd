@@ -37,7 +37,7 @@ func _spawn_encounter(depth: int) -> void:
 
 func _generate_combat(depth: int) -> Dictionary:
 	var enemy_types: Array[String] = ["shadow", "manifestation", "echo", "wraith", "behemoth"]
-	var type: String = enemy_types[min(depth / 3, enemy_types.size() - 1)]
+	var type: String = enemy_types[min(int(float(depth) / 3.0), enemy_types.size() - 1)]
 	
 	var gm: Node = get_node("/root/Main/GameManager")
 	var gs: float = gm.current_gear_score
@@ -84,6 +84,6 @@ func _generate_enemy_name(type: String, depth: int) -> String:
 	var suffix: String = " of Depth %d" % depth
 	return prefixes[randi() % prefixes.size()] + " " + type.capitalize() + suffix
 
-func _generate_intent_pattern(depth: int) -> Array:
+func _generate_intent_pattern(_depth: int) -> Array:
 	# TODO: Generate enemy attack patterns
 	return ["strike", "crush"]

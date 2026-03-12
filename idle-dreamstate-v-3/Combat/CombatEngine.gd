@@ -6,10 +6,13 @@ signal turn_started(turn_num: int, max_turns: int)
 signal intent_revealed(intent: Dictionary)
 signal player_turn(options: Array)
 signal combat_ended(result: Dictionary)
+signal hp_changed(p_hp: float, e_hp: float)
+signal damage_dealt(amount: float, target_type: String)
 
 var active: bool = false
 var current_turn: int = 0
-var max_turns: int = 3
+var max_turns: int = 99
+var player_turn_active: bool = false
 
 var player_stats: Dictionary
 var enemy_stats: Dictionary
@@ -20,6 +23,9 @@ var enemy_hp: float = 0.0
 
 var last_player_attack: String = ""
 var enemy_intent: Dictionary = {}
+
+var player_statuses: Array[Dictionary] = [] # {id, duration, strength}
+var enemy_statuses: Array[Dictionary] = []
 
 # Cache references to avoid repeated get_node calls
 var _game_manager: Node = null
@@ -87,16 +93,20 @@ func _generate_equipment_drop() -> Dictionary:
 	var rarity_roll: float = randf()
 	var rarity: String
 	
-	if current_depth >= 15:
+	if current_depth >= 90:
+		rarity = "legendary" if rarity_roll < 0.6 else "mythic"
+	elif current_depth >= 70:
 		rarity = "epic" if rarity_roll < 0.7 else "legendary"
+	elif current_depth >= 40:
+		rarity = "rare" if rarity_roll < 0.7 else "epic"
+	elif current_depth >= 20:
+		rarity = "uncommon" if rarity_roll < 0.6 else "rare"
 	elif current_depth >= 10:
-		rarity = "rare" if rarity_roll < 0.6 else "epic"
-	elif current_depth >= 5:
-		rarity = "uncommon" if rarity_roll < 0.5 else "rare"
+		rarity = "common" if rarity_roll < 0.5 else "uncommon"
 	else:
-		rarity = "common" if rarity_roll < 0.6 else "uncommon"
+		rarity = "common"
 	
-	var slots: Array[String] = ["weapon", "armor", "amulet", "ring1", "ring2", "talisman"]
+	var slots: Array[String] = ["weapon", "armor", "amulet", "ring1", "helmet", "talisman"]
 	var slot: String = slots[randi() % slots.size()]
 	
 	return _equipment_manager.generate_item(rarity, slot, current_depth)
@@ -106,7 +116,7 @@ func start_combat(p_stats: Dictionary, e_data: Dictionary, depth: int) -> void:
 	current_turn = 1
 	current_depth = depth
 	
-	max_turns = 3 if depth < 9 else 2
+	max_turns = 99
 	
 	player_stats = p_stats
 	enemy_stats = e_data.duplicate()
@@ -114,7 +124,11 @@ func start_combat(p_stats: Dictionary, e_data: Dictionary, depth: int) -> void:
 	player_hp = p_stats.max_hp
 	enemy_hp = e_data.hp
 	
+	hp_changed.emit(player_hp, enemy_hp)
 	combat_started.emit(enemy_stats.name)
+	
+	player_statuses.clear()
+	enemy_statuses.clear()
 	
 	await get_tree().create_timer(0.5).timeout
 	_start_turn()
@@ -123,6 +137,20 @@ func _start_turn() -> void:
 	if not active:
 		return
 	
+	# 1. PROCESS TURN-START STATUSES (Bleed, etc)
+	_process_status_dots()
+	
+	if player_hp <= 0: _end_combat(false); return
+	if enemy_hp <= 0: _end_combat(true); return
+	
+	# 2. CHECK STUN
+	if _has_status(player_statuses, "stun"):
+		_decrement_status(player_statuses, "stun")
+		current_turn += 1
+		await get_tree().create_timer(1.2).timeout
+		_start_turn()
+		return
+
 	turn_started.emit(current_turn, max_turns)
 	_generate_enemy_intent()
 	
@@ -132,7 +160,35 @@ func _start_turn() -> void:
 	await get_tree().create_timer(1.0).timeout
 	
 	var options: Array = _get_player_attack_options()
+	player_turn_active = true
 	player_turn.emit(options)
+
+func _process_status_dots() -> void:
+	for i in range(player_statuses.size() - 1, -1, -1):
+		var s = player_statuses[i]
+		if s.id == "bleed":
+			player_hp -= s.strength
+			s.duration -= 1
+			if s.duration <= 0: player_statuses.remove_at(i)
+	
+	for i in range(enemy_statuses.size() - 1, -1, -1):
+		var s = enemy_statuses[i]
+		if s.id == "bleed":
+			enemy_hp -= s.strength
+			s.duration -= 1
+			if s.duration <= 0: enemy_statuses.remove_at(i)
+	hp_changed.emit(player_hp, enemy_hp)
+
+func _has_status(statuses: Array, id: String) -> bool:
+	for s in statuses:
+		if s.get("id") == id: return true
+	return false
+
+func _decrement_status(statuses: Array, id: String) -> void:
+	for i in range(statuses.size() - 1, -1, -1):
+		if statuses[i].get("id") == id:
+			statuses[i].duration -= 1
+			if statuses[i].duration <= 0: statuses.remove_at(i)
 
 func _generate_enemy_intent() -> void:
 	var possible_intents: Array[String] = ["strike", "crush", "flurry", "lunge", "charge", "weave", "drain"]
@@ -178,23 +234,23 @@ func _predicted_correctly(_action: String) -> bool:
 	return randf() < 0.5
 
 func execute_player_attack(attack_id: String) -> void:
+	player_turn_active = false
 	last_player_attack = attack_id
 	
 	var damage: float = 0.0
 	var player_def_mult: float = 1.0
-	var special_effect: String = ""
 	
 	match attack_id:
 		"slash":
 			damage = player_stats.attack * 1.0
-			special_effect = "bleed"
+			enemy_statuses.append({"id": "bleed", "duration": 3, "strength": player_stats.attack * 0.1})
 		"pierce":
 			damage = player_stats.attack * 0.8
 			enemy_stats.defense *= 0.7
 		"bludgeon":
 			damage = player_stats.attack * 1.2
-			if randf() < 0.3:
-				special_effect = "stun"
+			if randf() < 0.35:
+				enemy_statuses.append({"id": "stun", "duration": 1})
 		"block":
 			player_def_mult = 0.4
 		"dodge":
@@ -207,33 +263,37 @@ func execute_player_attack(attack_id: String) -> void:
 			enemy_intent.selected = "interrupted"
 		"feint":
 			enemy_intent.selected = "missed"
-		"special":
-			_apply_amulet_effect()
-			damage = 0
 		"ultimate":
-			damage = player_stats.attack * 3.0
+			damage = player_stats.attack * 4.0
 			_equipment_manager.use_talisman()
 	
 	if damage > 0:
-		var actual_dmg: float = max(1.0, damage - (enemy_stats.defense * 0.5))
+		var enemy_def = enemy_stats.get("defense", 0.0)
+		var actual_dmg: float = max(0.0, damage - enemy_def)
 		enemy_hp -= actual_dmg
+		damage_dealt.emit(actual_dmg, "enemy")
 	
-	if not enemy_intent.selected in ["interrupted", "missed"] and special_effect != "stun":
-		var enemy_dmg: float = _calculate_enemy_damage()
-		enemy_dmg *= player_def_mult
-		player_hp -= enemy_dmg
+	# Process enemy response unless stunned or interrupted
+	if not _has_status(enemy_statuses, "stun") and not enemy_intent.selected in ["interrupted", "missed"]:
+		var enemy_dmg_raw: float = _calculate_enemy_damage()
+		var player_def = player_stats.get("defense", 0.0)
+		var actual_enemy_dmg: float = max(0.0, (enemy_dmg_raw * player_def_mult) - player_def)
+		player_hp -= actual_enemy_dmg
+		if actual_enemy_dmg > 0:
+			damage_dealt.emit(actual_enemy_dmg, "player")
+	
+	# Decrement one-turn statuses (like stun) after they take effect
+	_decrement_status(enemy_statuses, "stun")
+	
+	hp_changed.emit(player_hp, enemy_hp)
 	
 	if enemy_hp <= 0:
 		_end_combat(true)
 	elif player_hp <= 0:
 		_end_combat(false)
-	elif current_turn >= max_turns:
-		var player_pct: float = player_hp / player_stats.max_hp
-		var enemy_pct: float = enemy_hp / enemy_stats.hp
-		_end_combat(player_pct > enemy_pct)
 	else:
 		current_turn += 1
-		await get_tree().create_timer(1.5).timeout
+		await get_tree().create_timer(1.2).timeout
 		_start_turn()
 
 func _calculate_enemy_damage() -> float:
@@ -255,12 +315,14 @@ func _calculate_enemy_damage() -> float:
 		"drain":
 			var dmg: float = base_dmg * 0.7
 			enemy_hp = min(enemy_hp + dmg * 0.5, enemy_stats.hp)
+			hp_changed.emit(player_hp, enemy_hp)
 			return dmg
 	
 	return base_dmg
 
 func _end_combat(won: bool) -> void:
 	active = false
+	player_turn_active = false
 	
 	var perfect: bool = won and player_hp >= player_stats.max_hp * 0.8
 	
