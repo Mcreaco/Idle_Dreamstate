@@ -8,6 +8,7 @@ signal player_turn(options: Array)
 signal combat_ended(result: Dictionary)
 signal hp_changed(p_hp: float, e_hp: float)
 signal damage_dealt(amount: float, target_type: String)
+signal message_logged(text: String)
 
 var active: bool = false
 var current_turn: int = 0
@@ -50,10 +51,22 @@ func _get_player_attack_options() -> Array:
 		options.append({"id": "block", "name": "Block", "type": "armor", "desc": "-60% dmg"})
 		return options
 	
-	# Standard options
-	options.append({"id": "slash", "name": "Slash", "type": "weapon", "desc": "100% dmg + Bleed"})
-	options.append({"id": "pierce", "name": "Pierce", "type": "weapon", "desc": "80% dmg, ignore 30% DEF"})
-	options.append({"id": "bludgeon", "name": "Bludgeon", "type": "weapon", "desc": "120% dmg + Stun"})
+	# 1. Base Attack tied to Weapon name
+	var weapon_item = _equipment_manager.equipped.get("weapon")
+	if weapon_item:
+		var w_name = weapon_item.get("name", "").to_lower()
+		if "mace" in w_name or "hammer" in w_name or "club" in w_name:
+			options.append({"id": "bludgeon", "name": "Bludgeon", "type": "weapon", "desc": "120% dmg + Stun"})
+		elif "dagger" in w_name or "rapier" in w_name or "stinger" in w_name:
+			options.append({"id": "pierce", "name": "Pierce", "type": "weapon", "desc": "80% dmg, ignore 30% DEF"})
+		else:
+			# Default is Sword/Slash
+			options.append({"id": "slash", "name": "Slash", "type": "weapon", "desc": "100% dmg + Bleed"})
+	else:
+		# Bare fists/Generic
+		options.append({"id": "slash", "name": "Strike", "type": "weapon", "desc": "80% dmg"})
+
+	# 2. Defensive options (Universal)
 	options.append({"id": "block", "name": "Block", "type": "armor", "desc": "-60% damage"})
 	options.append({"id": "dodge", "name": "Dodge", "type": "armor", "desc": "Avoid 100% (if predicted)"})
 	options.append({"id": "brace", "name": "Brace", "type": "armor", "desc": "-30% dmg + reflect"})
@@ -69,13 +82,10 @@ func _get_player_attack_options() -> Array:
 		else:
 			options.append({"id": "special", "name": "Amulet", "type": "amulet", "desc": "Special"})
 	
-	if current_turn == max_turns:
-		if _equipment_manager.has_method("talisman_used"):
-			if not _equipment_manager.talisman_used:
-				options.append({"id": "ultimate", "name": "ULTIMATE", "type": "talisman", "desc": "300% damage"})
-		else:
-			options.append({"id": "ultimate", "name": "ULTIMATE", "type": "talisman", "desc": "300% damage"})
-	
+	# 3. Special Tactical Actions (Universal)
+	options.append({"id": "meditate", "name": "Meditate", "type": "amulet", "desc": "+10% HP, gain Focus"})
+	options.append({"id": "overclock", "name": "Overclock", "type": "talisman", "desc": "+50% ATK, take 10% HP"})
+
 	return options
 
 func _generate_equipment_drop() -> Dictionary:
@@ -126,6 +136,7 @@ func start_combat(p_stats: Dictionary, e_data: Dictionary, depth: int) -> void:
 	
 	hp_changed.emit(player_hp, enemy_hp)
 	combat_started.emit(enemy_stats.name)
+	message_logged.emit("[color=#ffffff]Combat started against [b]%s[/b]![/color]" % enemy_stats.name)
 	
 	player_statuses.clear()
 	enemy_statuses.clear()
@@ -177,6 +188,10 @@ func _process_status_dots() -> void:
 			enemy_hp -= s.strength
 			s.duration -= 1
 			if s.duration <= 0: enemy_statuses.remove_at(i)
+	
+	# Process Overclocked status duration
+	_decrement_status(player_statuses, "overclocked")
+	
 	hp_changed.emit(player_hp, enemy_hp)
 
 func _has_status(statuses: Array, id: String) -> bool:
@@ -266,12 +281,29 @@ func execute_player_attack(attack_id: String) -> void:
 		"ultimate":
 			damage = player_stats.attack * 4.0
 			_equipment_manager.use_talisman()
+		"meditate":
+			var heal = player_stats.max_hp * 0.1
+			player_hp = min(player_hp + heal, player_stats.max_hp)
+			player_statuses.append({"id": "focus", "duration": 1})
+		"overclock":
+			player_hp -= player_stats.max_hp * 0.1
+			player_statuses.append({"id": "overclocked", "duration": 2})
+			if _game_manager:
+				_game_manager.instability += 1.0 # Costly move
 	
 	if damage > 0:
+		# Check for Focus/Overclocked buffs
+		if _has_status(player_statuses, "focus"):
+			damage *= 1.5
+			_decrement_status(player_statuses, "focus")
+		if _has_status(player_statuses, "overclocked"):
+			damage *= 1.5
+		
 		var enemy_def = enemy_stats.get("defense", 0.0)
 		var actual_dmg: float = max(0.0, damage - enemy_def)
 		enemy_hp -= actual_dmg
 		damage_dealt.emit(actual_dmg, "enemy")
+		message_logged.emit("[color=#00ffaa]Player used %s: %d damage.[/color]" % [attack_id.capitalize(), actual_dmg])
 	
 	# Process enemy response unless stunned or interrupted
 	if not _has_status(enemy_statuses, "stun") and not enemy_intent.selected in ["interrupted", "missed"]:
@@ -281,6 +313,9 @@ func execute_player_attack(attack_id: String) -> void:
 		player_hp -= actual_enemy_dmg
 		if actual_enemy_dmg > 0:
 			damage_dealt.emit(actual_enemy_dmg, "player")
+			message_logged.emit("[color=#ff5555]Enemy used %s: %d damage.[/color]" % [enemy_intent.selected.capitalize(), actual_enemy_dmg])
+		else:
+			message_logged.emit("[color=#cccccc]Enemy %s missed or was blocked.[/color]" % enemy_intent.selected.capitalize())
 	
 	# Decrement one-turn statuses (like stun) after they take effect
 	_decrement_status(enemy_statuses, "stun")

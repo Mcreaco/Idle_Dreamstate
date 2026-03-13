@@ -83,6 +83,7 @@ var idle_thoughts_rate: float = 0.8
 var idle_dreamcloud_rate: float = 0.0 # Combat only
 var dive_thoughts_gain: float = 18.0
 var dive_dreamcloud_gain: float = 0.0 # Combat only
+var wave_mastery: Dictionary = {}
 var dream_current: float = 1.0  # Global progress multiplier
 var wake_bonus_mult: float = 1.35
 var fail_penalty_mult: float = 0.60
@@ -98,7 +99,6 @@ var offline_seconds: float = 0.0
 var autosave_timer: float = 0.0
 var autosave_interval: float = 10.0
 var _active_temp_buffs: Array[Dictionary] = []
-var wave_mastery: Dictionary = {} # wave_id -> count
 #var _crack_sync_timer: float = 0.0
 
 var _rate_sample_timer: float = 0.0

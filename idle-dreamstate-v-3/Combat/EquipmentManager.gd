@@ -66,6 +66,7 @@ func generate_item(rarity: String, slot: String, wave: int) -> Dictionary:
 		"is_s_tier": is_s_tier,
 		"level": 1,
 		"max_level": MAX_LEVELS[rarity],
+		"plus_tier": 0,
 		"base_score": base_score * (2.5 if is_s_tier else 1.0),
 		"stats": stats_roll.main,
 		"secondary_stats": stats_roll.secondary,
@@ -157,15 +158,14 @@ func level_up_item(slot: String, levels: int = 1) -> bool:
 	gm.save_game()
 	return true
 
-func fuse_items(item1: Dictionary, item2: Dictionary, item3: Dictionary) -> Dictionary:
-	if item1.rarity != item2.rarity or item2.rarity != item3.rarity:
-		return {}
+func fuse_items(target_item: Dictionary, fodder_items: Array[Dictionary]) -> Dictionary:
+	var rarity = target_item.get("rarity", "common")
+	var slot = target_item.get("slot", "weapon")
+	var plus_tier = target_item.get("plus_tier", 0)
 	
-	if item1.level < item1.max_level or item2.level < item2.max_level or item3.level < item3.max_level:
-		return {}
-	
+	# Determine next tier
 	var next_tier: String = ""
-	match item1.rarity:
+	match rarity:
 		"common": next_tier = "uncommon"
 		"uncommon": next_tier = "rare"
 		"rare": next_tier = "epic"
@@ -173,19 +173,93 @@ func fuse_items(item1: Dictionary, item2: Dictionary, item3: Dictionary) -> Dict
 		"legendary": next_tier = "mythic"
 		"mythic": next_tier = "transcendent"
 		"transcendent": next_tier = "god_tier"
-		_: return {}
 	
-	var gm: Node = get_node("/root/Main/GameManager")
-	var fusion_cost: int = _get_fusion_cost(item1.rarity)
+	# SIMPLE LOGIC (Common to Rare)
+	if ["common", "uncommon", "rare"].has(rarity):
+		if fodder_items.size() < 2: return {} # Now requires 3 total (Target + 2 Fodder)
+		for fodder in fodder_items:
+			if fodder.rarity != rarity or fodder.slot != slot or fodder.name != target_item.name:
+				return {}
+		
+		# Common doesn't need max level; Uncommon/Rare do
+		if rarity != "common" and target_item.level < target_item.max_level:
+			return {}
+		
+		# Upgrade to next tier
+		var gm = get_node("/root/Main/GameManager")
+		var cost = _get_fusion_cost(rarity)
+		if gm.dreamcloud < cost: return {}
+		gm.dreamcloud -= cost
+		
+		var new_item = generate_item(next_tier, slot, 1)
+		new_item.level = 1
+		gm.save_game()
+		return new_item
+
+	# TIERED LOGIC (Epic+)
+	# 1. Base (Max) + Base -> Base+1
+	if plus_tier == 0:
+		if fodder_items.size() < 1: return {}
+		var fodder = fodder_items[0]
+		if fodder.rarity != rarity or fodder.slot != slot or fodder.plus_tier != 0 or fodder.name != target_item.name: 
+			return {}
+		if target_item.level < target_item.max_level: return {}
+		
+		var gm = get_node("/root/Main/GameManager")
+		var cost = _get_fusion_cost(rarity)
+		if gm.dreamcloud < cost: return {}
+		gm.dreamcloud -= cost
+		
+		target_item.plus_tier = 1
+		target_item.level = 1 
+		var new_item = target_item.duplicate(true)
+		new_item.plus_tier = 1
+		new_item.level = 1
+		for k in new_item.stats.keys(): new_item.stats[k] *= 1.2
+		
+		gm.save_game()
+		return new_item
 	
-	if gm.dreamcloud < fusion_cost:
-		return {}
-	
-	gm.dreamcloud -= fusion_cost
-	var new_item: Dictionary = generate_item(next_tier, item1.slot, 1)
-	new_item.level = 1
-	gm.save_game()
-	return new_item
+	# 2. Base+1 (Max) + 2x Base -> Base+2
+	elif plus_tier == 1:
+		if fodder_items.size() < 2: return {}
+		for f in fodder_items:
+			if f.rarity != rarity or f.slot != slot or f.plus_tier != 0 or f.name != target_item.name: 
+				return {}
+		if target_item.level < target_item.max_level: return {}
+		
+		var gm = get_node("/root/Main/GameManager")
+		var cost = _get_fusion_cost(rarity) * 2
+		if gm.dreamcloud < cost: return {}
+		gm.dreamcloud -= cost
+		
+		var new_item = target_item.duplicate(true)
+		new_item.plus_tier = 2
+		new_item.level = 1
+		for k in new_item.stats.keys(): new_item.stats[k] *= 1.3
+		
+		gm.save_game()
+		return new_item
+		
+	# 3. Base+2 + Base+2 -> NextTier
+	elif plus_tier == 2:
+		if fodder_items.size() < 1: return {}
+		var fodder = fodder_items[0]
+		if fodder.rarity != rarity or fodder.slot != slot or fodder.plus_tier != 2 or fodder.name != target_item.name: 
+			return {}
+		if target_item.level < target_item.max_level: return {}
+		
+		var gm = get_node("/root/Main/GameManager")
+		var cost = _get_fusion_cost(rarity) * 4
+		if gm.dreamcloud < cost: return {}
+		gm.dreamcloud -= cost
+		
+		var new_item = generate_item(next_tier, slot, 1)
+		new_item.level = 1
+		gm.save_game()
+		return new_item
+
+	return {}
 
 func _get_fusion_cost(rarity: String) -> int:
 	match rarity:
@@ -257,10 +331,51 @@ func load_save_data(data: Dictionary) -> void:
 				inventory.append(it)
 	
 	print("LOAD: Restored inventory items: ", inventory.size())
+	
+	# Standardize existing items (Remove old randomization)
+	for item in equipped.values():
+		if item: _standardize_item(item)
+	for item in inventory:
+		_standardize_item(item)
+
+func _standardize_item(item: Dictionary) -> void:
+	var rarity = item.get("rarity", "common")
+	var slot = item.get("slot", "weapon")
+	var budget = 1.0
+	match rarity:
+		"common": budget = 1.0
+		"uncommon": budget = 2.5
+		"rare": budget = 6.0
+		"epic": budget = 15.0
+		"legendary": budget = 40.0
+		"mythic": budget = 100.0
+	
+	var stats = item.get("stats", {})
+	match slot:
+		"weapon": stats["attack"] = 12.0 * budget
+		"armor":
+			stats["hp"] = 60.0 * budget
+			stats["defense"] = 8.0 * budget
+		"ring1":
+			stats["attack"] = 6.0 * budget
+			stats["hp"] = 30.0 * budget
+		"helmet":
+			stats["defense"] = 5.0 * budget
+			stats["hp"] = 25.0 * budget
+		"amulet":
+			stats["attack"] = 4.0 * budget
+			stats["defense"] = 4.0 * budget
+		"talisman":
+			stats["hp"] = 40.0 * budget
+			stats["attack"] = 10.0 * budget
+	
+	var s_stats = item.get("secondary_stats", {})
+	for k in s_stats.keys():
+		s_stats[k] = 0.05 * sqrt(budget)
 
 # MISSING HELPERS - Implement or stub
 func _generate_item_id() -> String:
-	return str(randi())
+	return str(Time.get_ticks_usec()) + "_" + str(randi_range(1000, 9999))
 
 func _generate_item_name_v2(_rarity: String, slot: String, _wave: int, is_s_tier: bool) -> String:
 	if is_s_tier:
@@ -296,22 +411,22 @@ func _roll_stats(rarity: String, slot: String) -> Dictionary:
 	# Slot specializations
 	match slot:
 		"weapon":
-			stats["attack"] = 12.0 * budget * (0.9 + randf() * 0.2)
+			stats["attack"] = 12.0 * budget
 		"armor":
-			stats["hp"] = 60.0 * budget * (0.9 + randf() * 0.2)
-			stats["defense"] = 8.0 * budget * (0.9 + randf() * 0.2)
+			stats["hp"] = 60.0 * budget
+			stats["defense"] = 8.0 * budget
 		"ring1":
-			if randf() > 0.5: stats["attack"] = 6.0 * budget * (0.8 + randf() * 0.4)
-			else: stats["hp"] = 30.0 * budget * (0.8 + randf() * 0.4)
+			stats["attack"] = 6.0 * budget
+			stats["hp"] = 30.0 * budget
 		"helmet":
-			stats["defense"] = 5.0 * budget * (0.9 + randf() * 0.2)
-			stats["hp"] = 25.0 * budget * (0.9 + randf() * 0.2)
+			stats["defense"] = 5.0 * budget
+			stats["hp"] = 25.0 * budget
 		"amulet":
-			stats["attack"] = 4.0 * budget * randf()
-			stats["defense"] = 4.0 * budget * randf()
+			stats["attack"] = 4.0 * budget
+			stats["defense"] = 4.0 * budget
 		"talisman":
-			stats["hp"] = 40.0 * budget * randf()
-			stats["attack"] = 10.0 * budget * randf()
+			stats["hp"] = 40.0 * budget
+			stats["attack"] = 10.0 * budget
 			
 	# Roll Secondary Stats (Thoughts, Crystals, Memories)
 	var secondary := {}
@@ -324,8 +439,8 @@ func _roll_stats(rarity: String, slot: String) -> Dictionary:
 		var pool = farmer_keys if randf() < 0.6 else combat_keys
 		var key = pool[randi() % pool.size()]
 		
-		# Boosts: 2-8% base, scales with budget (Mythic budget 100 -> ~20-80%)
-		secondary[key] = (0.02 + randf() * 0.06) * sqrt(budget)
+		# Boosts: fixed 5% base, scales with budget
+		secondary[key] = 0.05 * sqrt(budget)
 	
 	return {"main": stats, "secondary": secondary}
 
@@ -348,7 +463,14 @@ func _apply_set_bonuses(_stats: Dictionary) -> void:
 	pass
 
 func _calculate_level_cost(item: Dictionary, levels: int) -> int:
-	return item.level * 100 * levels
+	var base_cost = 100
+	var rarity_mult = ["common","uncommon","rare","epic","legendary","mythic","transcendent","god_tier"].find(item.rarity) + 1
+	var plus_mult = 1.0 + (item.get("plus_tier", 0) * 1.5)
+	
+	var total = 0
+	for i in range(levels):
+		total += int(base_cost * (item.level + i) * rarity_mult * plus_mult)
+	return total
 
 # Ring/Amulet/Talisman helpers
 func has_ring_ability() -> bool:

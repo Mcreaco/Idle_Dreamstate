@@ -93,6 +93,18 @@ layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
+[node name="CombatBackground" type="TextureRect" parent="MainLayout/ContentArea"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+expand_mode = 1
+stretch_mode = 6
+modulate = Color(1, 1, 1, 0.4)
+mouse_filter = 2
+
 [node name="CombatView" type="VBoxContainer" parent="MainLayout/ContentArea"]
 layout_mode = 1
 anchors_preset = 15
@@ -138,9 +150,37 @@ horizontal_alignment = 1
 text = "—"
 theme_override_font_sizes/font_size = 20
 
-[node name="EnemySprite" type="TextureRect" parent="MainLayout/ContentArea/CombatView"]
-custom_minimum_size = Vector2(0, 160)
+[node name="MiddleArea" type="HBoxContainer" parent="MainLayout/ContentArea/CombatView"]
 layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 15
+
+[node name="CombatLogPanel" type="PanelContainer" parent="MainLayout/ContentArea/CombatView/MiddleArea"]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_inv")
+
+[node name="VBox" type="VBoxContainer" parent="MainLayout/ContentArea/CombatView/MiddleArea/CombatLogPanel"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="MainLayout/ContentArea/CombatView/MiddleArea/CombatLogPanel/VBox"]
+layout_mode = 2
+text = "Dream Log"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 12
+theme_override_colors/font_color = Color(0.6, 0.8, 1, 1)
+
+[node name="CombatLog" type="RichTextLabel" parent="MainLayout/ContentArea/CombatView/MiddleArea/CombatLogPanel/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+bbcode_enabled = true
+scroll_following = true
+theme_override_font_sizes/normal_font_size = 12
+text = "[i]Entering the dreamscape...[/i]"
+
+[node name="EnemySprite" type="TextureRect" parent="MainLayout/ContentArea/CombatView/MiddleArea"]
+layout_mode = 2
+size_flags_horizontal = 3
 expand_mode = 1
 stretch_mode = 5
 
@@ -253,14 +293,45 @@ horizontal_alignment = 1
 text = "—"
 theme_override_font_sizes/font_size = 15
 
-[node name="AttackGrid" type="GridContainer" parent="MainLayout/ContentArea/CombatView"]
+[node name="ActionPanel" type="PanelContainer" parent="MainLayout/ContentArea/CombatView"]
 layout_mode = 2
-columns = 3
-theme_override_constants/h_separation = 8
-theme_override_constants/v_separation = 8
+custom_minimum_size = Vector2(0, 280)
+theme_override_styles/panel = SubResource("StyleBoxFlat_inv")
 
-[node name="ResultBanner" type="VBoxContainer" parent="MainLayout/ContentArea/CombatView"]
+[node name="ActionHBox" type="HBoxContainer" parent="MainLayout/ContentArea/CombatView/ActionPanel"]
 layout_mode = 2
+theme_override_constants/separation = 15
+
+[node name="AttackGrid" type="GridContainer" parent="MainLayout/ContentArea/CombatView/ActionPanel/ActionHBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+columns = 3
+theme_override_constants/h_separation = 15
+theme_override_constants/v_separation = 15
+
+[node name="RewardPanel" type="PanelContainer" parent="MainLayout/ContentArea/CombatView/ActionPanel/ActionHBox"]
+custom_minimum_size = Vector2(240, 0)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
+
+[node name="VBox" type="VBoxContainer" parent="MainLayout/ContentArea/CombatView/ActionPanel/ActionHBox/RewardPanel"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="RewardHeader" type="Label" parent="MainLayout/ContentArea/CombatView/ActionPanel/ActionHBox/RewardPanel/VBox"]
+layout_mode = 2
+text = "✦ REWARDS ✦"
+horizontal_alignment = 1
+theme_override_colors/font_color = Color(1, 0.84, 0.4, 1)
+theme_override_font_sizes/font_size = 14
+
+[node name="RewardScroll" type="ScrollContainer" parent="MainLayout/ContentArea/CombatView/ActionPanel/ActionHBox/RewardPanel/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="RewardList" type="VBoxContainer" parent="MainLayout/ContentArea/CombatView/ActionPanel/ActionHBox/RewardPanel/VBox/RewardScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
 theme_override_constants/separation = 6
 
 [node name="SmoothAutoBox" type="VBoxContainer" parent="MainLayout/ContentArea/CombatView"]
