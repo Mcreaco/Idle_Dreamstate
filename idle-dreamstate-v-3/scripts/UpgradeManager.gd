@@ -18,39 +18,38 @@ var overclock_mastery_level: int = 0
 var overclock_safety_level: int = 0
 
 # Tuning
-@export var run_cost_growth: float = 1.6
+@export var run_cost_growth: float = 2.2 # V27 Buff: 3.2 -> 2.2
 
-@export var thoughts_base_cost: float = 10.0
-@export var stability_base_cost: float = 12.0
-@export var deep_dives_base_cost: float = 25.0
-@export var mental_buffer_base_cost: float = 30.0
+@export var thoughts_base_cost: float = 2500.0 # V27 Smooth: 1200 -> 2500
+@export var stability_base_cost: float = 3000.0 # V27 Smooth: 1500 -> 3000
+@export var deep_dives_base_cost: float = 7500.0 # V27 Smooth: 5000 -> 7500
+@export var mental_buffer_base_cost: float = 12000.0 # Was 750,000
 
-@export var overclock_mastery_base_cost: float = 40.0
-@export var overclock_safety_base_cost: float = 45.0
+@export var overclock_mastery_base_cost: float = 25000.0 # Was 1,250,000
+@export var overclock_safety_base_cost: float = 40000.0 # Was 1,500,000
 
 # Effects
-# Thoughts upgrade: +15% thoughts mult per level
-@export var thoughts_step: float = 0.15
+# Thoughts upgrade: +12% thoughts mult per level
+@export var thoughts_step: float = 0.12
 
-# Stability upgrade: -7% instability gain per level (multiplicative)
-@export var stability_step: float = 0.07
+# Stability upgrade: -5% instability gain per level (multiplicative) (Reduced from 7%)
+@export var stability_step: float = 0.05
 
-# Deep Dives: adds extra scaling PER DEPTH
-@export var deep_dives_thoughts_per_depth: float = 0.03   # +3% per depth per level
-@export var deep_dives_instab_per_depth: float = 0.02     # +2% per depth per level
+# Deep Dives: adds extra scaling PER DEPTH (Reduced from 3%)
+@export var deep_dives_thoughts_per_depth: float = 0.02   # +2% per depth per level
+@export var deep_dives_instab_per_depth: float = 0.02
 
-# Mental Buffer: Thoughts bonus on every Dive
-# thoughts_bonus = depth * mental_buffer_level * mental_buffer_per_depth (in thousands or similar)
-@export var mental_buffer_per_depth: float = 50.0
+# Mental Buffer: Thoughts bonus on every Dive (Reduced from 50)
+@export var mental_buffer_per_depth: float = 25.0
 
-# Overclock Mastery (power + duration, costs more Thoughts)
-@export var overclock_mastery_thoughts_step: float = 0.10  # +10% overclock thoughts mult per level
-@export var overclock_mastery_duration_step: float = 0.15  # +15% duration per level
-@export var overclock_mastery_cost_step: float = 0.12      # +12% thoughts cost per level
+# Overclock Mastery (Reduced bonuses)
+@export var overclock_mastery_thoughts_step: float = 0.05  # Was 10%
+@export var overclock_mastery_duration_step: float = 0.10  # Was 15%
+@export var overclock_mastery_cost_step: float = 0.15     # Was 12% (Increased cost penalty)
 
-# Overclock Safety (reduces overclock instability penalty, but slightly reduces overclock thoughts)
-@export var overclock_safety_instab_step: float = 0.08     # -8% overclock instability mult per level (multiplicative)
-@export var overclock_safety_thoughts_step: float = 0.03   # -3% overclock thoughts mult per level (multiplicative)
+# Overclock Safety (Reduced efficiency)
+@export var overclock_safety_instab_step: float = 0.05     # Was 8%
+@export var overclock_safety_thoughts_step: float = 0.05   # Was 3% (Increased penalty)
 
 
 # =========================

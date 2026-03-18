@@ -98,6 +98,29 @@ func _pick_costs(d: int, tier: int) -> Dictionary:
 		4: return _cost_4(d)
 	return _cost_1(d)
 
+func get_upgrade_stat_text(_depth_i: int, upg_id: String, current_lvl: int) -> String:
+	match upg_id:
+		"stab":
+			return "Global Instability Gain: -%.0f%%" % (current_lvl * 4.0)
+		"t_gain":
+			return "Global Thoughts Multiplier: x%.2f" % (1.0 + (current_lvl * 0.05))
+		"c_gain":
+			return "Stacking Thoughts Multiplier: x%.2f" % (1.0 + (current_lvl * 0.03))
+		"idle_soft":
+			return "Idle Instability Reduction: -%.0f%%" % (current_lvl * 5.0)
+		"wake_yield":
+			return "Crystal Yield: +%.0f%%" % (current_lvl * 6.0)
+		"dive_start":
+			return "Starting Depth Progress: +%.0f%%" % (current_lvl * 5.0)
+		"manual_click":
+			return "Focus Power: +%.1fs Thoughts" % (current_lvl * 0.5)
+		"shallow_eff":
+			return "Depth 1 Boost: +%.0f%%" % (current_lvl * 15.0)
+		"unlock":
+			return "Requirement: %s" % ("MAX LEVEL" if current_lvl >= 1 else "Incomplete")
+		_:
+			return ""
+
 func get_depth_upgrade_cost(depth: int, upgrade_id: String, level: int) -> float:
 	var base_costs := {
 		"progress_speed": 50.0,
@@ -115,7 +138,7 @@ func get_depth_upgrade_cost(depth: int, upgrade_id: String, level: int) -> float
 	
 	var base: float = base_costs.get(upgrade_id, 100.0)
 	var depth_mult: float = pow(1.3, depth - 1)
-	var level_mult: float = pow(1.5, level)
+	var level_mult: float = pow(2.1, level)
 	
 	return base * depth_mult * level_mult
 
@@ -226,8 +249,8 @@ func get_depth_upgrade_defs(depth_i: int) -> Array:
 				"desc": "Manual Focus button grants +0.5s of Thoughts per level.",
 				"max": 10,
 				"kind": "click_power",
-				"base_cost": 50.0,
-				"cost_growth": 1.5,
+				"base_cost": 1000000.0, # Was 7,500
+				"cost_growth": 3.5,     # Was 2.5
 				"cost_currency": "thoughts",
 				"effect_per_level": 0.5  # +0.5 seconds per click per level
 			}
@@ -742,9 +765,17 @@ func get_global_instability_mult() -> float:
 
 func get_global_thoughts_mult() -> float:
 	var total_lvl := 0
+	# t_gain = +5% per level, c_gain = +3% per level
 	for d in range(1, MAX_DEPTH + 1):
-		total_lvl += clampi(get_level(d, "t_gain"), 0, 10)
-	return 1.0 + 0.05 * float(total_lvl)
+		total_lvl += clampi(get_level(d, "t_gain"), 0, 50)
+	var mult: float = 1.0 + 0.05 * float(total_lvl)
+	
+	var stacking_lvl := 0
+	for d in range(1, MAX_DEPTH + 1):
+		stacking_lvl += clampi(get_level(d, "c_gain"), 0, 50)
+	mult += 0.03 * float(stacking_lvl)
+	
+	return mult
 
 func get_global_dreamcloud_mult() -> float:
 	return 1.0 # dreamcloud is combat-only now
@@ -752,7 +783,7 @@ func get_global_dreamcloud_mult() -> float:
 func get_global_idle_instability_mult() -> float:
 	var total_lvl := 0
 	for d in range(1, MAX_DEPTH + 1):
-		total_lvl += clampi(get_level(d, "idle_soft"), 0, 10)
+		total_lvl += clampi(get_level(d, "idle_soft"), 0, 50)
 	return maxf(0.05, 1.0 - 0.05 * float(total_lvl))
 
 # NEW: crystal gain multiplier on Wake/Fail (hook in GameManager award_depth_currency)
@@ -807,31 +838,37 @@ func cost_for(depth_i: int, def: Dictionary) -> float:
 	var id := String(def.get("id", ""))
 	var lvl := get_level(d, id)
 	
-	# Exponential base: 80 + (depth-1)*20
-	var base := 80.0 + float(d - 1) * 20.0
+	# Exponential base: 500000 + (depth-1)*250000
+	var base := 500000.0 + float(d - 1) * 250000.0
+	
+	var abyss_mult := 1.0
+	var game_mgr = get_node_or_null("/root/Main/GameManager")
 	
 	# Apply abyss multiplier from GameManager
-	var abyss_mult: float = 1.0
-	var game_mgr := get_node_or_null("/root/GameManager")
 	if game_mgr != null and game_mgr.has_method("get_abyss_multiplier"):
 		abyss_mult = game_mgr.get_abyss_multiplier()
 
+	# Reality Architect Keystone (-25% cost)
+	if game_mgr != null and game_mgr.has_method("is_skill_unlocked"):
+		if game_mgr.is_skill_unlocked("reality_arch"):
+			abyss_mult *= 0.75
+
 	match kind:
 		"stab":
-			return base * pow(1.45, float(lvl)) * abyss_mult
+			return base * pow(2.1, float(lvl)) * abyss_mult
 		"unlock":
 			# NEW: Exponential unlock cost
-			return 100.0 * pow(3.5, float(d - 1)) * abyss_mult
+			return 500.0 * pow(4.5, float(d - 1)) * abyss_mult
 		"thoughts_mult":
-			return (base * 1.2) * pow(1.55, float(lvl)) * abyss_mult
+			return (base * 1.2) * pow(2.2, float(lvl)) * abyss_mult
 		"dreamcloud_mult":
-			return (base * 1.15) * pow(1.52, float(lvl)) * abyss_mult
+			return (base * 1.15) * pow(2.1, float(lvl)) * abyss_mult
 		"idle_instab_down":
-			return (base * 1.35) * pow(1.60, float(lvl)) * abyss_mult
+			return (base * 1.35) * pow(2.3, float(lvl)) * abyss_mult
 		"wake_yield":
-			return (base * 1.75) * pow(1.70, float(lvl)) * abyss_mult
+			return (base * 1.75) * pow(2.4, float(lvl)) * abyss_mult
 		"dive_start":
-			return (base * 1.45) * pow(1.55, float(lvl)) * abyss_mult
+			return (base * 1.45) * pow(2.2, float(lvl)) * abyss_mult
 		"auto_buy":
 			return (base * 2.0) * pow(1.3, float(lvl)) * abyss_mult
 		"click_power":

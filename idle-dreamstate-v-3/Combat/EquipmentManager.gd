@@ -1,5 +1,7 @@
-extends Node
 class_name EquipmentManager
+extends Node
+
+signal item_obtained(item: Dictionary)
 
 const MAX_LEVELS := {
 	"common": 10,
@@ -11,6 +13,25 @@ const MAX_LEVELS := {
 	"transcendent": 80,
 	"god_tier": 100
 }
+
+func get_next_rarity(rarity: String) -> String:
+	var rarities = ["common", "uncommon", "rare", "epic", "legendary", "mythic", "transcendent", "god_tier"]
+	var idx = rarities.find(rarity)
+	if idx != -1 and idx < rarities.size() - 1:
+		return rarities[idx + 1]
+	return rarity
+
+func get_merge_cost(rarity: String) -> int:
+	match rarity:
+		"common": return 5000 # 5k
+		"uncommon": return 50000 # 50k
+		"rare": return 250000 # 250k
+		"epic": return 1500000 # 1.5M
+		"legendary": return 10000000 # 10M
+		"mythic": return 75000000 # 75M
+		"transcendent": return 500000000 # 500M
+		"god_tier": return 2500000000 # 2.5B
+	return 500
 
 const LEVEL_BONUSES := {
 	"common": 0.05,
@@ -31,7 +52,7 @@ const BASE_SCORES := {
 	"legendary": 100000,
 	"mythic": 350000,
 	"transcendent": 600000,
-	"god_tier": 1000000
+	"god_tier": 5000000
 }
 
 var equipped: Dictionary = {
@@ -46,17 +67,50 @@ var equipped: Dictionary = {
 var inventory: Array[Dictionary] = []
 var active_set_bonuses: Dictionary = {}
 
-func generate_item(rarity: String, slot: String, wave: int) -> Dictionary:
+func get_count_in_slot(slot: String) -> int:
+	var count = 0
+	for it in inventory:
+		if it.get("slot", "") == slot:
+			count += 1
+	return count
+
+func add_to_inventory(item: Dictionary, allow_overfill: bool = false) -> bool:
+	var slot = item.get("slot", "weapon")
+	if not allow_overfill and get_count_in_slot(slot) >= 32:
+		return false
+	inventory.append(item)
+	item_obtained.emit(item)
+	return true
+
+func generate_item(rarity: String, slot: String, wave: int, forced_name: String = "") -> Dictionary:
 	var base_score: int = BASE_SCORES[rarity]
 	var stats_roll = _roll_stats(rarity, slot)
 	
-	# Determine if this is an S-Tier drop (Wave 20+, Rare+ only)
+	# Determine if this is an S-Tier drop 
 	var is_s_tier = false
-	if wave >= 20 and ["epic", "legendary", "mythic", "transcendent", "god_tier"].has(rarity):
-		if randf() < 0.1: # 10% chance for S-tier if in correct pool
+	if ["epic", "legendary", "mythic", "transcendent", "god_tier"].has(rarity):
+		# Wave Gating
+		# Strictly gated by wave milestones
+		if rarity == "god_tier" and wave < 141:
+			rarity = "transcendent"
+			base_score = BASE_SCORES[rarity]
+		elif rarity == "transcendent" and wave < 121:
+			rarity = "mythic"
+			base_score = BASE_SCORES[rarity]
+		elif rarity == "mythic" and wave < 101:
+			rarity = "legendary"
+			base_score = BASE_SCORES[rarity]
+		elif rarity == "legendary" and wave < 81:
+			rarity = "epic"
+			base_score = BASE_SCORES[rarity]
+		elif rarity == "epic" and wave < 61:
+			rarity = "rare"
+			base_score = BASE_SCORES[rarity]
+			
+		if wave >= 20 and randf() < 0.1: # 10% chance for S-tier if in correct pool
 			is_s_tier = true
 			
-	var item_name = _generate_item_name_v2(rarity, slot, wave, is_s_tier)
+	var item_name = forced_name if forced_name != "" else _generate_item_name_v2(rarity, slot, wave, is_s_tier)
 	
 	var item: Dictionary = {
 		"id": _generate_item_id(),
@@ -79,6 +133,11 @@ func generate_item(rarity: String, slot: String, wave: int) -> Dictionary:
 		# S-Tier gets a primary stat boost
 		for k in item.stats.keys():
 			item.stats[k] *= 1.5
+
+		# Increase base stats for god tier
+		if rarity == "god_tier":
+			for k in item.stats.keys():
+				item.stats[k] *= 2.0  # Extra multiplier for god tier stats
 
 	return item
 
@@ -120,6 +179,26 @@ func get_player_combat_stats() -> Dictionary:
 			stats.defense += item_stats.defense * lv_mult
 	
 	_apply_set_bonuses(stats)
+	
+	# v13: Apply Skill Tree Passives
+	var gm = get_node_or_null("/root/Main/GameManager")
+	if gm:
+		var atk_mult = 1.0 + (gm.get_skill_level("strike_mastery") * 0.10)
+		var hp_mult = 1.0 + (gm.get_skill_level("vitality_core") * 0.10)
+		var def_mult = 1.0 + (gm.get_skill_level("iron_will") * 0.10)
+		
+		# Keystone: Resonance (+5% all per level)
+		var res_lvl = gm.get_skill_level("resonance")
+		if res_lvl > 0:
+			var res_mult = 1.0 + (res_lvl * 0.05)
+			atk_mult *= res_mult
+			hp_mult *= res_mult
+			def_mult *= res_mult
+			
+		stats.attack *= atk_mult
+		stats.max_hp *= hp_mult
+		stats.defense *= def_mult
+		
 	return stats
 
 func get_total_secondary_bonuses() -> Dictionary:
@@ -191,7 +270,8 @@ func fuse_items(target_item: Dictionary, fodder_items: Array[Dictionary]) -> Dic
 		if gm.dreamcloud < cost: return {}
 		gm.dreamcloud -= cost
 		
-		var new_item = generate_item(next_tier, slot, 1)
+		# v8 Fix: Pass target_item.name to preserve item type during fusion
+		var new_item = generate_item(next_tier, slot, 1, target_item.name)
 		new_item.level = 1
 		gm.save_game()
 		return new_item
@@ -211,10 +291,11 @@ func fuse_items(target_item: Dictionary, fodder_items: Array[Dictionary]) -> Dic
 		gm.dreamcloud -= cost
 		
 		target_item.plus_tier = 1
-		target_item.level = 1 
+		target_item.level = 1 # ENSURE RESET
 		var new_item = target_item.duplicate(true)
 		new_item.plus_tier = 1
-		new_item.level = 1
+		new_item.level = 1 # ENSURE RESET
+		new_item["id"] = _generate_item_id() # Important: Unique ID for fusion
 		for k in new_item.stats.keys(): new_item.stats[k] *= 1.2
 		
 		gm.save_game()
@@ -236,6 +317,7 @@ func fuse_items(target_item: Dictionary, fodder_items: Array[Dictionary]) -> Dic
 		var new_item = target_item.duplicate(true)
 		new_item.plus_tier = 2
 		new_item.level = 1
+		new_item["id"] = _generate_item_id() # Important: Unique ID for fusion
 		for k in new_item.stats.keys(): new_item.stats[k] *= 1.3
 		
 		gm.save_game()
@@ -254,7 +336,7 @@ func fuse_items(target_item: Dictionary, fodder_items: Array[Dictionary]) -> Dic
 		if gm.dreamcloud < cost: return {}
 		gm.dreamcloud -= cost
 		
-		var new_item = generate_item(next_tier, slot, 1)
+		var new_item = generate_item(next_tier, slot, 1, target_item.name)
 		new_item.level = 1
 		gm.save_game()
 		return new_item
@@ -271,6 +353,30 @@ func _get_fusion_cost(rarity: String) -> int:
 		"mythic": return 500000
 		"transcendent": return 1000000
 	return 9999999
+
+func sort_inventory() -> void:
+	var slot_order = ["weapon", "armor", "helmet", "amulet", "ring1", "talisman"]
+	var rarity_order = ["common", "uncommon", "rare", "epic", "legendary", "mythic", "transcendent", "god_tier"]
+	
+	inventory.sort_custom(func(a, b):
+		# 1. Slot
+		var s_a = slot_order.find(a.get("slot", "weapon"))
+		var s_b = slot_order.find(b.get("slot", "weapon"))
+		if s_a != s_b: return s_a < s_b
+		
+		# 2. Rarity (Higher first)
+		var r_a = rarity_order.find(a.get("rarity", "common"))
+		var r_b = rarity_order.find(b.get("rarity", "common"))
+		if r_a != r_b: return r_a > r_b
+		
+		# 3. Level (Higher first)
+		var l_a = a.get("level", 1)
+		var l_b = b.get("level", 1)
+		if l_a != l_b: return l_a > l_b
+		
+		# 4. Name
+		return a.get("name", "") < b.get("name", "")
+	)
 
 func salvage_item(item: Dictionary) -> int:
 	return int(calculate_item_score(item) * 0.3)
@@ -294,48 +400,58 @@ func get_save_data() -> Dictionary:
 		"equipped": equipped.duplicate(true), 
 		"inventory": inventory.duplicate(true)
 	}
-	print("[DEBUG] EquipmentManager (ID: %d): Serializing save data (ROBUST)..." % get_instance_id())
-	print("        - Equipped slots count: ", equipped.values().filter(func(v): return v != null).size())
-	print("        - Inventory count: ", inventory.size())
+	# print("[DEBUG] EquipmentManager (ID: %d): Serializing save data (ROBUST)..." % get_instance_id())
+	# print("        - Equipped slots count: ", equipped.values().filter(func(v): return v != null).size())
+	# print("        - Inventory count: ", inventory.size())
 	return data
 
 func load_save_data(data: Dictionary) -> void:
-	print("[DEBUG] EquipmentManager: Loading save data...")
+	# print("[DEBUG] EquipmentManager: Loading save data...")
 	if data.has("equipped") and data["equipped"] is Dictionary:
-		var d_equipped: Dictionary = data["equipped"]
-		# Only clear/restore if the dict isn't totally empty, or if specifically intended
-		if d_equipped.size() > 0 or inventory.size() == 0:
-			for slot in equipped.keys():
-				var key_to_check = slot
-				# Migration: search for ring2 and convert to helmet
-				if slot == "helmet" and not d_equipped.has("helmet") and d_equipped.has("ring2"):
-					key_to_check = "ring2"
-					print("MIGRATION: Found legacy 'ring2', converting to 'helmet'")
-					
-				if d_equipped.has(key_to_check):
-					var item = d_equipped[key_to_check]
-					if item is Dictionary:
-						if key_to_check == "ring2": item["slot"] = "helmet"
-						equipped[slot] = item
-
-	print("LOAD: Restored equipped slots: ", equipped.keys().filter(func(k): return equipped[k] != null))
+		var eq = data["equipped"]
+		for slot in equipped.keys():
+			if eq.has(slot) and eq[slot] != null:
+				equipped[slot] = eq[slot]
+				if slot == "ring2": # Migration
+					equipped["helmet"] = eq["ring2"]
+					equipped["ring2"] = null
+					# print("MIGRATION: Found legacy 'ring2', converting to 'helmet'")
+	
+	# print("LOAD: Restored equipped slots: ", equipped.keys().filter(func(k): return equipped[k] != null))
 	
 	if data.has("inventory") and data["inventory"] is Array:
 		inventory.clear()
 		for item in data["inventory"]:
 			if item is Dictionary:
 				var it: Dictionary = item
-				if it.get("slot") == "ring2": 
+				if it.has("slot") and it["slot"] == "ring2":
 					it["slot"] = "helmet"
-					print("MIGRATION: Converted inventory ring2 to helmet")
+					# print("MIGRATION: Converted inventory ring2 to helmet")
 				inventory.append(it)
+		enforce_inventory_cap()
 	
-	print("LOAD: Restored inventory items: ", inventory.size())
+func enforce_inventory_cap() -> void:
+	var slots = ["weapon", "armor", "amulet", "ring1", "helmet", "talisman"]
+	var new_inv: Array[Dictionary] = []
+	for s in slots:
+		var items_in_slot = []
+		for it in inventory:
+			if it.get("slot") == s:
+				items_in_slot.append(it)
+		# Keep only the first 32
+		for i in range(min(32, items_in_slot.size())):
+			new_inv.append(items_in_slot[i])
+	inventory = new_inv
+	
+	# print("LOAD: Restored inventory items: ", inventory.size())
 	
 	# Standardize existing items (Remove old randomization)
 	for item in equipped.values():
-		if item: _standardize_item(item)
+		if item: 
+			if not item.has("id"): item["id"] = _generate_item_id()
+			_standardize_item(item)
 	for item in inventory:
+		if not item.has("id"): item["id"] = _generate_item_id()
 		_standardize_item(item)
 
 func _standardize_item(item: Dictionary) -> void:
@@ -349,6 +465,8 @@ func _standardize_item(item: Dictionary) -> void:
 		"epic": budget = 15.0
 		"legendary": budget = 40.0
 		"mythic": budget = 100.0
+		"transcendent": budget = 300.0
+		"god_tier": budget = 1500.0
 	
 	var stats = item.get("stats", {})
 	match slot:
@@ -380,11 +498,12 @@ func _generate_item_id() -> String:
 func _generate_item_name_v2(_rarity: String, slot: String, _wave: int, is_s_tier: bool) -> String:
 	if is_s_tier:
 		match slot:
-			"weapon": return "Voidreaver"
+			"weapon": return "Voidreever"
 			"armor": return "Abyssal Garb"
 			"ring1": return "Eternal Loop"
 			"amulet": return "Soul Eye"
 			"talisman": return "Heart of Dreams"
+			"helmet": return "Void Gaze"
 	
 	var pool := {
 		"weapon": ["Long Sword", "Heavy Mace", "Sharp Dagger"],
@@ -408,6 +527,8 @@ func _roll_stats(rarity: String, slot: String) -> Dictionary:
 		"epic": budget = 15.0
 		"legendary": budget = 40.0
 		"mythic": budget = 100.0
+		"transcendent": budget = 300.0
+		"god_tier": budget = 1500.0
 	# Slot specializations
 	match slot:
 		"weapon":
@@ -430,7 +551,8 @@ func _roll_stats(rarity: String, slot: String) -> Dictionary:
 			
 	# Roll Secondary Stats (Thoughts, Crystals, Memories)
 	var secondary := {}
-	var sec_chance = 0.3 + (0.1 * ["common","uncommon","rare","epic","legendary","mythic"].find(rarity))
+	var rarity_list = ["common","uncommon","rare","epic","legendary","mythic","transcendent","god_tier"]
+	var sec_chance = 0.3 + (0.1 * rarity_list.find(rarity))
 	if randf() < sec_chance:
 		# More variety: Add specific "Farm" stats vs "Combat" stats
 		var farmer_keys = ["thoughts_mult", "crystals_mult", "memories_mult"]
@@ -446,6 +568,7 @@ func _roll_stats(rarity: String, slot: String) -> Dictionary:
 
 func _roll_sub_stats(_rarity: String) -> Dictionary:
 	return {}
+
 
 func _roll_set_id() -> String:
 	return ""

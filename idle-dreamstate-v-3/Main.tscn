@@ -1204,6 +1204,13 @@ text = "PAUSED"
 custom_minimum_size = Vector2(220, 48)
 layout_mode = 2
 
+[node name="VersionLabel" type="Label" parent="MainUI/PauseMenu/CenterContainer/Panel/MarginContainer/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 0.8)
+theme_override_font_sizes/font_size = 14
+text = "v0.0.27 (First Playtest)"
+horizontal_alignment = 1
+
 [node name="OfflinePopup" parent="MainUI" instance=ExtResource("14_kjvhd")]
 max_offline_seconds = 28800.0
 
@@ -1246,23 +1253,7 @@ layout_mode = 2
 [node name="Rows" type="VBoxContainer" parent="MainUI/AbyssPanel/Margin/VBox/Scroll"]
 layout_mode = 2
 
-[node name="EchoedDescentRow" type="HBoxContainer" parent="MainUI/AbyssPanel/Margin/VBox/Scroll/Rows"]
-layout_mode = 2
-script = ExtResource("27_gb15f")
-
-[node name="Button" type="Button" parent="MainUI/AbyssPanel/Margin/VBox/Scroll/Rows/EchoedDescentRow"]
-layout_mode = 2
-
-[node name="Meta" type="VBoxContainer" parent="MainUI/AbyssPanel/Margin/VBox/Scroll/Rows/EchoedDescentRow"]
-layout_mode = 2
-
-[node name="Mini" type="Label" parent="MainUI/AbyssPanel/Margin/VBox/Scroll/Rows/EchoedDescentRow/Meta"]
-layout_mode = 2
-
-[node name="Bar" type="ProgressBar" parent="MainUI/AbyssPanel/Margin/VBox/Scroll/Rows/EchoedDescentRow/Meta"]
-layout_mode = 2
-
-[node name="AbyssalFocusRow" type="HBoxContainer" parent="MainUI/AbyssPanel/Margin/VBox/Scroll/Rows"]
+[node name="AbyssalFocusRow" type="PanelContainer" parent="MainUI/AbyssPanel/Margin/VBox/Scroll/Rows"]
 layout_mode = 2
 script = ExtResource("27_gb15f")
 mode = "abyssal_focus"
@@ -1279,7 +1270,7 @@ layout_mode = 2
 [node name="Bar" type="ProgressBar" parent="MainUI/AbyssPanel/Margin/VBox/Scroll/Rows/AbyssalFocusRow/Meta"]
 layout_mode = 2
 
-[node name="DarkInsightRow" type="HBoxContainer" parent="MainUI/AbyssPanel/Margin/VBox/Scroll/Rows"]
+[node name="DarkInsightRow" type="PanelContainer" parent="MainUI/AbyssPanel/Margin/VBox/Scroll/Rows"]
 layout_mode = 2
 script = ExtResource("27_gb15f")
 mode = "dark_insight"
@@ -1296,7 +1287,7 @@ layout_mode = 2
 [node name="Bar" type="ProgressBar" parent="MainUI/AbyssPanel/Margin/VBox/Scroll/Rows/DarkInsightRow/Meta"]
 layout_mode = 2
 
-[node name="AbyssVeilRow" type="HBoxContainer" parent="MainUI/AbyssPanel/Margin/VBox/Scroll/Rows"]
+[node name="AbyssVeilRow" type="PanelContainer" parent="MainUI/AbyssPanel/Margin/VBox/Scroll/Rows"]
 layout_mode = 2
 script = ExtResource("27_gb15f")
 mode = "abyss_veil"

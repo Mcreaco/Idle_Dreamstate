@@ -3,40 +3,74 @@
 [ext_resource type="Script" path="res://Combat/DreamsPanel.gd" id="1_dpanel"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_panel"]
-bg_color = Color(0.04, 0.05, 0.09, 0.97)
-border_color = Color(0.3, 0.5, 0.85, 0.9)
+bg_color = Color(0.04, 0.05, 0.09, 0.9)
+border_color = Color(0.3, 0.5, 0.85, 0.6)
 border_width_left = 2
 border_width_top = 2
 border_width_right = 2
 border_width_bottom = 2
-corner_radius_top_left = 0
-corner_radius_top_right = 0
-corner_radius_bottom_left = 0
-corner_radius_bottom_right = 0
-content_margin_left = 0.0
-content_margin_right = 0.0
-content_margin_top = 0.0
-content_margin_bottom = 0.0
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+content_margin_left = 12.0
+content_margin_right = 12.0
+content_margin_top = 12.0
+content_margin_bottom = 12.0
+shadow_color = Color(0, 0.6, 1, 0.15)
+shadow_size = 8
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_inv"]
-bg_color = Color(0.05, 0.05, 0.07, 0.95)
+bg_color = Color(0.05, 0.05, 0.07, 0.85)
 border_width_left = 2
 border_width_top = 2
 border_width_right = 2
 border_width_bottom = 2
-border_color = Color(0.15, 0.3, 0.5, 0.8)
-corner_radius_top_left = 4
-corner_radius_top_right = 4
-corner_radius_bottom_right = 4
-corner_radius_bottom_left = 4
-expand_margin_left = 2.0
-expand_margin_top = 2.0
-expand_margin_right = 2.0
-expand_margin_bottom = 2.0
+border_color = Color(0.15, 0.3, 0.5, 0.5)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+expand_margin_left = 4.0
+expand_margin_top = 4.0
+expand_margin_right = 4.0
+expand_margin_bottom = 4.0
+shadow_color = Color(0, 0, 0, 0.4)
+shadow_size = 12
 
-[node name="DreamsPanel" type="PanelContainer"]
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_tooltip"]
+bg_color = Color(0.06, 0.08, 0.12, 0.98)
+draw_center = true
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0, 0.8, 1.0, 0.6)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+content_margin_left = 15.0
+content_margin_right = 15.0
+content_margin_top = 15.0
+content_margin_bottom = 15.0
+shadow_color = Color(0, 0, 0, 0.5)
+shadow_size = 10
+shadow_offset = Vector2(4, 4)
+
+[node name="DreamsPanel" type="Control"]
 visible = false
 z_index = 50
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 1
+script = ExtResource("1_dpanel")
+
+[node name="BackgroundPanel" type="PanelContainer" parent="."]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -44,56 +78,55 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
-script = ExtResource("1_dpanel")
 
-[node name="MainLayout" type="HBoxContainer" parent="."]
+[node name="MainLayout" type="HBoxContainer" parent="BackgroundPanel"]
 layout_mode = 2
 theme_override_constants/separation = 0
 
-[node name="Sidebar" type="PanelContainer" parent="MainLayout"]
+[node name="Sidebar" type="PanelContainer" parent="BackgroundPanel/MainLayout"]
 layout_mode = 2
 custom_minimum_size = Vector2(130, 0)
 
-[node name="SidebarVBox" type="VBoxContainer" parent="MainLayout/Sidebar"]
+[node name="SidebarVBox" type="VBoxContainer" parent="BackgroundPanel/MainLayout/Sidebar"]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="TitleLbl" type="Label" parent="MainLayout/Sidebar/SidebarVBox"]
+[node name="TitleLbl" type="Label" parent="BackgroundPanel/MainLayout/Sidebar/SidebarVBox"]
 layout_mode = 2
 horizontal_alignment = 1
 text = "✦ DREAMS ✦"
 theme_override_font_sizes/font_size = 16
 
-[node name="BtnCombat" type="Button" parent="MainLayout/Sidebar/SidebarVBox"]
+[node name="BtnCombat" type="Button" parent="BackgroundPanel/MainLayout/Sidebar/SidebarVBox"]
 layout_mode = 2
 text = "⚔  Combat"
 custom_minimum_size = Vector2(0, 40)
 
-[node name="BtnEquipment" type="Button" parent="MainLayout/Sidebar/SidebarVBox"]
+[node name="BtnEquipment" type="Button" parent="BackgroundPanel/MainLayout/Sidebar/SidebarVBox"]
 layout_mode = 2
 text = "🛡  Equipment"
 custom_minimum_size = Vector2(0, 40)
 
-[node name="BtnForge" type="Button" parent="MainLayout/Sidebar/SidebarVBox"]
+[node name="BtnForge" type="Button" parent="BackgroundPanel/MainLayout/Sidebar/SidebarVBox"]
 layout_mode = 2
 text = "🔥  Forge"
 custom_minimum_size = Vector2(0, 40)
 
-[node name="Spacer" type="Control" parent="MainLayout/Sidebar/SidebarVBox"]
+[node name="Spacer" type="Control" parent="BackgroundPanel/MainLayout/Sidebar/SidebarVBox"]
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="BtnClose" type="Button" parent="MainLayout/Sidebar/SidebarVBox"]
+[node name="BtnClose" type="Button" parent="BackgroundPanel/MainLayout/Sidebar/SidebarVBox"]
 layout_mode = 2
 text = "✕  Close"
 custom_minimum_size = Vector2(0, 36)
 
-[node name="ContentArea" type="Control" parent="MainLayout"]
+[node name="ContentArea" type="Control" parent="BackgroundPanel/MainLayout"]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
-[node name="CombatBackground" type="TextureRect" parent="MainLayout/ContentArea"]
+[node name="CombatBackground" type="TextureRect" parent="BackgroundPanel/MainLayout/ContentArea"]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -105,7 +138,7 @@ stretch_mode = 6
 modulate = Color(1, 1, 1, 0.4)
 mouse_filter = 2
 
-[node name="CombatView" type="VBoxContainer" parent="MainLayout/ContentArea"]
+[node name="CombatView" type="VBoxContainer" parent="BackgroundPanel/MainLayout/ContentArea"]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -113,64 +146,64 @@ anchor_bottom = 1.0
 theme_override_constants/separation = 10
 visible = true
 
-[node name="HeaderRow" type="HBoxContainer" parent="MainLayout/ContentArea/CombatView"]
+[node name="HeaderRow" type="HBoxContainer" parent="BackgroundPanel/MainLayout/ContentArea/CombatView"]
 layout_mode = 2
 theme_override_constants/separation = 20
 
-[node name="WaveLabel" type="Label" parent="MainLayout/ContentArea/CombatView/HeaderRow"]
+[node name="WaveLabel" type="Label" parent="BackgroundPanel/MainLayout/ContentArea/CombatView/HeaderRow"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Wave 1  (Best: 1)"
 theme_override_font_sizes/font_size = 18
 
-[node name="MasteryLabel" type="Label" parent="MainLayout/ContentArea/CombatView/HeaderRow"]
+[node name="MasteryLabel" type="Label" parent="BackgroundPanel/MainLayout/ContentArea/CombatView/HeaderRow"]
 layout_mode = 2
 text = "Mastery: 0/10"
 theme_override_font_sizes/font_size = 11
 modulate = Color(0.6, 0.8, 1, 0.8)
 
-[node name="PrevWaveBtn" type="Button" parent="MainLayout/ContentArea/CombatView/HeaderRow"]
+[node name="PrevWaveBtn" type="Button" parent="BackgroundPanel/MainLayout/ContentArea/CombatView/HeaderRow"]
 layout_mode = 2
 text = " < "
 custom_minimum_size = Vector2(40, 44)
 
-[node name="NextWaveBtn" type="Button" parent="MainLayout/ContentArea/CombatView/HeaderRow"]
+[node name="NextWaveBtn" type="Button" parent="BackgroundPanel/MainLayout/ContentArea/CombatView/HeaderRow"]
 layout_mode = 2
 text = " > "
 custom_minimum_size = Vector2(40, 44)
 
-[node name="StartWaveBtn" type="Button" parent="MainLayout/ContentArea/CombatView/HeaderRow"]
+[node name="StartWaveBtn" type="Button" parent="BackgroundPanel/MainLayout/ContentArea/CombatView/HeaderRow"]
 layout_mode = 2
 text = "Start Wave 1"
 custom_minimum_size = Vector2(160, 44)
 
-[node name="EnemyNameLbl" type="Label" parent="MainLayout/ContentArea/CombatView"]
+[node name="EnemyNameLbl" type="Label" parent="BackgroundPanel/MainLayout/ContentArea/CombatView"]
 layout_mode = 2
 horizontal_alignment = 1
 text = "—"
 theme_override_font_sizes/font_size = 20
 
-[node name="MiddleArea" type="HBoxContainer" parent="MainLayout/ContentArea/CombatView"]
+[node name="MiddleArea" type="HBoxContainer" parent="BackgroundPanel/MainLayout/ContentArea/CombatView"]
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/separation = 15
 
-[node name="CombatLogPanel" type="PanelContainer" parent="MainLayout/ContentArea/CombatView/MiddleArea"]
+[node name="CombatLogPanel" type="PanelContainer" parent="BackgroundPanel/MainLayout/ContentArea/CombatView/MiddleArea"]
 custom_minimum_size = Vector2(200, 0)
 layout_mode = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_inv")
 
-[node name="VBox" type="VBoxContainer" parent="MainLayout/ContentArea/CombatView/MiddleArea/CombatLogPanel"]
+[node name="VBox" type="VBoxContainer" parent="BackgroundPanel/MainLayout/ContentArea/CombatView/MiddleArea/CombatLogPanel"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="MainLayout/ContentArea/CombatView/MiddleArea/CombatLogPanel/VBox"]
+[node name="Label" type="Label" parent="BackgroundPanel/MainLayout/ContentArea/CombatView/MiddleArea/CombatLogPanel/VBox"]
 layout_mode = 2
 text = "Dream Log"
 horizontal_alignment = 1
 theme_override_font_sizes/font_size = 12
 theme_override_colors/font_color = Color(0.6, 0.8, 1, 1)
 
-[node name="CombatLog" type="RichTextLabel" parent="MainLayout/ContentArea/CombatView/MiddleArea/CombatLogPanel/VBox"]
+[node name="CombatLog" type="RichTextLabel" parent="BackgroundPanel/MainLayout/ContentArea/CombatView/MiddleArea/CombatLogPanel/VBox"]
 layout_mode = 2
 size_flags_vertical = 3
 bbcode_enabled = true
@@ -178,182 +211,182 @@ scroll_following = true
 theme_override_font_sizes/normal_font_size = 12
 text = "[i]Entering the dreamscape...[/i]"
 
-[node name="EnemySprite" type="TextureRect" parent="MainLayout/ContentArea/CombatView/MiddleArea"]
+[node name="EnemySprite" type="TextureRect" parent="BackgroundPanel/MainLayout/ContentArea/CombatView/MiddleArea"]
 layout_mode = 2
 size_flags_horizontal = 3
 expand_mode = 1
 stretch_mode = 5
 
-[node name="EnemyStatsRow" type="HBoxContainer" parent="MainLayout/ContentArea/CombatView"]
+[node name="EnemyStatsRow" type="HBoxContainer" parent="BackgroundPanel/MainLayout/ContentArea/CombatView"]
 layout_mode = 2
 theme_override_constants/separation = 20
 
-[node name="PlayerStatsPanel" type="PanelContainer" parent="MainLayout/ContentArea/CombatView/EnemyStatsRow"]
+[node name="PlayerStatsPanel" type="PanelContainer" parent="BackgroundPanel/MainLayout/ContentArea/CombatView/EnemyStatsRow"]
 custom_minimum_size = Vector2(140, 90)
 layout_mode = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
 
-[node name="VBox" type="VBoxContainer" parent="MainLayout/ContentArea/CombatView/EnemyStatsRow/PlayerStatsPanel"]
+[node name="VBox" type="VBoxContainer" parent="BackgroundPanel/MainLayout/ContentArea/CombatView/EnemyStatsRow/PlayerStatsPanel"]
 layout_mode = 2
 theme_override_constants/separation = 2
 
-[node name="Title" type="Label" parent="MainLayout/ContentArea/CombatView/EnemyStatsRow/PlayerStatsPanel/VBox"]
+[node name="Title" type="Label" parent="BackgroundPanel/MainLayout/ContentArea/CombatView/EnemyStatsRow/PlayerStatsPanel/VBox"]
 layout_mode = 2
 text = "✦ YOU ✦"
 horizontal_alignment = 1
 theme_override_font_sizes/font_size = 12
 
-[node name="PHP" type="Label" parent="MainLayout/ContentArea/CombatView/EnemyStatsRow/PlayerStatsPanel/VBox"]
+[node name="PHP" type="Label" parent="BackgroundPanel/MainLayout/ContentArea/CombatView/EnemyStatsRow/PlayerStatsPanel/VBox"]
 layout_mode = 2
 text = "HP: 0/0"
 theme_override_font_sizes/font_size = 11
 
-[node name="PATK" type="Label" parent="MainLayout/ContentArea/CombatView/EnemyStatsRow/PlayerStatsPanel/VBox"]
+[node name="PATK" type="Label" parent="BackgroundPanel/MainLayout/ContentArea/CombatView/EnemyStatsRow/PlayerStatsPanel/VBox"]
 layout_mode = 2
 text = "ATK: 0"
 theme_override_font_sizes/font_size = 11
 
-[node name="PDEF" type="Label" parent="MainLayout/ContentArea/CombatView/EnemyStatsRow/PlayerStatsPanel/VBox"]
+[node name="PDEF" type="Label" parent="BackgroundPanel/MainLayout/ContentArea/CombatView/EnemyStatsRow/PlayerStatsPanel/VBox"]
 layout_mode = 2
 text = "DEF: 0"
 theme_override_font_sizes/font_size = 11
 
-[node name="PlayerStatusBox" type="HBoxContainer" parent="MainLayout/ContentArea/CombatView/EnemyStatsRow/PlayerStatsPanel/VBox"]
+[node name="PlayerStatusBox" type="HBoxContainer" parent="BackgroundPanel/MainLayout/ContentArea/CombatView/EnemyStatsRow/PlayerStatsPanel/VBox"]
 layout_mode = 2
 theme_override_constants/separation = 4
 
-[node name="Spacer" type="Control" parent="MainLayout/ContentArea/CombatView/EnemyStatsRow"]
+[node name="Spacer" type="Control" parent="BackgroundPanel/MainLayout/ContentArea/CombatView/EnemyStatsRow"]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="EnemyStatsPanel" type="PanelContainer" parent="MainLayout/ContentArea/CombatView/EnemyStatsRow"]
+[node name="EnemyStatsPanel" type="PanelContainer" parent="BackgroundPanel/MainLayout/ContentArea/CombatView/EnemyStatsRow"]
 custom_minimum_size = Vector2(140, 90)
 layout_mode = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
 
-[node name="VBox" type="VBoxContainer" parent="MainLayout/ContentArea/CombatView/EnemyStatsRow/EnemyStatsPanel"]
+[node name="VBox" type="VBoxContainer" parent="BackgroundPanel/MainLayout/ContentArea/CombatView/EnemyStatsRow/EnemyStatsPanel"]
 layout_mode = 2
 theme_override_constants/separation = 2
 
-[node name="Title" type="Label" parent="MainLayout/ContentArea/CombatView/EnemyStatsRow/EnemyStatsPanel/VBox"]
+[node name="Title" type="Label" parent="BackgroundPanel/MainLayout/ContentArea/CombatView/EnemyStatsRow/EnemyStatsPanel/VBox"]
 layout_mode = 2
 text = "✦ ENEMY ✦"
 horizontal_alignment = 1
 theme_override_font_sizes/font_size = 12
 
-[node name="EHP" type="Label" parent="MainLayout/ContentArea/CombatView/EnemyStatsRow/EnemyStatsPanel/VBox"]
+[node name="EHP" type="Label" parent="BackgroundPanel/MainLayout/ContentArea/CombatView/EnemyStatsRow/EnemyStatsPanel/VBox"]
 layout_mode = 2
 text = "HP: 0/0"
 theme_override_font_sizes/font_size = 11
 
-[node name="EATK" type="Label" parent="MainLayout/ContentArea/CombatView/EnemyStatsRow/EnemyStatsPanel/VBox"]
+[node name="EATK" type="Label" parent="BackgroundPanel/MainLayout/ContentArea/CombatView/EnemyStatsRow/EnemyStatsPanel/VBox"]
 layout_mode = 2
 text = "ATK: 0"
 theme_override_font_sizes/font_size = 11
 
-[node name="EDEF" type="Label" parent="MainLayout/ContentArea/CombatView/EnemyStatsRow/EnemyStatsPanel/VBox"]
+[node name="EDEF" type="Label" parent="BackgroundPanel/MainLayout/ContentArea/CombatView/EnemyStatsRow/EnemyStatsPanel/VBox"]
 layout_mode = 2
 text = "DEF: 0"
 theme_override_font_sizes/font_size = 11
 
-[node name="EnemyStatusBox" type="HBoxContainer" parent="MainLayout/ContentArea/CombatView/EnemyStatsRow/EnemyStatsPanel/VBox"]
+[node name="EnemyStatusBox" type="HBoxContainer" parent="BackgroundPanel/MainLayout/ContentArea/CombatView/EnemyStatsRow/EnemyStatsPanel/VBox"]
 layout_mode = 2
 theme_override_constants/separation = 4
 alignment = 2
 
-[node name="HpBarsBox" type="HBoxContainer" parent="MainLayout/ContentArea/CombatView"]
+[node name="HpBarsBox" type="HBoxContainer" parent="BackgroundPanel/MainLayout/ContentArea/CombatView"]
 layout_mode = 2
 theme_override_constants/separation = 16
 
-[node name="YouLbl" type="Label" parent="MainLayout/ContentArea/CombatView/HpBarsBox"]
+[node name="YouLbl" type="Label" parent="BackgroundPanel/MainLayout/ContentArea/CombatView/HpBarsBox"]
 layout_mode = 2
 text = "You"
 theme_override_font_sizes/font_size = 13
 
-[node name="PlayerHpBar" type="ProgressBar" parent="MainLayout/ContentArea/CombatView/HpBarsBox"]
+[node name="PlayerHpBar" type="ProgressBar" parent="BackgroundPanel/MainLayout/ContentArea/CombatView/HpBarsBox"]
 layout_mode = 2
 size_flags_horizontal = 3
 custom_minimum_size = Vector2(0, 20)
 show_percentage = true
 
-[node name="EnemyLbl" type="Label" parent="MainLayout/ContentArea/CombatView/HpBarsBox"]
+[node name="EnemyLbl" type="Label" parent="BackgroundPanel/MainLayout/ContentArea/CombatView/HpBarsBox"]
 layout_mode = 2
 text = "Enemy"
 theme_override_font_sizes/font_size = 13
 
-[node name="EnemyHpBar" type="ProgressBar" parent="MainLayout/ContentArea/CombatView/HpBarsBox"]
+[node name="EnemyHpBar" type="ProgressBar" parent="BackgroundPanel/MainLayout/ContentArea/CombatView/HpBarsBox"]
 layout_mode = 2
 size_flags_horizontal = 3
 custom_minimum_size = Vector2(0, 20)
 show_percentage = true
 
-[node name="IntentLbl" type="Label" parent="MainLayout/ContentArea/CombatView"]
+[node name="IntentLbl" type="Label" parent="BackgroundPanel/MainLayout/ContentArea/CombatView"]
 layout_mode = 2
 horizontal_alignment = 1
 text = "—"
 theme_override_font_sizes/font_size = 15
 
-[node name="ActionPanel" type="PanelContainer" parent="MainLayout/ContentArea/CombatView"]
+[node name="ActionPanel" type="PanelContainer" parent="BackgroundPanel/MainLayout/ContentArea/CombatView"]
 layout_mode = 2
 custom_minimum_size = Vector2(0, 280)
-theme_override_styles/panel = SubResource("StyleBoxFlat_inv")
+theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
 
-[node name="ActionHBox" type="HBoxContainer" parent="MainLayout/ContentArea/CombatView/ActionPanel"]
+[node name="ActionHBox" type="HBoxContainer" parent="BackgroundPanel/MainLayout/ContentArea/CombatView/ActionPanel"]
 layout_mode = 2
 theme_override_constants/separation = 15
 
-[node name="AttackGrid" type="GridContainer" parent="MainLayout/ContentArea/CombatView/ActionPanel/ActionHBox"]
+[node name="AttackGrid" type="GridContainer" parent="BackgroundPanel/MainLayout/ContentArea/CombatView/ActionPanel/ActionHBox"]
 layout_mode = 2
 size_flags_horizontal = 3
 columns = 3
 theme_override_constants/h_separation = 15
 theme_override_constants/v_separation = 15
 
-[node name="RewardPanel" type="PanelContainer" parent="MainLayout/ContentArea/CombatView/ActionPanel/ActionHBox"]
+[node name="RewardPanel" type="PanelContainer" parent="BackgroundPanel/MainLayout/ContentArea/CombatView/ActionPanel/ActionHBox"]
 custom_minimum_size = Vector2(240, 0)
 layout_mode = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
 
-[node name="VBox" type="VBoxContainer" parent="MainLayout/ContentArea/CombatView/ActionPanel/ActionHBox/RewardPanel"]
+[node name="VBox" type="VBoxContainer" parent="BackgroundPanel/MainLayout/ContentArea/CombatView/ActionPanel/ActionHBox/RewardPanel"]
 layout_mode = 2
 theme_override_constants/separation = 4
 
-[node name="RewardHeader" type="Label" parent="MainLayout/ContentArea/CombatView/ActionPanel/ActionHBox/RewardPanel/VBox"]
+[node name="RewardHeader" type="Label" parent="BackgroundPanel/MainLayout/ContentArea/CombatView/ActionPanel/ActionHBox/RewardPanel/VBox"]
 layout_mode = 2
 text = "✦ REWARDS ✦"
 horizontal_alignment = 1
 theme_override_colors/font_color = Color(1, 0.84, 0.4, 1)
 theme_override_font_sizes/font_size = 14
 
-[node name="RewardScroll" type="ScrollContainer" parent="MainLayout/ContentArea/CombatView/ActionPanel/ActionHBox/RewardPanel/VBox"]
+[node name="RewardScroll" type="ScrollContainer" parent="BackgroundPanel/MainLayout/ContentArea/CombatView/ActionPanel/ActionHBox/RewardPanel/VBox"]
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="RewardList" type="VBoxContainer" parent="MainLayout/ContentArea/CombatView/ActionPanel/ActionHBox/RewardPanel/VBox/RewardScroll"]
+[node name="RewardList" type="VBoxContainer" parent="BackgroundPanel/MainLayout/ContentArea/CombatView/ActionPanel/ActionHBox/RewardPanel/VBox/RewardScroll"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 6
 
-[node name="SmoothAutoBox" type="VBoxContainer" parent="MainLayout/ContentArea/CombatView"]
+[node name="SmoothAutoBox" type="VBoxContainer" parent="BackgroundPanel/MainLayout/ContentArea/CombatView"]
 visible = false
 layout_mode = 2
 theme_override_constants/separation = 10
 alignment = 1
 
-[node name="SmoothLabel" type="Label" parent="MainLayout/ContentArea/CombatView/SmoothAutoBox"]
+[node name="SmoothLabel" type="Label" parent="BackgroundPanel/MainLayout/ContentArea/CombatView/SmoothAutoBox"]
 layout_mode = 2
 text = "✦ OVERPOWERED AUTO-BATTLING... ✦"
 horizontal_alignment = 1
 theme_override_colors/font_color = Color(0.4, 1, 0.4, 1)
 theme_override_font_sizes/font_size = 16
 
-[node name="SmoothProgressBar" type="ProgressBar" parent="MainLayout/ContentArea/CombatView/SmoothAutoBox"]
+[node name="SmoothProgressBar" type="ProgressBar" parent="BackgroundPanel/MainLayout/ContentArea/CombatView/SmoothAutoBox"]
 custom_minimum_size = Vector2(0, 30)
 layout_mode = 2
 size_flags_horizontal = 3
 show_percentage = false
 
-[node name="EquipmentView" type="VBoxContainer" parent="MainLayout/ContentArea"]
+[node name="EquipmentView" type="VBoxContainer" parent="BackgroundPanel/MainLayout/ContentArea"]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -361,87 +394,93 @@ anchor_bottom = 1.0
 theme_override_constants/separation = 10
 visible = false
 
-[node name="EquipHeader" type="Label" parent="MainLayout/ContentArea/EquipmentView"]
+[node name="EquipHeader" type="Label" parent="BackgroundPanel/MainLayout/ContentArea/EquipmentView"]
 layout_mode = 2
 text = "Equipped Gear"
 horizontal_alignment = 1
 theme_override_font_sizes/font_size = 18
 
-[node name="EquipLayout" type="HBoxContainer" parent="MainLayout/ContentArea/EquipmentView"]
+[node name="EquipLayout" type="HBoxContainer" parent="BackgroundPanel/MainLayout/ContentArea/EquipmentView"]
 layout_mode = 2
 theme_override_constants/separation = 20
 
-[node name="TotalStatsPanel" type="PanelContainer" parent="MainLayout/ContentArea/EquipmentView/EquipLayout"]
+[node name="TotalStatsPanel" type="PanelContainer" parent="BackgroundPanel/MainLayout/ContentArea/EquipmentView/EquipLayout"]
 custom_minimum_size = Vector2(180, 0)
 layout_mode = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_inv")
 
-[node name="VBox" type="VBoxContainer" parent="MainLayout/ContentArea/EquipmentView/EquipLayout/TotalStatsPanel"]
+[node name="VBox" type="VBoxContainer" parent="BackgroundPanel/MainLayout/ContentArea/EquipmentView/EquipLayout/TotalStatsPanel"]
 layout_mode = 2
 theme_override_constants/separation = 5
 
-[node name="Title" type="Label" parent="MainLayout/ContentArea/EquipmentView/EquipLayout/TotalStatsPanel/VBox"]
+[node name="Title" type="Label" parent="BackgroundPanel/MainLayout/ContentArea/EquipmentView/EquipLayout/TotalStatsPanel/VBox"]
 layout_mode = 2
 text = " Total Bonuses "
 horizontal_alignment = 1
 theme_override_font_sizes/font_size = 14
 
-[node name="StatsLbl" type="RichTextLabel" parent="MainLayout/ContentArea/EquipmentView/EquipLayout/TotalStatsPanel/VBox"]
+[node name="StatsLbl" type="RichTextLabel" parent="BackgroundPanel/MainLayout/ContentArea/EquipmentView/EquipLayout/TotalStatsPanel/VBox"]
 layout_mode = 2
 size_flags_vertical = 3
 bbcode_enabled = true
 text = "[center]—[/center]"
 theme_override_font_sizes/normal_font_size = 13
 
-[node name="EquipSlotsBox" type="CenterContainer" parent="MainLayout/ContentArea/EquipmentView/EquipLayout"]
+[node name="EquipSlotsBox" type="CenterContainer" parent="BackgroundPanel/MainLayout/ContentArea/EquipmentView/EquipLayout"]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="InventoryPanel" type="PanelContainer" parent="MainLayout/ContentArea/EquipmentView"]
+[node name="InventoryPanel" type="PanelContainer" parent="BackgroundPanel/MainLayout/ContentArea/EquipmentView"]
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_styles/panel = SubResource("StyleBoxFlat_inv")
 
-[node name="CustomTooltip" type="PanelContainer" parent="MainLayout/ContentArea/EquipmentView"]
+[node name="CustomTooltip" type="PanelContainer" parent="."]
 visible = false
-z_index = 20
+z_index = 100
 layout_mode = 0
 mouse_filter = 2
-custom_minimum_size = Vector2(280, 160)
-theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
+custom_minimum_size = Vector2(300, 100)
+theme_override_styles/panel = SubResource("StyleBoxFlat_tooltip")
 
-[node name="VBox" type="VBoxContainer" parent="MainLayout/ContentArea/EquipmentView/CustomTooltip"]
+[node name="VBox" type="VBoxContainer" parent="CustomTooltip"]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="Title" type="Label" parent="MainLayout/ContentArea/EquipmentView/CustomTooltip/VBox"]
+[node name="Title" type="Label" parent="CustomTooltip/VBox"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 18
+theme_override_font_sizes/font_size = 20
+horizontal_alignment = 1
 
-[node name="Stats" type="RichTextLabel" parent="MainLayout/ContentArea/EquipmentView/CustomTooltip/VBox"]
+[node name="HSeparator" type="HSeparator" parent="CustomTooltip/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="Stats" type="RichTextLabel" parent="CustomTooltip/VBox"]
 layout_mode = 2
 size_flags_vertical = 3
 bbcode_enabled = true
+fit_content = true
 theme_override_font_sizes/normal_font_size = 15
 
-[node name="VBox" type="VBoxContainer" parent="MainLayout/ContentArea/EquipmentView/InventoryPanel"]
+[node name="VBox" type="VBoxContainer" parent="BackgroundPanel/MainLayout/ContentArea/EquipmentView/InventoryPanel"]
 layout_mode = 2
 
-[node name="InvHeader" type="Label" parent="MainLayout/ContentArea/EquipmentView/InventoryPanel/VBox"]
+[node name="InvHeader" type="Label" parent="BackgroundPanel/MainLayout/ContentArea/EquipmentView/InventoryPanel/VBox"]
 layout_mode = 2
 text = " Inventory"
 theme_override_font_sizes/font_size = 16
 
-[node name="InventoryScroll" type="ScrollContainer" parent="MainLayout/ContentArea/EquipmentView/InventoryPanel/VBox"]
+[node name="InventoryScroll" type="ScrollContainer" parent="BackgroundPanel/MainLayout/ContentArea/EquipmentView/InventoryPanel/VBox"]
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="InventoryBox" type="VBoxContainer" parent="MainLayout/ContentArea/EquipmentView/InventoryPanel/VBox/InventoryScroll"]
+[node name="InventoryBox" type="VBoxContainer" parent="BackgroundPanel/MainLayout/ContentArea/EquipmentView/InventoryPanel/VBox/InventoryScroll"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 4
 
-[node name="ForgeView" type="VBoxContainer" parent="MainLayout/ContentArea"]
+[node name="ForgeView" type="VBoxContainer" parent="BackgroundPanel/MainLayout/ContentArea"]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -449,17 +488,17 @@ anchor_bottom = 1.0
 theme_override_constants/separation = 10
 visible = false
 
-[node name="ForgeInfoLbl" type="Label" parent="MainLayout/ContentArea/ForgeView"]
+[node name="ForgeInfoLbl" type="Label" parent="BackgroundPanel/MainLayout/ContentArea/ForgeView"]
 layout_mode = 2
 text = "Forge"
 theme_override_font_sizes/font_size = 18
 autowrap_mode = 3
 
-[node name="ForgeInventoryScroll" type="ScrollContainer" parent="MainLayout/ContentArea/ForgeView"]
+[node name="ForgeInventoryScroll" type="ScrollContainer" parent="BackgroundPanel/MainLayout/ContentArea/ForgeView"]
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="ForgeInventoryBox" type="VBoxContainer" parent="MainLayout/ContentArea/ForgeView/ForgeInventoryScroll"]
+[node name="ForgeInventoryBox" type="VBoxContainer" parent="BackgroundPanel/MainLayout/ContentArea/ForgeView/ForgeInventoryScroll"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 4

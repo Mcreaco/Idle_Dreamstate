@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" uid="uid://ctllxbeimmbi6" path="res://PermPerkRow.gd" id="1_pg821"]
 
-[node name="PermPerkRow" type="HBoxContainer"]
+[node name="PermPerkRow" type="PanelContainer"]
 custom_minimum_size = Vector2(0, 52)
 offset_right = 40.0
 offset_bottom = 40.0

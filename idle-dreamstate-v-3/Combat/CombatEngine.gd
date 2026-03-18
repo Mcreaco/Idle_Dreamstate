@@ -9,6 +9,7 @@ signal combat_ended(result: Dictionary)
 signal hp_changed(p_hp: float, e_hp: float)
 signal damage_dealt(amount: float, target_type: String)
 signal message_logged(text: String)
+signal vfx_triggered(type: String)
 
 var active: bool = false
 var current_turn: int = 0
@@ -28,12 +29,13 @@ var enemy_intent: Dictionary = {}
 var player_statuses: Array[Dictionary] = [] # {id, duration, strength}
 var enemy_statuses: Array[Dictionary] = []
 
-# Cache references to avoid repeated get_node calls
 var _game_manager: Node = null
 var _equipment_manager: Node = null
+var _sound_system: Node = null
 
 func _ready() -> void:
 	_game_manager = get_node_or_null("/root/Main/GameManager")
+	_sound_system = get_node_or_null("/root/Main/SoundSystem")
 	if _game_manager:
 		_equipment_manager = _game_manager.get("equipment_manager")
 		if _equipment_manager == null:
@@ -62,29 +64,43 @@ func _get_player_attack_options() -> Array:
 		else:
 			# Default is Sword/Slash
 			options.append({"id": "slash", "name": "Slash", "type": "weapon", "desc": "100% dmg + Bleed"})
+		
+		# S-Tier / Awakened Action (Legendary or higher)
+		var rarity = weapon_item.get("rarity", "common")
+		if rarity in ["legendary", "mythic", "transcendent", "god_tier"]:
+			options.insert(0, {"id": "awakened_strike", "name": "AWAKENED", "type": "weapon", "desc": "300% DMG Dimensional Strike"})
 	else:
 		# Bare fists/Generic
 		options.append({"id": "slash", "name": "Strike", "type": "weapon", "desc": "80% dmg"})
 
-	# 2. Defensive options (Universal)
-	options.append({"id": "block", "name": "Block", "type": "armor", "desc": "-60% damage"})
-	options.append({"id": "dodge", "name": "Dodge", "type": "armor", "desc": "Avoid 100% (if predicted)"})
-	options.append({"id": "brace", "name": "Brace", "type": "armor", "desc": "-30% dmg + reflect"})
+	# Filtered advanced actions (Universal/Tactical)
+	var advanced_actions = [
+		{"id": "block", "name": "Block", "type": "armor", "desc": "-60% damage"},
+		{"id": "dodge", "name": "Dodge", "type": "armor", "desc": "Avoid 100% (if predicted)"},
+		{"id": "brace", "name": "Brace", "type": "armor", "desc": "-30% dmg + reflect"},
+		{"id": "meditate", "name": "Meditate", "type": "amulet", "desc": "+10% HP, gain Focus"},
+		{"id": "overclock", "name": "Overclock", "type": "talisman", "desc": "+50% ATK, take 10% HP"}
+	]
 	
-	# Check equipment abilities safely
-	if _equipment_manager.has_method("has_ring_ability") and _equipment_manager.has_ring_ability():
-		options.append({"id": "interrupt", "name": "Interrupt", "type": "ring", "desc": "Cancel intent + 40% dmg"})
-		options.append({"id": "feint", "name": "Feint", "type": "ring", "desc": "Force miss + counter"})
+	for action in advanced_actions:
+		if _game_manager.has_method("is_skill_unlocked") and _game_manager.is_skill_unlocked(action.id):
+			options.append(action)
 	
-	if _equipment_manager.has_method("has_amulet_charge") and _equipment_manager.has_amulet_charge():
-		if _equipment_manager.has_method("get_amulet_special_name"):
-			options.append({"id": "special", "name": _equipment_manager.get_amulet_special_name(), "type": "amulet", "desc": "Special"})
-		else:
-			options.append({"id": "special", "name": "Amulet", "type": "amulet", "desc": "Special"})
+	# Special ring abilities (also locked by skill tree if we want, but keeping them tied to equipment for now)
+	if _game_manager.has_method("is_skill_unlocked") and _game_manager.is_skill_unlocked("interrupt"):
+		if _equipment_manager.has_method("has_ring_ability") and _equipment_manager.has_ring_ability():
+			options.append({"id": "interrupt", "name": "Interrupt", "type": "ring", "desc": "Cancel intent + 40% dmg"})
 	
-	# 3. Special Tactical Actions (Universal)
-	options.append({"id": "meditate", "name": "Meditate", "type": "amulet", "desc": "+10% HP, gain Focus"})
-	options.append({"id": "overclock", "name": "Overclock", "type": "talisman", "desc": "+50% ATK, take 10% HP"})
+	if _game_manager.has_method("is_skill_unlocked") and _game_manager.is_skill_unlocked("feint"):
+		if _equipment_manager.has_method("has_ring_ability") and _equipment_manager.has_ring_ability():
+			options.append({"id": "feint", "name": "Feint", "type": "ring", "desc": "Force miss + counter"})
+	
+	if _game_manager.has_method("is_skill_unlocked") and _game_manager.is_skill_unlocked("special"):
+		if _equipment_manager.has_method("has_amulet_charge") and _equipment_manager.has_amulet_charge():
+			if _equipment_manager.has_method("get_amulet_special_name"):
+				options.append({"id": "special", "name": _equipment_manager.get_amulet_special_name(), "type": "amulet", "desc": "Special"})
+			else:
+				options.append({"id": "special", "name": "Amulet", "type": "amulet", "desc": "Special"})
 
 	return options
 
@@ -255,10 +271,32 @@ func execute_player_attack(attack_id: String) -> void:
 	var damage: float = 0.0
 	var player_def_mult: float = 1.0
 	
+	# v13: Skill Tree Passives (Conditional Multipliers)
+	var atk_mult = 1.0
+	
+	# v17: Depth Run Upgrades (Combat Reflexes, Shadow Binding)
+	var drc = _game_manager.get_node_or_null("DepthRunController")
+	if drc:
+		atk_mult *= drc.call("get_combat_damage_mult")
+	
+	if _game_manager.is_skill_unlocked("god_slayer") and enemy_stats.get("is_boss", false):
+		atk_mult *= 4.0 # +300% vs Bosses
+	
+	var crit_chance = _game_manager.get_skill_level("lethal_precision") * 0.05
+	var is_crit = randf() < crit_chance
+	if is_crit: atk_mult *= 2.0
+	
+	var heal_on_hit_pct = _game_manager.get_skill_level("bloodlust") * 0.02
+	
+	# Initial action logic
 	match attack_id:
 		"slash":
 			damage = player_stats.attack * 1.0
 			enemy_statuses.append({"id": "bleed", "duration": 3, "strength": player_stats.attack * 0.1})
+		"awakened_strike":
+			damage = player_stats.attack * 3.0
+			enemy_statuses.append({"id": "bleed", "duration": 5, "strength": player_stats.attack * 0.2})
+			damage *= (1.0 + _game_manager.get_skill_level("s_tier_res") * 0.50)
 		"pierce":
 			damage = player_stats.attack * 0.8
 			enemy_stats.defense *= 0.7
@@ -268,9 +306,10 @@ func execute_player_attack(attack_id: String) -> void:
 				enemy_statuses.append({"id": "stun", "duration": 1})
 		"block":
 			player_def_mult = 0.4
+			var retal_chance = _game_manager.get_skill_level("counter_strike") * 0.20
+			if randf() < retal_chance: _execute_retaliation()
 		"dodge":
-			if _predicted_correctly("dodge"):
-				player_def_mult = 0.0
+			if _predicted_correctly("dodge"): player_def_mult = 0.0
 		"brace":
 			player_def_mult = 0.7
 		"interrupt":
@@ -288,48 +327,86 @@ func execute_player_attack(attack_id: String) -> void:
 		"overclock":
 			player_hp -= player_stats.max_hp * 0.1
 			player_statuses.append({"id": "overclocked", "duration": 2})
-			if _game_manager:
-				_game_manager.instability += 1.0 # Costly move
+			if _game_manager: _game_manager.instability += 1.0
 	
-	if damage > 0:
-		# Check for Focus/Overclocked buffs
-		if _has_status(player_statuses, "focus"):
-			damage *= 1.5
-			_decrement_status(player_statuses, "focus")
-		if _has_status(player_statuses, "overclocked"):
-			damage *= 1.5
+	# Final Damage Processing
+	if damage > 0 and attack_id != "bludgeon":
+		_execute_damage_calc(damage, atk_mult, is_crit, heal_on_hit_pct, attack_id)
+
+	# Turn Sequence Logic (v8 Adjustment: Delayed turns and Bludgeon order)
+	if attack_id == "bludgeon":
+		# Enemy attacks FIRST for 120% dmg tradeoff
+		if not _has_status(enemy_statuses, "stun") and not enemy_intent.selected in ["interrupted", "missed"]:
+			_process_enemy_attack(player_def_mult)
 		
-		var enemy_def = enemy_stats.get("defense", 0.0)
-		var actual_dmg: float = max(0.0, damage - enemy_def)
-		enemy_hp -= actual_dmg
-		damage_dealt.emit(actual_dmg, "enemy")
-		message_logged.emit("[color=#00ffaa]Player used %s: %d damage.[/color]" % [attack_id.capitalize(), actual_dmg])
+		# 0.8s pause before player counter
+		await get_tree().create_timer(0.8).timeout
+		_execute_damage_calc(damage, atk_mult, is_crit, heal_on_hit_pct, attack_id)
+	else:
+		# Player attacked, now wait 0.8s then enemy response
+		await get_tree().create_timer(0.8).timeout
+		if not _has_status(enemy_statuses, "stun") and not enemy_intent.selected in ["interrupted", "missed"]:
+			_process_enemy_attack(player_def_mult)
 	
-	# Process enemy response unless stunned or interrupted
-	if not _has_status(enemy_statuses, "stun") and not enemy_intent.selected in ["interrupted", "missed"]:
-		var enemy_dmg_raw: float = _calculate_enemy_damage()
-		var player_def = player_stats.get("defense", 0.0)
-		var actual_enemy_dmg: float = max(0.0, (enemy_dmg_raw * player_def_mult) - player_def)
-		player_hp -= actual_enemy_dmg
-		if actual_enemy_dmg > 0:
-			damage_dealt.emit(actual_enemy_dmg, "player")
-			message_logged.emit("[color=#ff5555]Enemy used %s: %d damage.[/color]" % [enemy_intent.selected.capitalize(), actual_enemy_dmg])
-		else:
-			message_logged.emit("[color=#cccccc]Enemy %s missed or was blocked.[/color]" % enemy_intent.selected.capitalize())
-	
-	# Decrement one-turn statuses (like stun) after they take effect
 	_decrement_status(enemy_statuses, "stun")
-	
 	hp_changed.emit(player_hp, enemy_hp)
 	
-	if enemy_hp <= 0:
-		_end_combat(true)
-	elif player_hp <= 0:
-		_end_combat(false)
+	if enemy_hp <= 0: _end_combat(true)
+	elif player_hp <= 0: _end_combat(false)
 	else:
 		current_turn += 1
-		await get_tree().create_timer(1.2).timeout
+		await get_tree().create_timer(0.7).timeout
 		_start_turn()
+
+func _execute_damage_calc(damage: float, atk_mult: float, is_crit: bool, heal_on_hit_pct: float, attack_id: String) -> void:
+	if damage <= 0: return
+	
+	damage *= atk_mult
+	if _has_status(player_statuses, "focus"):
+		damage *= 1.5
+		_decrement_status(player_statuses, "focus")
+	if _has_status(player_statuses, "overclocked"):
+		damage *= 1.5
+		
+	var effective_def = enemy_stats.defense
+	if _game_manager.is_skill_unlocked("ripper"): effective_def *= 0.5
+	
+	var hits = 2 if (attack_id in ["slash", "pierce", "bludgeon", "strike"] and _game_manager.is_skill_unlocked("omega_strike")) else 1
+	for i in range(hits):
+		var final_dmg = maxf(1.0, damage - effective_def)
+		enemy_hp -= final_dmg
+		damage_dealt.emit(final_dmg, "enemy")
+		if _sound_system: _sound_system.play_combat_hit()
+		if is_crit: message_logged.emit("[color=#ffcc00][b]CRITICAL![/b][/color]")
+		if heal_on_hit_pct > 0:
+			var h = player_stats.max_hp * heal_on_hit_pct
+			player_hp = minf(player_stats.max_hp, player_hp + h)
+
+func _execute_retaliation() -> void:
+	var damage = player_stats.attack * 0.5
+	enemy_hp -= damage
+	damage_dealt.emit(damage, "enemy")
+	message_logged.emit("[color=#ffccff]Counter-Strike![/color]")
+	vfx_triggered.emit("slash")
+	hp_changed.emit(player_hp, enemy_hp)
+
+func _process_enemy_attack(p_def_mult: float) -> void:
+	var raw_dmg = _calculate_enemy_damage()
+	var player_def = player_stats.get("defense", 0.0)
+	var final_dmg = maxf(0.0, (raw_dmg * p_def_mult) - player_def)
+	
+	# v17: Depth Run Upgrades (Defensive Stance)
+	var drc = _game_manager.get_node_or_null("DepthRunController")
+	if drc:
+		final_dmg *= drc.call("get_combat_defense_mult")
+	
+	player_hp -= final_dmg
+	if final_dmg > 0:
+		damage_dealt.emit(final_dmg, "player")
+		if _sound_system: _sound_system.play_combat_hit()
+		message_logged.emit("[color=#ff5555]Enemy %s: %.0f dmg[/color]" % [enemy_intent.selected.capitalize(), final_dmg])
+	else:
+		message_logged.emit("[color=#cccccc]Enemy missed![/color]")
 
 func _calculate_enemy_damage() -> float:
 	var base_dmg: float = enemy_stats.attack
@@ -370,6 +447,7 @@ func _end_combat(won: bool) -> void:
 	}
 	
 	if won:
+		if _sound_system: _sound_system.play_combat_kill()
 		result.drop = _generate_equipment_drop()
 	
 	combat_ended.emit(result)

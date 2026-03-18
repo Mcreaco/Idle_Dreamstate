@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" uid="uid://dj0kkius6tut0" path="res://MetaPerkRow.gd" id="1_il6wh"]
 
-[node name="MetaPerkRow" type="HBoxContainer"]
+[node name="MetaPerkRow" type="PanelContainer"]
 custom_minimum_size = Vector2(0, 52)
 offset_right = 40.0
 offset_bottom = 40.0

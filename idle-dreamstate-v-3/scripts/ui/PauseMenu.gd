@@ -85,6 +85,37 @@ func _add_save_load_buttons(vbox: VBoxContainer):
 	vbox.add_child(load_btn)
 	vbox.move_child(load_btn, insert_index + 1)
 
+	# Hard Reset
+	var wipe_btn = Button.new()
+	wipe_btn.name = "WipeButton"
+	wipe_btn.text = "Hard Reset (Wipe)"
+	wipe_btn.custom_minimum_size = Vector2(200, 50)
+	_force_button_style(wipe_btn)
+	wipe_btn.add_theme_color_override("font_color", Color(1.0, 0.4, 0.4))
+	wipe_btn.pressed.connect(_on_wipe_save_pressed)
+	vbox.add_child(wipe_btn)
+	vbox.move_child(wipe_btn, insert_index + 2)
+	
+	# Backup Load
+	var restore_btn = Button.new()
+	restore_btn.name = "RestoreButton"
+	restore_btn.text = "Restore Backup"
+	restore_btn.custom_minimum_size = Vector2(200, 50)
+	_force_button_style(restore_btn)
+	restore_btn.pressed.connect(_on_load_backup_pressed)
+	vbox.add_child(restore_btn)
+	vbox.move_child(restore_btn, insert_index + 3)
+
+	# Credits Button
+	var credits_btn = Button.new()
+	credits_btn.name = "CreditsButton"
+	credits_btn.text = "Credits"
+	credits_btn.custom_minimum_size = Vector2(200, 50)
+	_force_button_style(credits_btn)
+	credits_btn.pressed.connect(_on_credits_pressed)
+	vbox.add_child(credits_btn)
+	vbox.move_child(credits_btn, insert_index + 4)
+
 func _create_save_panel():
 	save_panel = PanelContainer.new()
 	save_panel.name = "SaveLoadPanel"
@@ -334,3 +365,84 @@ func _on_resume():
 
 func _on_quit():
 	get_tree().quit()
+
+func _on_wipe_save_pressed():
+	# Backup current save if it exists
+	if SaveSystem.has_save():
+		var data = SaveSystem.load_game()
+		var file = FileAccess.open("user://savegame_backup.json", FileAccess.WRITE)
+		if file:
+			file.store_string(JSON.stringify(data))
+			file.close()
+	
+	# Delete save
+	SaveSystem.delete_save()
+	
+	# Restart game
+	get_tree().paused = false
+	get_tree().change_scene_to_file("res://Main.tscn")
+
+func _on_load_backup_pressed():
+	var bak_path = "user://savegame_backup.json"
+	if FileAccess.file_exists(bak_path):
+		var file = FileAccess.open(bak_path, FileAccess.READ)
+		var text = file.get_as_text()
+		file.close()
+		
+		# Overwrite active save
+		var main_save = FileAccess.open(SaveSystem.SAVE_PATH, FileAccess.WRITE)
+		if main_save:
+			main_save.store_string(text)
+			main_save.close()
+			
+		get_tree().paused = false
+		get_tree().change_scene_to_file("res://Main.tscn")
+
+func _on_credits_pressed():
+	_show_credits_panel()
+
+func _show_credits_panel():
+	var credits_panel = PanelContainer.new()
+	credits_panel.name = "CreditsPanel"
+	credits_panel.z_index = 250
+	_apply_panel_style(credits_panel)
+	credits_panel.custom_minimum_size = Vector2(450, 350)
+	
+	var margin = MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 30)
+	margin.add_theme_constant_override("margin_right", 30)
+	margin.add_theme_constant_override("margin_top", 30)
+	margin.add_theme_constant_override("margin_bottom", 30)
+	credits_panel.add_child(margin)
+	
+	var vbox = VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 24)
+	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	margin.add_child(vbox)
+	
+	var title = Label.new()
+	title.text = "CREDITS"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 32)
+	title.add_theme_color_override("font_color", Color(0.4, 0.8, 1.0))
+	vbox.add_child(title)
+	
+	var credits_text = RichTextLabel.new()
+	credits_text.bbcode_enabled = true
+	credits_text.fit_content = true
+	credits_text.text = "[center][b][color=#ffcc66]Music[/color][/b]\nFato Shadow\n\n[b][color=#66ccff]Development[/color][/b]\nAdvanced Coding Assistant[/center]"
+	vbox.add_child(credits_text)
+	
+	var spacer = Control.new()
+	spacer.custom_minimum_size.y = 10
+	vbox.add_child(spacer)
+	
+	var close_btn = Button.new()
+	close_btn.text = "Close"
+	close_btn.custom_minimum_size = Vector2(200, 50)
+	_force_button_style(close_btn)
+	close_btn.pressed.connect(func(): credits_panel.queue_free())
+	vbox.add_child(close_btn)
+	
+	get_tree().current_scene.add_child(credits_panel)
+	credits_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)

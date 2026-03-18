@@ -316,6 +316,10 @@ func _on_dreams_pressed() -> void:
 			dp.call("open_panel")
 		else:
 			dp.visible = not dp.visible
+	
+	var tm = get_node_or_null("/root/TutorialManage")
+	if tm and tm.has_method("on_ui_element_clicked"):
+		tm.on_ui_element_clicked("DreamsButton")
 
 
 func _setup_currency_displays() -> void:
@@ -443,9 +447,6 @@ func _process(_delta: float) -> void:
 		inst_bar.value = inst_percent  # This MUST be between 0 and 100
 		inst_bar.visible = not (_is_blinded and _inner_eye_lvl < 2)
 		
-		# Debug print
-		if Engine.get_process_frames() % 60 == 0:
-			print("Instability: ", inst_value, "/", inst_cap, " = ", inst_percent, "%")
 		
 		# Color coding based on percentage
 		if inst_percent < 50:
@@ -459,11 +460,8 @@ func _process(_delta: float) -> void:
 		return
 		
 	var thoughts: float = gm.thoughts
-	var thoughts_ps: float = gm._thoughts_ps
+	var thoughts_ps: float = gm.get_idle_thoughts_per_second() if gm.has_method("get_idle_thoughts_per_second") else gm.get("_thoughts_ps")
 	
-	# ADD DEBUG PRINT
-	if Engine.get_process_frames() % 60 == 0:
-		print("TOPBAR READ FROM GM: thoughts=", thoughts)
 	
 	if _run == null:
 		_run = get_node_or_null("/root/DepthRunController")
@@ -524,7 +522,13 @@ func _update_currency_display(container: HBoxContainer, value: float, rate: floa
 		container.tooltip_text = "%s\n+??? per second" % display_name
 	else:
 		label.text = _fmt_num_compact(value)
-		container.tooltip_text = "%s\n+%s per second" % [display_name, _fmt_num(rate)]
+		
+		# Debug: If rate is evaluated as 0 by _fmt_num, print its raw value
+		var formatted = _fmt_num(rate)
+		if formatted == "0":
+			formatted = str(rate)
+			
+		container.tooltip_text = "%s\n+%s per second" % [display_name, formatted]
 
 func _update_piggy_display() -> void:
 	if piggy_value == null or piggy_button == null:
@@ -640,6 +644,10 @@ func _fmt_num(v: float) -> String:
 		return "NaN"
 	v = float(v)
 	if v < 1000.0:
+		if v > 0.0 and v < 1.0:
+			return "%.2f" % v
+		elif v >= 1.0 and v < 100.0:
+			return "%.1f" % v
 		return "%.0f" % v
 	elif v < 1e6:
 		return "%.2fK" % (v / 1e3)

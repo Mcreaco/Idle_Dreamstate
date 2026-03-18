@@ -28,6 +28,7 @@ var active_tutorial: String = ""
 var current_step_idx: int = 0
 var completed_tutorials: Array = []
 var tutorial_history: Array = []
+var tutorial_queue: Array[String] = []
 
 # UI References
 var popup_panel: Panel = null
@@ -55,32 +56,32 @@ const TUTORIALS: Dictionary = {
 		"steps": [
 			{
 				"header": "Consciousness Awakens",
-				"body": "You exist in the void. Thoughts crystallize from nothing - your only currency. Gather Thoughts to purchase upgrades and descend deeper into the Dreamstate.",
+				"body": "Welcome to Idle Dreamstate. This is an idle game! Over time, you generate 'Thoughts' (your main currency) automatically. You can spend Thoughts to buy upgrades.",
 				"highlight": "ThoughtsLabel",
 				"wait_for_click": false
 			},
 			{
 				"header": "Depth Progress Multiplier", 
-				"body": "Watch the Depth 1 bar fill from 0% to 100%. This is your progress multiplier - it boosts thought generation from 1x up to 5x! Higher progress = faster thoughts.",
+				"body": "The blue bar below slowly fills up. This represents how deep you are dreaming! Being deeper multiplies your Thoughts per second by up to 5x!",
 				"highlight": "DepthBar1",
 				"wait_for_click": false
 			},
 			{
 				"header": "Run Upgrades",
-				"body": "Click on the Depth 1 bar to see the Run Upgrades panel. Spend Thoughts on upgrades to boost this run. These reset each time you Wake, so spend them!",
+				"body": "Click anywhere on the blue Depth bar! This opens the 'Run Upgrades' menu. Buy upgrades here to speed things up. These upgrades will reset when you Prestige, so spend freely!",
 				"highlight": "DepthBar1",
 				"wait_for_click": true,
 				"wait_for_expand": true
 			},
 			{
 				"header": "Prepare to Wake",
-				"body": "Close the Depth Bar by clicking the X, then click the WAKE button when you're ready to prestige and convert your progress into Memories.",
+				"body": "Close the Run Upgrades menu by clicking the 'X'. Whenever your progress slows down, click the red 'WAKE' button at the top to Prestige!",
 				"highlight": "WakeButton",    # Ensure this matches your scene's Button node name
 				"wait_for_click": true        # This makes them click the actual button to proceed
 			},
 			{
 				"header": "Ready to Wake (Prestige)",
-				"body": "Click WAKE to end your run and convert progress into Memories - permanent currency for meta-upgrades. Each Wake makes you stronger for the next descent!",
+				"body": "Prestiging will reset your Run Upgrades and progress, but gives you 'Memories'. You use Memories to buy PERMANENT upgrades! Click Confirm to try it!",
 				"highlight": "ConfirmWakeB",  # Ensure this matches the PrestigePanel's confirm button name
 				"wait_for_click": true
 			}
@@ -92,7 +93,7 @@ const TUTORIALS: Dictionary = {
 		"steps": [
 			{
 				"header": "The Meta Panel",
-				"body": "Welcome back! You've earned Memories. This panel contains PERMANENT upgrades that last forever, even after waking.",
+				"body": "You successfully Prestiged! You now have 'Memories'. You are looking at the Meta Panel. Upgrades purchased here are permanent and NEVER reset!",
 				"highlight": null,
 				"wait_for_click": false
 			},
@@ -111,7 +112,7 @@ const TUTORIALS: Dictionary = {
 			},
 			{
 				"header": "Unlocking New Depths",
-				"body": "Each depth has its own upgrades. Buy all 10 'Stabilize' upgrades here to permanently unlock the ability to dive to Depth 2!",
+				"body": "To unlock the next stage of the game (Depth 2), you need to buy all 10 levels of the 'Focused Intention' upgrade on this screen. Good luck!",
 				"highlight": null,
 				"wait_for_click": false
 			},
@@ -208,15 +209,15 @@ const TUTORIALS: Dictionary = {
 		"steps": [
 			{
 				"header": "The Bazaar",
-				"body": "The Shop is now available! Purchase time boosters, cosmetic themes, and convenience features.",
+				"body": "Welcome to the Shop! Click the 🛒 button on the right to browse time boosters and convenience features.",
 				"highlight": "ShopButton",
-				"wait_for_click": false  # Must be false to show Continue immediately
+				"wait_for_click": true
 			},
 			{
 				"header": "Optional Purchases",
 				"body": "All purchases are optional - everything can be earned through gameplay. Check it out when you're ready!",
-				"highlight": null,        # No highlight on this step (or set to "ShopButton" if you want)
-				"wait_for_click": false   # CRITICAL: Must be false for Continue to appear and work
+				"highlight": null,
+				"wait_for_click": false
 			}
 		]
 	},
@@ -244,6 +245,127 @@ const TUTORIALS: Dictionary = {
 			}
 		]
 	},
+	
+	"skill_tree_intro": {
+		"priority": 75,
+		"condition": "wave_10_reached",
+		"steps": [
+			{
+				"header": "Deeper Insights",
+				"body": "You've reached Wave 10! The Skill Tree is now available. Click the '✦ Skills' button in the Dreams Panel to customize your playstyle.",
+				"highlight": "BtnSkills",
+				"wait_for_click": true
+			},
+			{
+				"header": "Skill Points (SP)",
+				"body": "Buy Skill Points (SP) using Memories here. Each point lets you unlock powerful buffs or new combat techniques across three branches.",
+				"highlight": "BuySPButton",
+				"wait_for_click": false
+			},
+			{
+				"header": "Evolution",
+				"body": "Invest in Combat, Economy, or Soul - or mix them all. High-tier skills require specific Wave milestones to unlock! Good luck on your descent.",
+				"highlight": null,
+				"wait_for_click": false
+			}
+		]
+	},
+	
+	"combat_intro": {
+		"priority": 70,
+		"steps": [
+			{
+				"header": "Dreams and Battles",
+				"body": "Your journey deepens. Click the ✦ Dreams button at the top to enter the Combat View.",
+				"highlight": "DreamsButton",
+				"wait_for_click": true
+			},
+			{
+				"header": "The Battlefield",
+				"body": "This is the Combat View! Here you can fight enemies, earn loot, and test your strength. New waves unlock as you defeat enemies.",
+				"highlight": "BtnCombat",
+				"wait_for_click": false
+			},
+			{
+				"header": "Waves and Rewards",
+				"body": "Face waves of enemies. Defeating them grants Mastery for your equipped weapon and potentially rare item drops!",
+				"highlight": "NextWaveBtn",
+				"wait_for_click": false
+			},
+			{
+				"header": "Take Action",
+				"body": "During battle, use your available actions to defeat the enemy. Some actions are weapon-based, while tactical ones are unlocked via the Skill Tree!",
+				"highlight": "AttackGrid",
+				"wait_for_click": false
+			},
+			{
+				"header": "Subwaves and Farming",
+				"body": "Each Wave contains multiple Subwaves. Notice the PUSHING button at the top right? While Pushing, you automatically advance to harder subwaves. If you get stuck at a high subwave, click it to toggle FARMING mode to repeat easier enemies!",
+				"highlight": "BtnFarm",
+				"wait_for_click": false
+			},
+			{
+				"header": "Automation and Speed",
+				"body": "When you defeat an enemy, you return to a rest state. Click 'Start Wave' to fight again. Once your ATK is higher than the enemy's maximum HP, you will instantly ONE-SHOT them and auto-farm continuously!",
+				"highlight": "StartWaveBtn",
+				"wait_for_click": false
+			}
+		]
+	},
+	
+	"equipment_intro": {
+		"priority": 75,
+		"steps": [
+			{
+				"header": "Spoils of War",
+				"body": "You found gear! Items can significantly boost your power. Click the Equipment tab to see your loot.",
+				"highlight": "BtnEquipment",
+				"wait_for_click": true
+			},
+			{
+				"header": "Your Arsenal",
+				"body": "This is your inventory. Equip items here to gain stat bonuses. Different rarities offer stronger stats and special effects!",
+				"highlight": null,
+				"wait_for_click": false
+			}
+		]
+	},
+	
+	"forge_intro": {
+		"priority": 75,
+		"steps": [
+			{
+				"header": "The Forge",
+				"body": "Your current weapon is growing in mastery! Visit the Forge to upgrade its stats and unlock its true potential.",
+				"highlight": "BtnForge",
+				"wait_for_click": true
+			},
+			{
+				"header": "Weapon Upgrading",
+				"body": "Spend weapon experience here to increase damage, defense, and other critical stats. A well-forged weapon is key to surviving deeper waves.",
+				"highlight": null,
+				"wait_for_click": false
+			}
+		]
+	},
+	
+	"blacksmith_intro": {
+		"priority": 75,
+		"steps": [
+			{
+				"header": "Master Smith",
+				"body": "The Blacksmith is here! Dismantle unwanted gear for scrap, or craft powerful new equipment.",
+				"highlight": "BtnBlacksmith",
+				"wait_for_click": true
+			},
+			{
+				"header": "Crafting and Scrap",
+				"body": "Keep your inventory clean by dismantling old gear. Use the materials to forge even better items!",
+				"highlight": null,
+				"wait_for_click": false
+			}
+		]
+	}
 }
 
 # ============================================
@@ -270,21 +392,38 @@ func _ready() -> void:
 func _create_arrow() -> void:
 	arrow_label = Label.new()
 	arrow_label.name = "TutorialArrow"
-	arrow_label.text = "▼ CLICK HERE ▼"
-	arrow_label.add_theme_font_size_override("font_size", 18)
-	arrow_label.add_theme_color_override("font_color", Color(1.0, 1.0, 0.0, 1.0))
-	arrow_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 1.0))
-	arrow_label.add_theme_constant_override("shadow_offset_x", 2)
-	arrow_label.add_theme_constant_override("shadow_offset_y", 2)
+	arrow_label.text = "✦ CLICK HERE ✦"
+	arrow_label.add_theme_font_size_override("font_size", 14)
+	arrow_label.add_theme_color_override("font_color", Color(1.0, 0.9, 0.4, 1.0)) # Goldish
 	arrow_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	arrow_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	arrow_label.visible = false
-	arrow_label.z_index = 101
+	arrow_label.z_index = 600 # Above everything
+	
+	# Add a background panel to the label for a "premium" look
+	var style = StyleBoxFlat.new()
+	style.bg_color = Color(0.1, 0.1, 0.15, 0.9)
+	style.border_width_left = 2
+	style.border_width_right = 2
+	style.border_width_top = 2
+	style.border_width_bottom = 2
+	style.border_color = Color(1.0, 0.8, 0.2, 0.8) # Gold border
+	style.corner_radius_top_left = 4
+	style.corner_radius_top_right = 4
+	style.corner_radius_bottom_left = 4
+	style.corner_radius_bottom_right = 4
+	style.expand_margin_left = 10
+	style.expand_margin_right = 10
+	style.expand_margin_top = 5
+	style.expand_margin_bottom = 5
+	arrow_label.add_theme_stylebox_override("normal", style)
+	
 	add_child(arrow_label)
 	
-	# Make it flash - fix the tween creation
+	# Make it flash/bounce
 	var tween = create_tween().set_loops().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	tween.tween_property(arrow_label, "modulate:a", 0.3, 0.5)
-	tween.tween_property(arrow_label, "modulate:a", 1.0, 0.5)
+	tween.tween_property(arrow_label, "modulate:a", 0.6, 0.6)
+	tween.tween_property(arrow_label, "modulate:a", 1.0, 0.6)
 
 func _create_block_overlay() -> void:
 	block_overlay = ColorRect.new()
@@ -299,6 +438,8 @@ func _create_block_overlay() -> void:
 func _process(delta: float) -> void:
 	if current_state == TutorialState.IDLE:
 		_check_tutorial_triggers()
+	
+	_check_em_connection()
 	
 	# Handle wait_for_expand detection (Run Upgrades)
 	if current_state == TutorialState.WAITING_CLICK and active_tutorial == "start_game":
@@ -338,7 +479,9 @@ func start_tutorial(tutorial_key: String) -> bool:
 		return false
 	
 	if active_tutorial != "":
-		print("Tutorial already active: ", active_tutorial)
+		print("Tutorial already active, queuing: ", tutorial_key)
+		if not tutorial_queue.has(tutorial_key) and not tutorial_key in completed_tutorials:
+			tutorial_queue.append(tutorial_key)
 		return false
 	
 	active_tutorial = tutorial_key
@@ -378,9 +521,20 @@ func _complete_tutorial() -> void:
 	block_overlay.visible = false
 	pending_continue = false
 	
-	# Chain shop_unlock after post_wake_meta
+	# 1. Handle Chaining
 	if just_completed == "post_wake_meta":
 		start_tutorial("shop_unlock")
+	elif just_completed == "shop_unlock":
+		start_tutorial("combat_intro")
+	elif just_completed == "equipment_intro":
+		start_tutorial("forge_intro")
+	elif just_completed == "forge_intro":
+		start_tutorial("blacksmith_intro")
+		
+	# 2. If nothing was chained/started, check queue for pending triggers
+	if active_tutorial == "" and not tutorial_queue.is_empty():
+		var next = tutorial_queue.pop_front()
+		start_tutorial(next)
 
 func on_meta_opened() -> void:
 	if current_state == TutorialState.WAITING_CLICK and pending_continue:
@@ -545,12 +699,11 @@ func _show_current_step() -> void:
 	var _wait_for_expand = step_data.get("wait_for_expand", false)
 	var wait_for_click = step_data.get("wait_for_click", false)
 	
-	arrow_label.visible = false  # Never show arrow
-	
 	if highlight_target != null and highlight_target != "":
 		_highlight_element(highlight_target)
 		
 		if wait_for_click:
+			_position_arrow(highlight_target)
 			# Waiting for user to click something - hide continue button
 			continue_btn.visible = false
 			_skip_btn.visible = false
@@ -586,6 +739,11 @@ func _show_current_step() -> void:
 
 
 func _position_arrow(element_key: String) -> void:
+	if element_key == "CloseButton":
+		# User requested to remove "Click Here" for the Meta Panel close button
+		arrow_label.visible = false
+		return
+		
 	var target = _find_ui_element(element_key)
 	if target == null:
 		arrow_label.visible = false
@@ -601,37 +759,55 @@ func _position_arrow_immediate(target: Control) -> void:
 	var pos = target.global_position
 	var size = target.size
 	
-	arrow_label.position = Vector2(
-		pos.x + size.x / 2 - arrow_label.size.x / 2,
-		pos.y - 40
-	)
-	arrow_label.visible = true
+	_set_arrow_pos_clamped(Vector2(
+		pos.x + size.x / 2,
+		pos.y - 30
+	), "▼")
 
 func _position_arrow_deferred(target: Control) -> void:
 	# Wait for container layout to settle
 	await get_tree().process_frame
 	
-	if not is_instance_valid(target):
+	if not is_instance_valid(target) or not target.is_visible_in_tree():
 		return
 		
 	var pos = target.global_position
 	var size = target.size
+	var viewport_size = get_viewport().get_visible_rect().size
 	
-	# For top-right buttons (like CloseButton), position arrow below instead of above
-	if pos.x > get_viewport().get_visible_rect().size.x * 0.8:
-		# Button is on right side - point from below
-		arrow_label.position = Vector2(
-			pos.x + size.x / 2 - arrow_label.size.x / 2,
-			pos.y + size.y + 10  # Below button
-		)
-		arrow_label.text = "▲ CLICK HERE ▲"  # Point up
+	# Logic for positioning based on screen area
+	if pos.x > viewport_size.x * 0.8:
+		# Far right (like ShopButton) - point from left
+		_set_arrow_pos_clamped(Vector2(
+			pos.x - 20,
+			pos.y + size.y / 2
+		), "▶")
+	elif pos.y < 100:
+		# Top area (like DreamsButton) - point from below
+		_set_arrow_pos_clamped(Vector2(
+			pos.x + size.x / 2,
+			pos.y + size.y + 30
+		), "▲")
 	else:
-		arrow_label.position = Vector2(
-			pos.x + size.x / 2 - arrow_label.size.x / 2,
-			pos.y - 40
-		)
-		arrow_label.text = "▼ CLICK HERE ▼"  # Point down
+		# Default - point from above
+		_set_arrow_pos_clamped(Vector2(
+			pos.x + size.x / 2,
+			pos.y - 30
+		), "▼")
+
+func _set_arrow_pos_clamped(target_center: Vector2, indicator: String) -> void:
+	arrow_label.text = indicator + " CLICK HERE " + indicator
+	var half_size = arrow_label.size / 2
+	var viewport_size = get_viewport().get_visible_rect().size
 	
+	var final_pos = target_center - half_size
+	
+	# Clamp to screen with margins
+	var margin = 40
+	final_pos.x = clamp(final_pos.x, margin, viewport_size.x - arrow_label.size.x - margin)
+	final_pos.y = clamp(final_pos.y, margin, viewport_size.y - arrow_label.size.y - margin)
+	
+	arrow_label.position = final_pos
 	arrow_label.visible = true
 
 func _highlight_element(element_key: String) -> void:
@@ -785,6 +961,10 @@ func _start_forced_navigation() -> void:
 	# Highlight the expected target
 	_highlight_element(expected_click_target)
 
+# Added for robustness/alias support
+func on_button_clicked(button_name: String) -> void:
+	on_ui_element_clicked(button_name)
+
 func on_ui_element_clicked(clicked_element_name: String) -> bool:
 	# Handle forced navigation queue
 	if current_state == TutorialState.FORCED_NAVIGATION:
@@ -852,7 +1032,8 @@ func _check_tutorial_triggers() -> void:
 	# Check other tutorials...
 	for tutorial_key in ["depth_3_unlock", "first_instability", 
 						"first_event", "overclock_unlock", "first_crystal", 
-						"shop_unlock", "auto_buy_unlock", "pressure_explained"]:
+						"shop_unlock", "auto_buy_unlock", "pressure_explained",
+						"skill_tree_intro"]:
 		if tutorial_key in completed_tutorials or tutorial_key in tutorial_history:
 			continue
 		
@@ -913,8 +1094,27 @@ func _check_condition(condition_type: String) -> bool:
 		"prestige_available":
 			return game_mgr.memories >= 100
 		
+		"wave_10_reached":
+			var dp = get_tree().current_scene.find_child("DreamsPanel", true, false)
+			if dp:
+				return dp.get("highest_wave_reached") >= 10
+			return false
+
 		_:
 			return false
+
+func _check_em_connection() -> void:
+	var gm = get_tree().current_scene.find_child("GameManager", true, false) if get_tree().current_scene else null
+	if gm:
+		var em = gm.get("equipment_manager")
+		if em and em.has_signal("item_obtained"):
+			if not em.item_obtained.is_connected(_on_item_obtained):
+				em.item_obtained.connect(_on_item_obtained)
+				print("[TutorialManager] Connected to EquipmentManager")
+
+func _on_item_obtained(_item: Dictionary) -> void:
+	if not "equipment_intro" in completed_tutorials:
+		start_tutorial("equipment_intro")
 
 # ============================================
 # TUTORIAL MENU (REPLAY)

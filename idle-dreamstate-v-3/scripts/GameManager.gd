@@ -22,10 +22,22 @@ signal abyss_unlocked
 @export var dive_cd_min: float = 0.0
 @export var perk2_cd_reduction_per_level: float = 0.0
 func _get_effective_dive_cooldown() -> float:
-	return 0.0
+	var base_cd = 30.0 # Default base
+	var reduction_mult := 1.0
+	
+	# Skill Tree
+	var reduction_lvl = get_skill_level("rapid_reflex")
+	reduction_mult -= (reduction_lvl * 0.10)
+	
+	# Perm Meta (v19)
+	if perm_perk_system != null:
+		reduction_mult -= perm_perk_system.get_rapid_eye_cooldown_reduction()
+	
+	return maxf(2.0, base_cd * maxf(0.05, reduction_mult))
 @export var auto_overclock_instability_limit: float = 85.0
 var auto_buy_unlocked_depths: Array[int] = []
 var _last_wake_depth_for_meta: int = 1
+var sleep_paralysis_timer: float = 0.0
 var thoughts_label: Label
 var dreamcloud_label: Label
 var instability_label: Label
@@ -79,16 +91,18 @@ var memories: float = 0.0
 # Abyss Shop data (for saving/loading)
 var abyss_shop_unlocked: Array[String] = []
 var abyss_shop_active: Dictionary = {}
-var idle_thoughts_rate: float = 0.8
+var idle_thoughts_rate: float = 0.15 # V27 Buff: 0.01 -> 0.15
 var idle_dreamcloud_rate: float = 0.0 # Combat only
-var dive_thoughts_gain: float = 18.0
+# Click / Dive
+var dive_thoughts_gain: float = 1.5  # V27 Buff: 0.2 -> 1.5
 var dive_dreamcloud_gain: float = 0.0 # Combat only
 var wave_mastery: Dictionary = {}
 var dream_current: float = 1.0  # Global progress multiplier
-var wake_bonus_mult: float = 1.35
-var fail_penalty_mult: float = 0.60
-var depth_thoughts_step: float = 0.05
-var depth_instab_step: float = 0.08
+var wake_bonus_mult: float = 1.05 # Reduced from 1.25
+# Death / Fail
+var fail_penalty_mult: float = 0.60 # V27 Buff: 0.30 -> 0.60
+var depth_thoughts_step: float = 0.04 # Reduced from 0.08 (Slower depth scaling)
+var depth_instab_step: float = 0.25 # Massive difficulty jump per depth
 
 var wake_guard_seconds: float = 0.35
 var wake_guard_timer: float = 0.0
@@ -174,6 +188,11 @@ var last_milestone_check: Dictionary = {}
 
 var gems: int = 0  # Or call it "shards", "essence", etc.
 var times_broken: int = 0
+
+# NEW: Skill Tree state (v13)
+var skill_points: int = 0
+var skill_tree_levels: Dictionary = {} # skill_id -> level
+
 var _autosave_timer: float = 0.0
 # ============================================
 # F2P MONETIZATION & ABYSS SYSTEM
@@ -208,8 +227,8 @@ func get_abyss_shop_data() -> Dictionary:
 func update_abyss_shop_data(unlocked: Array[String], active: Dictionary) -> void:
 	abyss_shop_unlocked = unlocked.duplicate()
 	abyss_shop_active = active.duplicate()
-	save_game()  # Immediate persist
-	print("Abyss Shop data updated and saved")
+	save_game()
+	# print("Abyss Shop data updated and saved")
 
 
 	
@@ -285,6 +304,19 @@ func _on_depth_changed_from_controller(new_depth: int) -> void:
 	
 func _safe_mult(v: float) -> float:
 	return v if v > 0.0 else 1.0
+
+func get_thoughts_mult() -> float:
+	var mult: float = _safe_mult(upgrade_manager.get_thoughts_mult()) * _safe_mult(perk_system.get_thoughts_mult()) * _safe_mult(nightmare_system.get_thoughts_mult()) * _get_run_upgrades_thoughts_mult()
+	if depth_meta_system != null: mult *= _safe_mult(depth_meta_system.get_global_thoughts_mult())
+	if perm_perk_system != null: mult *= _safe_mult(perm_perk_system.get_thoughts_mult())
+	if abyss_perk_system != null: mult *= _safe_mult(abyss_perk_system.get_thoughts_mult())
+	return mult
+
+func get_instability_mult() -> float:
+	var mult: float = _safe_mult(upgrade_manager.get_instability_mult()) * _safe_mult(perk_system.get_instability_mult()) * _safe_mult(nightmare_system.get_instability_mult())
+	if perm_perk_system != null: mult *= _safe_mult(perm_perk_system.get_instability_mult())
+	if depth_meta_system != null: mult *= _safe_mult(depth_meta_system.get_global_instability_mult())
+	return mult
 
 func _update_depth_ui() -> void:
 	if top_bar_panel != null and top_bar_panel.has_method("set_depth_ui") and pillar_stack != null:
@@ -612,86 +644,7 @@ func _on_auto_dive_triggered(_depth_index: int) -> void:
 	
 	print("Auto-dive triggered - closed expanded panels")
 		
-func _input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed:
-		if event.keycode == KEY_F4:
-			# Give 1B of each crystal
-			for i in range(1, 16):
-				if depth_meta_system != null:
-					depth_meta_system.currency[i] += 1000000000.0
-			print("F4: Added 1B to all crystals")
-			_refresh_top_ui()
-			
-		if event.keycode == KEY_F5:  # Debug save/load
-			print("=== MANUAL SAVE DEBUG ===")
-			var test_data = get_save_data()
-			print("Current progress: ", test_data.get("depth_run_data", [{}])[0].get("progress", "N/A"))
-			SaveSystem.save_to_slot(99, test_data)
-			print("Saved to slot 99")
-	if event is InputEventKey and event.pressed:
-		if event.keycode == KEY_F7:
-			abyss_points += 1000
-			print("Added 1000 AP, total: ", abyss_points)
-	if event is InputEventKey and event.pressed:
-		if event.keycode == KEY_F6:  # Changed from F5
-			piggy_bank += 100
-			print("Added 100 to piggy bank. Total: ", piggy_bank)
-	if event is InputEventKey and event.pressed:
-		match event.keycode:
-			KEY_F9:  # Add test abyss tier
-				abyss_tier += 1
-				print("Abyss Tier: ", abyss_tier)
-			KEY_F10:  # Fill piggy bank
-				piggy_bank = 500.0
-				print("Piggy Bank filled")
-			KEY_F11:  # Reset daily caps
-				purchased_time_today = 0.0
-				ads_watched_today = 0
-				print("Daily caps reset")
-			KEY_F12:  # Force transcendence check
-				prompt_transcendence()
-	if event is InputEventMouseButton and event.pressed:
-		var mouse_pos := get_viewport().get_mouse_position()
-		print("\n=== CLICK DEBUG ===")
-		print("Mouse at: ", mouse_pos)
-		
-		# Check the Clickdreamcloud button specifically
-		var btn := get_tree().current_scene.find_child("Clickdreamcloud", true, false) as Button
-		if btn:
-			var btn_rect := btn.get_global_rect()
-			print("Clickdreamcloud global rect: ", btn_rect)
-			print("Clickdreamcloud position: ", btn.global_position)
-			print("Clickdreamcloud size: ", btn.size)
-			print("Mouse inside button? ", btn_rect.has_point(mouse_pos))
-			
-			# Check parent containers
-			var parent := btn.get_parent()
-			while parent:
-				if parent is Control:
-					var p_rect := (parent as Control).get_global_rect()
-					print(parent.name, " rect: ", p_rect, " | mouse inside? ", p_rect.has_point(mouse_pos))
-				parent = parent.get_parent()
-				if parent.name == "Root":
-					break
-		
-		# Force print all dreamclouds under mouse
-		print("\n--- All dreamclouds under mouse ---")
-		_print_dreamclouds_under_mouse(get_tree().current_scene, mouse_pos, 0)
 
-func _print_dreamclouds_under_mouse(node: Node, mouse_pos: Vector2, depth: int) -> void:
-	if not (node is Control):
-		return
-	var c := node as Control
-	if not c.visible:
-		return
-		
-	var rect := c.get_global_rect()
-	if rect.has_point(mouse_pos):
-		var indent := "  ".repeat(depth)
-		print(indent, node.name, " (", node.get_class(), ") at ", rect)
-		for child in node.get_children():
-			_print_dreamclouds_under_mouse(child, mouse_pos, depth + 1)
-		
 func _force_rate_sample() -> void:
 	_last_thoughts_sample = thoughts
 	_rate_sample_timer = 0.0
@@ -893,6 +846,7 @@ func _on_meta_pressed() -> void:
 	var tm = get_node_or_null("/root/TutorialManage")
 	if tm and tm.has_method("on_meta_opened"):
 		tm.on_meta_opened()
+		_connect_tutorial_signals()
 
 func _sync_meta_progress() -> void:
 	var current_depth = get_current_depth()
@@ -998,18 +952,8 @@ func _reset_run_state() -> void:
 	
 func _connect_tutorial_signals() -> void:
 	# This should be called after UI is ready
-	var meta = find_child("MetaPanelController", true, false)
-	if meta != null and tutorial_manager != null:
-		var tab_perm = meta.find_child("TabPerm", true, false) as Button
-		var tab_depth = meta.find_child("TabDepth", true, false) as Button
-		var close_btn = meta.find_child("CloseButton", true, false) as Button
-		
-		if tab_perm:
-			tab_perm.pressed.connect(func(): tutorial_manager.on_button_clicked("TabPerm"))
-		if tab_depth:
-			tab_depth.pressed.connect(func(): tutorial_manager.on_button_clicked("TabDepth"))
-		if close_btn:
-			close_btn.pressed.connect(func(): tutorial_manager.on_button_clicked("CloseButton"))
+	# Redundant connections removed, handled in respective panel controllers
+	pass
 		
 func _on_prestige_confirm_wake() -> void:
 	_is_resetting_run = true  # MUST BE FIRST - blocks accumulation immediately
@@ -1026,6 +970,19 @@ func _on_prestige_confirm_wake() -> void:
 	
 	if result is Dictionary:
 		var gained_memories = float(result.get("memories", 0.0))
+		
+		# Skill Tree: Memory Catalyst (+5% per level)
+		gained_memories *= (1.0 + get_skill_level("mem_catalyst") * 0.05)
+		# Keystone: Infinite Reflections (x5)
+		if is_skill_unlocked("infinite_ref"): gained_memories *= 5.0
+		# Keystone: Compound Growth (+1% per 10 wave levels)
+		if is_skill_unlocked("compound_growth"):
+			var wave_stat = 1.0
+			var dp = get_tree().current_scene.find_child("DreamsPanel", true, false)
+			if dp and dp.get("highest_wave_reached") != null:
+				wave_stat = float(dp.get("highest_wave_reached"))
+			gained_memories *= (1.0 + (wave_stat / 10.0) * 0.01)
+			
 		memories += gained_memories
 		var crystals = result.get("crystals_by_name", {})
 		
@@ -1149,6 +1106,12 @@ func do_fail() -> void:
 		if result is Dictionary:  # Now this works
 			var gained_memories = float(result.get("memories", 0.0))
 			gained_memories += accumulated_memories  # ADD THIS LINE
+			
+			# Skill Tree: Memory Catalyst (+5% per level)
+			gained_memories *= (1.0 + get_skill_level("mem_catalyst") * 0.05)
+			# Keystone: Infinite Reflections (x5)
+			if is_skill_unlocked("infinite_ref"): gained_memories *= 5.0
+			
 			gained_memories *= trauma_bonus
 			memories += gained_memories
 			
@@ -1228,10 +1191,18 @@ func do_dive() -> void:
 	if depth_meta_system != null:
 		depth_meta_instab_mult = _safe_mult(depth_meta_system.get_global_instability_mult())
 	
+	# Soul Skill: Lucid Control (Overclock reduces Instab by 5 per level)
+	if overclock_system.active:
+		instability = maxf(0.0, instability - get_skill_level("lucid_control") * 5.0)
+
 	# Apply dive instability (using current_depth for the calculation)
+	var soul_instab_mult: float = (1.0 - get_skill_level("safe_descent") * 0.05)
+	# Keystone: Sovereign of Dreams (-90%)
+	if is_skill_unlocked("sovereign"): soul_instab_mult *= 0.1
+	
 	instability = risk_system.add_risk(
 		instability,
-		((5.0 + (current_depth * 1.5)) * instability_mult * depth_instab_mult) * abyss_instab_mult * depth_meta_instab_mult
+		((5.0 + (current_depth * 1.5)) * instability_mult * depth_instab_mult) * abyss_instab_mult * depth_meta_instab_mult * soul_instab_mult
 	)
 	
 	# CRITICAL: Reset to 0% when entering Depth 2
@@ -1246,15 +1217,16 @@ func do_dive() -> void:
 	
 	# Apply dive start progress from meta upgrade (only if > 0)
 	if depth_meta_system != null:
-		var start_progress: float = depth_meta_system.get_dive_start_progress(next_depth)
-		if start_progress > 0.0:
+		var start_percent: float = depth_meta_system.get_dive_start_progress(next_depth)
+		if start_percent > 0.0:
 			var run_data: Array = drc.get("run") as Array
 			if run_data != null and next_depth >= 1 and next_depth <= run_data.size():
-				var next_depth_data: Dictionary = run_data[next_depth - 1]  # FIXED: Use next_depth - 1
-				next_depth_data["progress"] = start_progress
-				run_data[next_depth - 1] = next_depth_data  # FIXED: Use next_depth - 1
+				var next_depth_data: Dictionary = run_data[next_depth - 1]
+				var cap: float = float(drc.call("get_depth_progress_cap", next_depth)) if drc.has_method("get_depth_progress_cap") else 1000.0
+				next_depth_data["progress"] = start_percent * cap
+				run_data[next_depth - 1] = next_depth_data
 				drc.set("run", run_data)
-				print("Applied Shallow Start: Depth ", next_depth, " starts at ", start_progress * 100, "% progress")
+				print("Applied Start Progress: Depth ", next_depth, " starts at ", start_percent * 100, "% progress (", next_depth_data["progress"], ")")
 		
 	# Actually change the active depth in the controller
 	var dive_succeeded := false
@@ -1345,6 +1317,12 @@ func reset_run() -> void:
 	frozen_depth_multipliers = {}
 	dream_current = 1.0
 	
+	# v19: Sleep Paralysis (Perm Meta) - Freeze instability at start of run
+	if perm_perk_system != null:
+		sleep_paralysis_timer = perm_perk_system.get_sleep_paralysis_seconds()
+		if sleep_paralysis_timer > 0:
+			_show_floating_text("Sleep Paralysis: Instability Frozen!", Color(1, 0.4, 0.8))
+	
 	# Apply starting perks
 	if perm_perk_system != null:
 		thoughts = perm_perk_system.get_starting_thoughts()
@@ -1392,7 +1370,15 @@ func reset_run() -> void:
 			for i in range(run_data.size()):
 				var depth_data = run_data[i]
 				if depth_data is Dictionary:
-					depth_data["progress"] = 0.0
+					var depth_idx := i + 1
+					var start_p := 0.0
+					if depth_meta_system != null:
+						var start_percent := depth_meta_system.get_dive_start_progress(depth_idx)
+						if start_percent > 0.0:
+							var cap: float = float(drc.call("get_depth_progress_cap", depth_idx)) if drc.has_method("get_depth_progress_cap") else 1000.0
+							start_p = start_percent * cap
+					
+					depth_data["progress"] = start_p
 					depth_data["memories"] = 0.0
 					depth_data["crystals"] = 0.0
 					run_data[i] = depth_data
@@ -1773,15 +1759,15 @@ func _update_depth_data_offline(mem_gained: float, cry_gained: float, progress_g
 func save_game() -> void:
 	var data = get_save_data()
 	# Debug: See what's in data already
-	if data.has("last_play_time"):
-		print("Incoming last_play_time: ", data["last_play_time"])
+	# if data.has("last_play_time"):
+	# 	print("Incoming last_play_time: ", data["last_play_time"])
 	
 	SaveSystem.save_game(data)
-	var check = SaveSystem.load_game()
-	print("SAVE VERIFY: last_play_time = ", check.get("last_play_time"))
+	# var check = SaveSystem.load_game()
+	# print("SAVE VERIFY: last_play_time = ", check.get("last_play_time"))
 	
 	# Print stack trace to see who called this
-	print("SAVE CALLED FROM: ", get_stack())
+	# print("SAVE CALLED FROM: ", get_stack())
 	
 func get_save_data() -> Dictionary:
 	var data: Dictionary = {}  # Initialize empty dict, not recursive call
@@ -1795,7 +1781,7 @@ func get_save_data() -> Dictionary:
 	data["max_instability"] = max_instability
 	# Equipment and Dreams wave progress
 	if equipment_manager != null:
-		print("[DEBUG] GameManager (EM ID: %d): Requesting save data..." % equipment_manager.get_instance_id())
+		# print("[DEBUG] GameManager (EM ID: %d): Requesting save data..." % equipment_manager.get_instance_id())
 		var eq_data = equipment_manager.get_save_data()
 		
 		# Pre-Save Validation: Don't save empty equipment if we have items in memory
@@ -1805,11 +1791,12 @@ func get_save_data() -> Dictionary:
 		# If memory has items but serialized is 0, BLOCK. Or if everything is 0, allow (new game).
 		if (inv_count > 0 or equip_count > 0) or (equipment_manager.inventory.size() == 0 and equipment_manager.equipped.values().filter(func(v): return v != null).size() == 0):
 			data["equipment"] = eq_data
-			print("--- PRE-SAVE VALIDATION: Gear OK (%d items) ---" % (inv_count + equip_count))
+			# print("--- PRE-SAVE VALIDATION: Gear OK (%d items) ---" % (inv_count + equip_count))
 		else:
 			print("CRITICAL ERROR: Memory has gear but serialized eq_data is EMPTY! Blocking gear save.")
 	else:
-		print("WARNING: equipment_manager is null during save!")
+		# print("WARNING: equipment_manager is null during save!")
+		pass
 	
 	var dp := get_tree().current_scene.find_child("DreamsPanel", true, false)
 	if dp != null:
@@ -1858,11 +1845,10 @@ func get_save_data() -> Dictionary:
 		data["depth_thoughts"] = drc.get("thoughts")
 		data["depth_dreamcloud"] = drc.get("dreamcloud")
 		data["depth_instability"] = drc.get("instability")
-		print("Saving DRC: depth=", drc.get("active_depth"), " progress=", drc.get("run")[0].get("progress") if drc.get("run") is Array and drc.get("run").size() > 0 else "N/A")
+		# print("Saving DRC: depth=", drc.get("active_depth"), " progress=", drc.get("run")[0].get("progress") if drc.get("run") is Array and drc.get("run").size() > 0 else "N/A")
 		
 		
 		if abyss_perk_system != null:
-			data["abyss_echoed_descent_level"] = abyss_perk_system.echoed_descent_level
 			data["abyss_abyssal_focus_level"] = abyss_perk_system.abyssal_focus_level
 			data["abyss_dark_insight_level"] = abyss_perk_system.dark_insight_level
 			data["abyss_veil_level"] = abyss_perk_system.abyss_veil_level
@@ -1952,7 +1938,7 @@ func get_save_data() -> Dictionary:
 			"local_upgrades": drc.local_upgrades.duplicate(true),
 			"dream_current": drc.dream_current if "dream_current" in drc else 1.0
 		}
-		print("Saved DRC active_depth: ", drc.active_depth)
+		# print("Saved DRC active_depth: ", drc.active_depth)
 	
 	data["last_play_time"] = Time.get_unix_time_from_system()
 	
@@ -1967,10 +1953,50 @@ func get_save_data() -> Dictionary:
 	data["perfect_combats"] = perfect_combats
 	data["current_gear_score"] = current_gear_score
 	
+	# NEW: Skill Tree persistence
+	data["skill_points"] = skill_points
+	data["skill_tree_levels"] = skill_tree_levels
+	
 	# NOW return at the end
 	return data
 	
 	
+
+# v13: Skill Point Economy
+func get_sp_cost() -> float:
+	var sp_count = skill_points
+	# Sum up levels from dictionary too
+	for id in skill_tree_levels:
+		sp_count += skill_tree_levels[id]
+	
+	if sp_count < 10: return 500.0
+	if sp_count < 25: return 2500.0
+	if sp_count < 50: return 10000.0
+	return 50000.0
+
+func buy_skill_point() -> Dictionary:
+	var cost = get_sp_cost()
+	if memories >= cost:
+		memories -= cost
+		skill_points += 1
+		save_game()
+		return {"success": true, "cost": cost}
+	return {"success": false, "cost": cost, "reason": "funds"}
+
+func is_skill_unlocked(skill_id: String) -> bool:
+	return skill_tree_levels.get(skill_id, 0) > 0
+
+func get_skill_level(skill_id: String) -> int:
+	return skill_tree_levels.get(skill_id, 0)
+
+func unlock_skill(skill_id: String, sp_cost: int) -> Dictionary:
+	if skill_points >= sp_cost:
+		skill_points -= sp_cost
+		skill_tree_levels[skill_id] = skill_tree_levels.get(skill_id, 0) + 1
+		save_game()
+		return {"success": true}
+	return {"success": false, "reason": "SP"}
+
 func load_game() -> void:
 	var data: Dictionary = SaveSystem.load_game()
 	print("Data loaded, keys: ", data.keys())
@@ -1997,6 +2023,10 @@ func load_game() -> void:
 	instability = float(data.get("instability", 0.0))
 	time_in_run = float(data.get("time_in_run", 0.0))
 	total_thoughts_earned = float(data.get("total_thoughts_earned", 0.0))
+	
+	# NEW: Skill Tree load
+	skill_points = int(data.get("skill_points", 0))
+	skill_tree_levels = data.get("skill_tree_levels", {}).duplicate()
 	# Restore equipment and Dreams wave progress
 	if equipment_manager != null:
 		if data.has("equipment"):
@@ -2128,7 +2158,6 @@ func load_game() -> void:
 	# DELETE THE SECOND ABYSS SHOP BLOCK THAT WAS HERE (lines 1940-1950 in your code)
 	
 	if abyss_perk_system != null:
-		abyss_perk_system.echoed_descent_level = int(data.get("abyss_echoed_descent_level", 0))
 		abyss_perk_system.abyssal_focus_level = int(data.get("abyss_abyssal_focus_level", 0))
 		abyss_perk_system.dark_insight_level = int(data.get("abyss_dark_insight_level", 0))
 		abyss_perk_system.abyss_veil_level = int(data.get("abyss_veil_level", 0))
@@ -2260,6 +2289,14 @@ func load_game() -> void:
 	# NEW: Load equipment
 	if data.has("equipment"):
 		equipment_manager.load_save_data(data.equipment)
+	
+	# NEW: Load Skill Tree
+	skill_points = int(data.get("skill_points", 0))
+	var loaded_levels = data.get("skill_tree_levels", {})
+	if loaded_levels is Dictionary:
+		skill_tree_levels = loaded_levels
+	else:
+		skill_tree_levels = {}
 		
 	# Load Abyss Shop items (call after a delay to ensure scene is ready)
 	call_deferred("_load_abyss_shop")
@@ -2727,7 +2764,7 @@ func _update_debug_overlay() -> void:
 		
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
-		print("MANUAL SHUTDOWN INITIATED - SAVING...")
+		# print("MANUAL SHUTDOWN INITIATED - SAVING...")
 		save_game()
 		# Tiny delay to allow file buffer flush
 		OS.delay_msec(50)
@@ -2793,6 +2830,12 @@ func _process(delta: float) -> void:
 			var stab_lvl = drc.call("_get_local_level", 2, "stabilize")
 			if stab_lvl > 0:
 				inst_rate *= pow(0.95, stab_lvl)
+		
+		
+		# v19: Sleep Paralysis check
+		if sleep_paralysis_timer > 0:
+			sleep_paralysis_timer -= delta
+			inst_rate = 0.0 # Force no gain this frame
 		
 		# THIS IS THE FIX - Actually add to instability:
 		instability += inst_rate * delta * _crush_mult
@@ -2917,7 +2960,11 @@ func _process(delta: float) -> void:
 	thoughts_mult *= progress_mult
 	
 	# Calculate and add thoughts
-	var thoughts_to_add := idle_thoughts_rate * thoughts_mult * _get_shop_boost() * delta
+	var base_rate := idle_thoughts_rate
+	if perm_perk_system != null:
+		base_rate += perm_perk_system.get_subconscious_miner_rate()
+
+	var thoughts_to_add := base_rate * thoughts_mult * _get_shop_boost() * delta
 	# Deep Resonance: add idle bonus from Focus Upgrade
 	var resonance_idle := get_click_idle_bonus() * idle_thoughts_rate * delta
 	thoughts_to_add += resonance_idle
@@ -2998,10 +3045,7 @@ func _process(delta: float) -> void:
 		save_game()
 		print("AUTO-SAVE COMPLETE")
 	
-	# ADD DEBUG PRINT
-	if Engine.get_process_frames() % 60 == 0:
-		print("GM SYNC TO DRC: thoughts=", thoughts, " drc.thoughts=", drc.get("thoughts"))
-		
+	# Sync logs removed for performance
 	_refresh_top_ui()
 	_update_buttons_ui()
 	_force_cooldown_texts()
@@ -4200,8 +4244,15 @@ func _connect_click_buttons() -> void:
 
 func _on_click_stabilize() -> void:
 	var reduction := click_instability_reduction
+	
+	# Meta Upgrade: Rift Harmonics (Depth 5) - Focus clicks reduce instability more
+	if depth_meta_system != null:
+		var bonus: float = float(depth_meta_system.get_depth_specific_effect(5, "rift_harmonics"))
+		if bonus > 0.0:
+			reduction *= (1.0 + bonus)
+	
 	instability = maxf(0.0, instability - reduction)
-	_sync_to_drc()  # ADD THIS
+	_sync_to_drc()  # Sync to DepthRunController
 	_register_click_for_combo()
 	_show_click_feedback(reduction, "instability")
 	_refresh_top_ui()
@@ -4337,7 +4388,15 @@ func _calculate_all_multipliers() -> float:
 		mult *= _safe_mult(perm_perk_system.get_thoughts_mult())
 	if depth_meta_system != null:
 		mult *= _safe_mult(depth_meta_system.get_global_thoughts_mult())
+	
+	if perm_perk_system != null:
+		mult *= _safe_mult(perm_perk_system.get_night_owl_mult())
+	
 	mult *= get_abyss_multiplier()
+	
+	# v13: Apply Skill Tree Passives
+	mult *= (1.0 + get_skill_level("thought_stream") * 0.10)
+	
 	return mult
 
 func get_abyss_multiplier() -> float:
@@ -4444,6 +4503,10 @@ func _calculate_dreamcloud_mult() -> float:
 		mult *= _safe_mult(perk_system.get_dreamcloud_mult())
 	if perm_perk_system != null:
 		mult *= _safe_mult(perm_perk_system.get_dreamcloud_mult())
+	
+	# v13: Apply Skill Tree Passives
+	mult *= (1.0 + get_skill_level("dream_weaver") * 0.15)
+	
 	return mult
 
 func _show_time_warp_notification(seconds: float, thoughts_gained: float) -> void:

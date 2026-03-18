@@ -467,7 +467,7 @@ func _update_auto_dive_visibility():
 		auto_dive_checkbox.button_pressed = gm.auto_dive_enabled
 	
 func _on_auto_dive_toggled(enabled: bool):
-	print("Auto-Dive toggled:", enabled)
+	# print("Auto-Dive toggled:", enabled)
 	var gm = get_node_or_null("/root/Main/GameManager")
 	if gm == null:
 		return
@@ -1868,8 +1868,7 @@ func _attempt_purchase(id: String, data: Dictionary, amount: int = 1) -> bool:
 	
 	var base_cost: float = data.get("base_cost", 100.0)
 	var growth: float = data.get("cost_growth", 1.5)
-	var depth_multiplier := pow(float(depth_index), 2.5) * 3.0
-	var effective_base := base_cost * depth_multiplier
+	var effective_base := base_cost
 	
 	var actual_amount := amount
 	var total_cost := 0.0
@@ -1941,8 +1940,7 @@ func _update_upgrade_row_ui(id: String) -> void:
 	var cost_10 := 0.0
 		
 	if lvl < max_lvl:
-		var depth_multiplier := pow(float(depth_index), 2.5) * 3.0
-		var effective_base := base_cost * depth_multiplier
+		var effective_base := base_cost
 		cost_1 = effective_base * pow(growth, lvl)
 		
 		var levels_to_simulate = min(10, max_lvl - lvl)
@@ -2080,8 +2078,7 @@ func _process(_delta: float) -> void:
 		# Calculate cost
 		var base_cost: float = upg_data.get("base_cost", 100.0)
 		var growth: float = upg_data.get("cost_growth", 1.5)
-		var depth_multiplier := pow(float(depth_index), 2.5) * 3.0
-		var cost := (base_cost * depth_multiplier) * pow(growth, current_lvl)
+		var cost := base_cost * pow(growth, current_lvl)
 		
 		# Buy only if affordable
 		if game_mgr.thoughts >= cost:

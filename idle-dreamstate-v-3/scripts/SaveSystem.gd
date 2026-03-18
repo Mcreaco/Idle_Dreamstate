@@ -89,7 +89,7 @@ func save_game(data: Dictionary) -> bool:
 		print("CRITICAL: Failed to finalize atomic save! Error: ", err)
 		return false
 
-	print("SAVE SUCCESS: %d bytes written via atomic swap to %s" % [json_str.length(), SAVE_PATH])
+	# print("SAVE SUCCESS: %d bytes written via atomic swap to %s" % [json_str.length(), SAVE_PATH])
 	return true
 
 # Removed gather_save_data and save_all as they were bypasses 

@@ -94,16 +94,37 @@ func try_buy_oneiromancy(memories: float) -> Dictionary: return _try_buy(memorie
 
 # ---- effects ----
 func get_thoughts_mult() -> float:
-	return pow(1.18, float(memory_engine_level))
+	var base_mult = pow(1.05, float(memory_engine_level)) # Reduced from 1.18
+	
+	# NEW: Skill Tree Integration (Thought Stream)
+	var gm = get_node_or_null("/root/Main/GameManager")
+	if gm and gm.has_method("get_skill_level"):
+		base_mult *= (1.0 + gm.get_skill_level("thought_stream") * 0.10)
+		
+	return base_mult
 
 func get_instability_mult() -> float:
-	return maxf(0.1, pow(0.93, float(calm_mind_level)))
+	var base_red = maxf(0.1, pow(0.93, float(calm_mind_level)))
+	
+	# NEW: Skill Tree Integration (Safe Descent)
+	var gm = get_node_or_null("/root/Main/GameManager")
+	if gm and gm.has_method("get_skill_level"):
+		base_red *= (1.0 - gm.get_skill_level("safe_descent") * 0.05)
+		
+	return base_red
 
 func get_dreamcloud_mult() -> float:
-	return pow(1.20, float(focused_will_level))
+	var base_mult = pow(1.20, float(focused_will_level))
+	
+	# NEW: Skill Tree Integration (Dreamcloud Flow)
+	var gm = get_node_or_null("/root/Main/GameManager")
+	if gm and gm.has_method("get_skill_level"):
+		base_mult *= (1.0 + gm.get_skill_level("dc_flow") * 0.10)
+		
+	return base_mult
 
 func get_starting_thoughts() -> float:
-	return 100.0 * pow(2.0, float(starting_insight_level))
+	return 100.0 + (float(starting_insight_level) * 25.0) # Nuclear Flattening: Max level = 1,350
 
 func get_starting_instability_reduction() -> float:
 	return 10.0 * pow(1.15, float(stability_buffer_level))

@@ -1,8 +1,8 @@
 extends Node
 
 @export var max_depth: int = 15
-@export var base_memories_per_sec: float = 2.0
-@export var base_crystals_per_sec: float = 1.0
+@export var base_memories_per_sec: float = 0.05 # Nuclear Nerf: 2.0 -> 0.05
+@export var base_crystals_per_sec: float = 0.01 # Nuclear Nerf: 0.25 -> 0.01
 
 # top panel base rates (tune later)
 @export var thoughts_per_sec: float = 0.0
@@ -267,10 +267,15 @@ func _tick_active_depth(delta: float) -> void:
 	
 	# CRITICAL FIX: Apply instability increase
 	if d >= 2 and rules.get("instability_enabled", false):
-		var inst_per_sec: float = applied.get("instability_per_sec", 0.0)
-		
+		# v13: Skill Tree Instability Multiplier (Safe Descent + Sovereign)
+		var s_mult: float = 1.0
+		var gm_check = get_node_or_null("/root/Main/GameManager")
+		if gm_check and gm_check.has_method("get_skill_level"):
+			s_mult *= (1.0 - gm_check.get_skill_level("safe_descent") * 0.05)
+			if gm_check.is_skill_unlocked("sovereign"): s_mult *= 0.1
+			
 		# THIS LINE WAS MISSING - actually add to instability
-		instability += (inst_per_sec * delta)
+		instability += (instability_per_sec * delta * s_mult)
 		
 		# Check for death
 		if instability >= inst_cap:
@@ -314,59 +319,58 @@ func _tick_active_depth(delta: float) -> void:
 			var echo_def: Dictionary = get_depth_def(d).get("upgrades", {}).get("echo_navigation", {})
 			var echo_effect: float = echo_def.get("effect_per_level", 0.12)
 			dream_current *= (1.0 + (echo_effect * echo_lvl))  # +12% per level
-
 	# LENGTH / DIFFICULTY - USE DREAM CURRENT
 	var length: float = get_depth_length(d)
 	var per_sec: float = (base_progress_per_sec * dream_current * depth_prog_mul) / maxf(length, 0.0001)
-	
-	# Multipliers for Memories/Crystals (progress uses dream_current instead)
-	var mem_lvl := _get_local_level(d, "memories_gain")
-	var cry_lvl := _get_local_level(d, "crystals_gain")
 
-	# Get the specific crystal focus for this depth (e.g., "ruby_focus", "emerald_focus", "sapphire_focus")
+	# Multipliers for Memories/Crystals (progress uses dream_current instead)
+	var mem_lvl := _get_local_level(d, "dream_recall") + _get_local_level(d, "echo_chamber")
+	var cry_lvl := _get_local_level(d, "mnemonic_anchor")
+
+	var mem_mul: float = 1.0 + (0.15 * mem_lvl) + _frozen_effect(d, "dream_recall", 0.15)
+	var cry_mul: float = 1.0 + (0.12 * cry_lvl) + _frozen_effect(d, "mnemonic_anchor", 0.12)
+
+	# Get the specific crystal focus for this depth
 	var crystal_focus_id := ""
 	match d:
 		2: crystal_focus_id = "ruby_focus"
 		3: crystal_focus_id = "emerald_focus"
 		4: crystal_focus_id = "sapphire_focus"
-		5: crystal_focus_id = "diamond_focus"  # if you have this
+		5: crystal_focus_id = "diamond_focus"
+		6: crystal_focus_id = "deep_cache"  # Topaz
+		7: crystal_focus_id = "garnet_focus"
+		8: crystal_focus_id = "opal_focus"
+		9: crystal_focus_id = "aquamarine_focus"
+		10: crystal_focus_id = "onyx_focus"
+		11: crystal_focus_id = "jade_focus"
+		12: crystal_focus_id = "moonstone_focus"
+		13: crystal_focus_id = "obsidian_focus"
+		14: crystal_focus_id = "citrine_focus"
+		15: crystal_focus_id = "quartz_focus"
 
-	var crystal_focus_lvl := _get_local_level(d, crystal_focus_id)
+	if crystal_focus_id != "":
+		var focus_lvl := _get_local_level(d, crystal_focus_id)
+		if focus_lvl > 0:
+			var focus_def: Dictionary = get_depth_def(d).get("upgrades", {}).get(crystal_focus_id, {})
+			var focus_effect: float = focus_def.get("effect_per_level", 0.15)
+			cry_mul += (focus_effect * focus_lvl)
 
-	var mem_mul: float = 1.0 + (0.15 * mem_lvl) + _frozen_effect(d, "memories_gain", 0.15)
-	var cry_mul: float = 1.0 + (0.12 * cry_lvl) + _frozen_effect(d, "crystals_gain", 0.12)
-
-	# Add crystal focus bonus
-	if crystal_focus_lvl > 0 and crystal_focus_id != "":
-		var focus_def: Dictionary = get_depth_def(d).get("upgrades", {}).get(crystal_focus_id, {})
-		var focus_effect: float = focus_def.get("effect_per_level", 0.15)  # Default 15%
-		cry_mul += (focus_effect * crystal_focus_lvl)
-
-	# Then apply to crystal generation:
-	data["crystals"] = float(data.get("crystals", 0.0)) + base_crystals_per_sec * cry_mul * depth_cry_mul * delta
+	# Apply Depth-Specific Meta Upgrade: Dark Adaptation (Depth 4) - +10% crystals
+	var meta = null
+	if get_tree().current_scene != null:
+		meta = get_tree().current_scene.find_child("DepthMetaSystem", true, false)
 	
-	var game_mgr := get_node_or_null("/root/GameManager")
+	if meta and d == 4:
+		var d_adapt: float = float(meta.call("get_depth_specific_effect", 4, "dark_adaptation"))
+		if d_adapt > 0: cry_mul *= d_adapt
+
+	var game_mgr := get_node_or_null("/root/Main/GameManager")
 	var abyss_mult: float = 1.0
 	if game_mgr != null and game_mgr.has_method("get_abyss_multiplier"):
 		abyss_mult = game_mgr.get_abyss_multiplier()
 
 	mem_mul *= abyss_mult
 	cry_mul *= abyss_mult
-	# Apply specific depth upgrade bonuses
-	
-	# Depth 2: Ruby Focus (+12% rubies per level)
-	if d == 2:
-		var ruby_level := _get_local_level(d, "ruby_focus")
-		if ruby_level > 0:
-			var ruby_def: Dictionary = get_depth_def(d).get("upgrades", {}).get("ruby_focus", {})
-			var ruby_effect: float = ruby_def.get("effect_per_level", 0.12)
-			cry_mul += (ruby_effect * ruby_level)
-
-	# CRITICAL FIX: Use actual cap instead of hardcoded 1.0
-	var cap: float = get_depth_progress_cap(d)
-	var p: float = float(data.get("progress", 0.0))
-	p = minf(cap, p + per_sec * delta)  # Use the actual cap (1000, 2500, etc.)
-	data["progress"] = p
 
 	# Apply temporary multipliers from buffs
 	var all_mul: float = 1.0
@@ -389,7 +393,13 @@ func _tick_active_depth(delta: float) -> void:
 			cry_mul *= bonus
 			per_sec *= bonus
 
-	# Update memories and crystals
+	# Update progress
+	var cap: float = get_depth_progress_cap(d)
+	var p: float = float(data.get("progress", 0.0))
+	p = minf(cap, p + per_sec * delta)
+	data["progress"] = p
+
+	# Update memories and crystals (EXACTLY ONCE)
 	data["memories"] = float(data.get("memories", 0.0)) + base_memories_per_sec * mem_mul * depth_mem_mul * delta
 	data["crystals"] = float(data.get("crystals", 0.0)) + base_crystals_per_sec * cry_mul * depth_cry_mul * delta
 	
@@ -405,38 +415,56 @@ func _tick_active_depth(delta: float) -> void:
 	_panel.set_active_depth(active_depth)
 
 func _calculate_thoughts_per_sec(d: int) -> float:
-	var base: float = 1.0
+	var base: float = base_memories_per_sec * 0.5  # Scale with base game speed
+	var flat_bonus: float = 0.0
 	var multipliers: float = 1.0
 	
-	# Depth scaling (exponential growth for big numbers)
-	multipliers *= pow(1.5, d - 1)
+	# Linear scaling: +20% per depth
+	multipliers *= (1.0 + (float(d) - 1.0) * 0.2)
 	
-	# Apply frozen upgrade bonuses
-	for depth_key in frozen_upgrades.keys():
-		var source_depth: int = int(depth_key)
-		if source_depth >= d:
-			continue
-		var dct: Dictionary = frozen_upgrades[depth_key]
-		# Velocity/Progress speed from frozen depths
-		var frozen_speed_lvl: int = int(dct.get("progress_speed", 0))
-		if frozen_speed_lvl > 0:
-			multipliers += (frozen_speed_lvl * 0.2)
+	# Apply Thought Stream (Depth 1) - +0.5 base thoughts per level
+	# Sum from ALL depths (current + frozen)
+	var stream_lvl: int = _get_local_level(d, "thought_stream")
+	for src_depth in frozen_upgrades.keys():
+		var dct: Dictionary = frozen_upgrades[src_depth]
+		stream_lvl += int(dct.get("thought_stream", 0))
 	
-	# Apply current depth local upgrades
-	var local: Dictionary = local_upgrades.get(d, {})
-	var speed_lvl: int = int(local.get("progress_speed", 0))
-	if speed_lvl > 0:
-		multipliers += (speed_lvl * 0.25)  # +25% per level in current depth
+	flat_bonus += float(stream_lvl) * 0.5
 	
+	# Apply Multiplicative Upgrades
+	# Risky Compression (Depth 3): +20% per level
+	var risky_lvl: int = _get_local_level(3, "risky_compression")
+	if risky_lvl > 0:
+		multipliers *= (1.0 + float(risky_lvl) * 0.20)
+		
+	# Rift Mining (Depth 5): +8% per level
+	var rift_lvl: int = _get_local_level(5, "rift_mining")
+	if rift_lvl > 0:
+		multipliers *= (1.0 + float(rift_lvl) * 0.08)
+		
+	# Whisper Harvest (Depth 4): +8% when instability > 60%
+	if d == 4 and instability >= 60.0:
+		var whisper_lvl: int = _get_local_level(d, "whisper_harvest")
+		if whisper_lvl > 0:
+			multipliers *= (1.0 + float(whisper_lvl) * 0.08)
+
 	# Meta multipliers from GameManager
 	var gm = get_node_or_null("/root/Main/GameManager")
-	if gm:
-		if gm.has_method("get_thoughts_mult"):
-			multipliers *= gm.get_thoughts_mult()
-		if gm.has_method("get_abyss_multiplier"):
-			multipliers *= gm.get_abyss_multiplier()
+	if gm and gm.has_method("get_thoughts_mult"):
+		multipliers *= gm.get_thoughts_mult()
 	
-	return base * multipliers
+	# Depth-specific Meta Upgrades
+	var meta = get_tree().current_scene.find_child("DepthMetaSystem", true, false)
+	if meta:
+		if d == 1:
+			var s_eff: float = float(meta.call("get_depth_specific_effect", 1, "shallow_eff"))
+			if s_eff > 0: multipliers *= s_eff
+		elif d == 9:
+			var s_ins: float = float(meta.call("get_depth_specific_effect", 9, "silent_insight"))
+			if s_ins > 0: multipliers *= s_ins
+
+	# Decouple flat bonus from multipliers to prevent insane loops
+	return (base * multipliers) + (flat_bonus * 2.0)
 
 func _calculate_dreamcloud_per_sec(_d: int) -> float:
 	return 0.0 # Combat only now
@@ -667,9 +695,24 @@ func _frozen_effect(current_depth: int, upgrade_id: String, per_level: float) ->
 func get_thoughts_per_sec() -> float:
 	return _thoughts_per_sec_cached
 
-func get_instability_cap(_depth: int) -> float:
-	# Scale with progress cap (120% of progress required)
-	return 100.0
+func get_instability_cap(d: int) -> float:
+	var base_cap: float = 100.0
+	
+	# Apply Pressure Tolerance (Depth 2) - +3% cap per level
+	var tol_lvl: int = _get_local_level(2, "pressure_tolerance") + _get_local_level(d, "pressure_tolerance")
+	var tol_bonus: float = 1.0 + (float(tol_lvl) * 0.03)
+	
+	# Apply Safety Valves (Depth 3) - Each level reduces cap by 8% (Emergency buffer)
+	# Def says: Instability cap -8% per level
+	var valve_lvl: int = _get_local_level(3, "safety_valves")
+	var valve_mult: float = 1.0 - (float(valve_lvl) * 0.08)
+	
+	# Apply Void Walker (Perm Meta) - Add flat cap
+	var gm = get_node_or_null("/root/Main/GameManager")
+	if gm and gm.has_method("get_void_walker_instability_cap"):
+		base_cap += gm.get_void_walker_instability_cap()
+	
+	return base_cap * tol_bonus * valve_mult
 
 func get_depth_length(depth_index: int) -> float:
 	var d: float = float(max(depth_index, 1))
@@ -683,10 +726,44 @@ func wake_cashout(ad_multiplier: float, forced: bool) -> Dictionary:
 	var memories_mult: float = 1.0
 	var crystals_mult: float = 1.0
 	
+	# v13: Skill Tree Economy Passives
+	var gm := get_node_or_null("/root/Main/GameManager")
+	if gm:
+		memories_mult *= (1.0 + gm.get_skill_level("memory_catalyst") * 0.10)
+		thoughts_mult *= (1.0 + gm.get_skill_level("dream_mining") * 0.10)
+		
+		# v19: Permanent Meta Upgrades
+		if gm.has_method("get_recursive_memory_mult"):
+			memories_mult *= gm.get_recursive_memory_mult()
+	
 	if forced:
+		# Base penalties: -30% thoughts, -45% memories, -60% crystals
 		thoughts_mult = 0.70
 		memories_mult = 0.55
 		crystals_mult = 0.40
+		
+		# Apply Trauma Inoculation (Depth 2): +10% memory retention
+		var trauma_lvl = _get_local_level(2, "trauma_inoculation")
+		if trauma_lvl > 0:
+			memories_mult = minf(1.0, memories_mult + float(trauma_lvl) * 0.10)
+			
+		# Apply Impact Dampening (Depth 8): +15% memory retention
+		var impact_lvl = _get_local_level(8, "impact_dampening")
+		if impact_lvl > 0:
+			memories_mult = minf(1.0, memories_mult + float(impact_lvl) * 0.15)
+			
+		# Apply Ruin Diver (Depth 11): 50% less Memories lost (multiplicative on penalty)
+		var ruin_lvl = _get_local_level(11, "ruin_diver")
+		if ruin_lvl > 0:
+			var penalty = 1.0 - memories_mult
+			penalty *= pow(0.5, ruin_lvl)
+			memories_mult = 1.0 - penalty
+	
+	# Carryover Thoughts (Depth 14: Abyssal Memory)
+	var carry_percent: float = 0.0
+	var carry_lvl = _get_local_level(14, "abyssal_memory")
+	if carry_lvl > 0:
+		carry_percent = float(carry_lvl) * 0.08
 	
 	# Calculate gains
 	var totals := _sum_run_totals(active_depth)
@@ -694,21 +771,32 @@ func wake_cashout(ad_multiplier: float, forced: bool) -> Dictionary:
 	var bank_memories: float = float(totals["memories"]) * memories_mult * ad_multiplier
 	
 	# Bank the currencies
-	var gm := get_node_or_null("/root/Main/GameManager")
 	if gm:
 		if "memories" in gm: gm.memories += bank_memories
-		# Add crystals to meta
+		
+		# Apply Wake Yield (Crystalline Echo) multiplier from Meta
 		var meta: Node = get_tree().current_scene.find_child("DepthMetaSystem", true, false)
+		var yield_mult: float = 1.0
+		if meta and meta.has_method("get_global_wake_currency_mult"):
+			yield_mult = meta.call("get_global_wake_currency_mult")
+		
 		if meta and meta.has_method("add_currency"):
 			for depth_i in range(1, active_depth + 1):
 				var data: Dictionary = _run_internal[depth_i - 1]
 				var raw_cry := float(data.get("crystals", 0.0))
-				var bank_cry := raw_cry * crystals_mult * ad_multiplier
+				var bank_cry := raw_cry * crystals_mult * ad_multiplier * yield_mult
 				if bank_cry > 0.0:
 					meta.call("add_currency", depth_i, bank_cry)
 	
+	# Calculate carry thoughts and crystal resonance
+	var carry_thoughts: float = float(thoughts) * carry_percent
+	var resonance_crystals := 0.0
+	var resonance_lvl := _get_local_level(14, "crystal_resonance")
+	if resonance_lvl > 0:
+		resonance_crystals = float(resonance_lvl) * 100.0
+	
 	# CRITICAL: FULL RESET
-	_reset_run_data()
+	_reset_run_data(carry_thoughts, resonance_crystals)
 	
 	return {
 		"thoughts": bank_thoughts,
@@ -716,15 +804,15 @@ func wake_cashout(ad_multiplier: float, forced: bool) -> Dictionary:
 		"forced": forced
 	}
 
-func _reset_run_data() -> void:
-	print("RESETTING RUN DATA")
+func _reset_run_data(carry_thoughts: float = 0.0, d14_resonance: float = 0.0) -> void:
+	print("RESETTING RUN DATA - Carryover Thoughts:", carry_thoughts, " D14 Resonance:", d14_resonance)
 	
 	# Reset all progress
 	for i in range(_run_internal.size()):
 		var data: Dictionary = _run_internal[i]
 		data["progress"] = 0.0
 		data["memories"] = 0.0
-		data["crystals"] = 0.0
+		data["crystals"] = d14_resonance if (i + 1) == 14 else 0.0
 		_run_internal[i] = data
 	
 	# CRITICAL: Clear local upgrades (this was missing!)
@@ -735,7 +823,7 @@ func _reset_run_data() -> void:
 	frozen_upgrades.clear()
 	
 	# Reset currencies
-	thoughts = 0.0
+	thoughts = carry_thoughts
 	dreamcloud = 0.0
 	instability = 0.0
 	
@@ -887,8 +975,8 @@ func _build_depth_defs() -> void:
 				"name": "Thought Stream",
 				"description": "+0.5 idle Thoughts per second per level",
 				"max_level": 10,
-				"base_cost": 10.0,  # Starts at 10 as requested
-				"cost_growth": 1.35,
+				"base_cost": 150.0, # V27: 800.0 -> 150.0
+				"cost_growth": 2.8,
 				"effect_per_level": 0.5,
 				"cost_currency": "thoughts"
 			},
@@ -896,8 +984,8 @@ func _build_depth_defs() -> void:
 				"name": "Lucid Training", 
 				"description": "+15% progress speed per level",
 				"max_level": 8,
-				"base_cost": 25.0,
-				"cost_growth": 1.4,
+				"base_cost": 500.0, # V27: 2500.0 -> 500.0
+				"cost_growth": 3.0,
 				"effect_per_level": 0.15,
 				"cost_currency": "thoughts"
 			},
@@ -905,8 +993,8 @@ func _build_depth_defs() -> void:
 				"name": "Velocity",
 				"description": "+20% idle progress speed per level (stacks with Lucid)",
 				"max_level": 5,
-				"base_cost": 60.0,
-				"cost_growth": 1.45,
+				"base_cost": 1500.0, # V27: 7500.0 -> 1500.0
+				"cost_growth": 3.2,
 				"effect_per_level": 0.20,
 				"cost_currency": "thoughts"
 			},
@@ -914,8 +1002,8 @@ func _build_depth_defs() -> void:
 				"name": "Dream Recall",
 				"description": "+15% Memory Gain per level",
 				"max_level": 6,
-				"base_cost": 150.0,
-				"cost_growth": 1.55,
+				"base_cost": 5000.0, # V27: 25000.0 -> 5000.0
+				"cost_growth": 3.5,
 				"effect_per_level": 0.15,
 				"cost_currency": "thoughts"
 			},
@@ -923,8 +1011,8 @@ func _build_depth_defs() -> void:
 				"name": "Mnemonic Anchor",
 				"description": "+12% Amethyst Crystal Gain per level",
 				"max_level": 4,
-				"base_cost": 400.0,
-				"cost_growth": 1.6,
+				"base_cost": 2000000.0,
+				"cost_growth": 3.2,
 				"effect_per_level": 0.12,
 				"cost_currency": "thoughts"
 			},
@@ -932,8 +1020,8 @@ func _build_depth_defs() -> void:
 				"name": "Combat Reflexes",
 				"description": "+10% damage in Dream Combat per level",
 				"max_level": 3,
-				"base_cost": 800.0,
-				"cost_growth": 1.5,
+				"base_cost": 5000000.0,
+				"cost_growth": 3.5,
 				"effect_per_level": 0.10,
 				"cost_currency": "thoughts"
 			}
@@ -963,8 +1051,8 @@ func _build_depth_defs() -> void:
 				"name": "Stabilize",
 				"description": "-4% Instability gain per level (multiplicative)",
 				"max_level": 8,  # More levels, cheaper
-				"base_cost": 1000.0,  # 1k (was 2k)
-				"cost_growth": 1.45,
+				"base_cost": 10000000.0,
+				"cost_growth": 3.8,
 				"effect_per_level": -0.04,
 				"cost_currency": "thoughts"
 			},
@@ -972,8 +1060,8 @@ func _build_depth_defs() -> void:
 				"name": "Abyssal Current",
 				"description": "+0.08 Global Progress Speed per level",
 				"max_level": 10,
-				"base_cost": 2000.0,
-				"cost_growth": 1.5,
+				"base_cost": 25000000.0,
+				"cost_growth": 4.0,
 				"effect_per_level": 0.08,
 				"cost_currency": "thoughts"
 			},
@@ -981,8 +1069,8 @@ func _build_depth_defs() -> void:
 				"name": "Trauma Inoculation",
 				"description": "+10% Memory retention if forced Wake",
 				"max_level": 5,
-				"base_cost": 5000.0,
-				"cost_growth": 1.6,
+				"base_cost": 40000000.0,
+				"cost_growth": 4.1,
 				"effect_per_level": 0.10,
 				"cost_currency": "thoughts"
 			},
@@ -990,8 +1078,8 @@ func _build_depth_defs() -> void:
 				"name": "Defensive Stance",
 				"description": "-10% damage taken in combat per level",
 				"max_level": 3,
-				"base_cost": 8000.0,
-				"cost_growth": 1.7,
+				"base_cost": 65000000.0,
+				"cost_growth": 4.3,
 				"effect_per_level": 0.10,
 				"cost_currency": "thoughts"
 			},
@@ -999,8 +1087,8 @@ func _build_depth_defs() -> void:
 				"name": "Ruby Focus",
 				"description": "+15% Ruby Crystal gain per level",
 				"max_level": 6,
-				"base_cost": 15000.0,
-				"cost_growth": 1.5,
+				"base_cost": 100000000.0,
+				"cost_growth": 4.6,
 				"effect_per_level": 0.15,
 				"cost_currency": "thoughts"
 			},
@@ -1008,8 +1096,8 @@ func _build_depth_defs() -> void:
 				"name": "Pressure Tolerance",
 				"description": "+3% Max Instability cap per level",
 				"max_level": 5,
-				"base_cost": 25000.0,
-				"cost_growth": 1.6,
+				"base_cost": 250000000.0,
+				"cost_growth": 4.8,
 				"effect_per_level": 0.03,
 				"cost_currency": "thoughts"
 			}
@@ -1039,8 +1127,8 @@ func _build_depth_defs() -> void:
 				"name": "Pressure Hardening",
 				"description": "Instability slows Progress 12% less per level",
 				"max_level": 5,  # Max 60% reduction of penalty (0.6 + 0.6 = 1.2 capped at 1.0)
-				"base_cost": 25000.0,  # 10x Depth 2 costs
-				"cost_growth": 1.6,
+				"base_cost": 50000000.0,
+				"cost_growth": 4.2,
 				"effect_per_level": 0.12,
 				"cost_currency": "thoughts"
 			},
@@ -1048,8 +1136,8 @@ func _build_depth_defs() -> void:
 				"name": "Crush Resistance",
 				"description": "-6% Instability gain per level (multiplicative)",
 				"max_level": 15,
-				"base_cost": 40000.0,
-				"cost_growth": 1.5,
+				"base_cost": 100000000.0,
+				"cost_growth": 4.5,
 				"effect_per_level": -0.06,  # Changed to multiplicative like Depth 2
 				"cost_currency": "thoughts"
 			},
@@ -1057,8 +1145,8 @@ func _build_depth_defs() -> void:
 				"name": "Emerald Focus",
 				"description": "+18% Emerald Crystal gain per level",
 				"max_level": 50,
-				"base_cost": 150000.0,
-				"cost_growth": 1.5,
+				"base_cost": 500000000.0,
+				"cost_growth": 5.0,
 				"effect_per_level": 0.18,
 				"cost_currency": "thoughts"
 			},
@@ -1105,8 +1193,8 @@ func _build_depth_defs() -> void:
 				"name": "Dark Adaptation",
 				"description": "Reveal 15% of hidden crystal rewards per level",
 				"max_level": 7,  # 105% total, ensures you see all hidden rewards eventually
-				"base_cost": 300000.0,  # 10x Depth 3 costs
-				"cost_growth": 1.6,
+				"base_cost": 1000000000.0,
+				"cost_growth": 5.5,
 				"effect_per_level": 0.15,
 				"cost_currency": "thoughts"
 			},
@@ -1114,8 +1202,8 @@ func _build_depth_defs() -> void:
 				"name": "Echo Navigation",
 				"description": "+12% progress speed per level",
 				"max_level": 25,
-				"base_cost": 600000.0,
-				"cost_growth": 1.5,
+				"base_cost": 2500000000.0,
+				"cost_growth": 6.0,
 				"effect_per_level": 0.12,
 				"cost_currency": "thoughts"
 			},
@@ -1123,8 +1211,8 @@ func _build_depth_defs() -> void:
 				"name": "Whisper Harvest",
 				"description": "+8% thoughts when instability >60% per level",
 				"max_level": 5,  # Max 40% bonus
-				"base_cost": 1500000.0,
-				"cost_growth": 1.8,
+				"base_cost": 10000000000.0,
+				"cost_growth": 6.5,
 				"effect_per_level": 0.08,
 				"cost_currency": "thoughts"
 			},
@@ -1190,8 +1278,8 @@ func _build_depth_defs() -> void:
 				"name": "Temporal Sense",
 				"description": "Choice events trigger 10% faster per level",
 				"max_level": 5,
-				"base_cost": 200.0,
-				"cost_growth": 1.8,
+				"base_cost": 5000000000.0,
+				"cost_growth": 6.8,
 				"effect_per_level": 0.10,
 				"cost_currency": "thoughts"
 			},
@@ -1199,7 +1287,7 @@ func _build_depth_defs() -> void:
 				"name": "Risk Assessment",
 				"description": "See one outcome before choosing",
 				"max_level": 1,
-				"base_cost": 600.0,
+				"base_cost": 15000000000.0,
 				"cost_growth": 1.0,
 				"effect_per_level": 1.0,
 				"cost_currency": "thoughts"
@@ -1208,8 +1296,8 @@ func _build_depth_defs() -> void:
 				"name": "Stable Footing",
 				"description": "12% chance to avoid negative outcomes per level",
 				"max_level": 4,
-				"base_cost": 150.0,
-				"cost_growth": 1.7,
+				"base_cost": 2500000000.0,
+				"cost_growth": 6.2,
 				"effect_per_level": 0.12,
 				"cost_currency": "thoughts"
 			},
@@ -1217,9 +1305,18 @@ func _build_depth_defs() -> void:
 				"name": "Rift Mining",
 				"description": "Choices grant +8% Thoughts per level",
 				"max_level": 50,
-				"base_cost": 180.0,
-				"cost_growth": 1.6,
+				"base_cost": 8000000000.0,
+				"cost_growth": 6.4,
 				"effect_per_level": 0.08,
+				"cost_currency": "thoughts"
+			},
+			"diamond_focus": {
+				"name": "Diamond Focus",
+				"description": "+20% Diamond Crystals per level",
+				"max_level": 50,
+				"base_cost": 10000000.0,
+				"cost_growth": 1.7,
+				"effect_per_level": 0.20,
 				"cost_currency": "thoughts"
 			}
 		},
@@ -1274,8 +1371,8 @@ func _build_depth_defs() -> void:
 				"name": "Crystalline Memory",
 				"description": "Each completed depth below grants +5% Progress Speed",
 				"max_level": 10,  # Max 50% bonus from 10 frozen depths
-				"base_cost": 1.0e6,  # 1 Million thoughts
-				"cost_growth": 2.0,  # Doubles each level: 1M, 2M, 4M... ~1B at max
+				"base_cost": 25000000000.0,
+				"cost_growth": 7.5,
 				"effect_per_level": 0.05,
 				"cost_currency": "thoughts"
 			},
@@ -2085,8 +2182,8 @@ func _apply_depth_rules(d: int) -> Dictionary:
 	
 	# Calculate instability rate for depth 2+
 	if d >= 2 and rules.get("instability_enabled", false):
-	# FASTER: 3.5% at depth 2 (fills in ~28s), scales aggressively
-		var base_rate: float = 0.035 * pow(1.45, d - 2)
+	# FASTER: 8% at depth 2 (fills in ~12s), scales aggressively (1.6x)
+		var base_rate: float = 0.08 * pow(1.6, d - 2)
 		
 		# Time pressure: +0.2% per second spent in depth
 		_ensure_depth_runtime(d)
@@ -2112,21 +2209,43 @@ func _apply_depth_rules(d: int) -> Dictionary:
 			if silent_lvl > 0:
 				base_rate *= pow(0.88, silent_lvl)
 
+		# Apply Global Meta reduction
+		var gm_check = get_node_or_null("/root/Main/GameManager")
+		if gm_check and gm_check.has_method("get_instability_mult"):
+			base_rate *= gm_check.get_instability_mult()
+		
+		# Apply Depth-Specific Meta reduction (Pressure Adaptation)
+		var meta = get_tree().current_scene.find_child("DepthMetaSystem", true, false)
+		if meta and d == 2:
+			var p_adapt: float = float(meta.call("get_depth_specific_effect", 2, "pressure_adapt"))
+			if p_adapt > 0: base_rate *= p_adapt
+		
+		# Apply Risky Compression (Depth 3) - +10% Instability per level
+		var risky_lvl = _get_local_level(3, "risky_compression")
+		if risky_lvl > 0:
+			base_rate *= (1.0 + float(risky_lvl) * 0.10)
+
 		# Apply temporary instability multipliers from events
-		var inst_mul: float = 1.0
-		for buff in _temp_buffs.values():
-			if buff.get("type") == "inst_mult":
-				inst_mul *= float(buff.get("value", 1.0))
+		var inst_mul: float = float(inst_mul_from_events())
 		base_rate *= inst_mul
 
 		inst_rate = base_rate * 100.0  # Convert to percentage points
 	
+	# Apply Progress Speed Upgrades (Depth 1 & 2)
+	var focus_lvl = _get_local_level(1, "focus_training")
+	if focus_lvl > 0:
+		prog_mul *= (1.0 + float(focus_lvl) * 0.15)
+	
+	var velocity_lvl = _get_local_level(1, "velocity")
+	if velocity_lvl > 0:
+		prog_mul *= (1.0 + float(velocity_lvl) * 0.20)
+		
+	var abyssal_lvl = _get_local_level(2, "abyssal_current")
+	if abyssal_lvl > 0:
+		prog_mul *= (1.0 + float(abyssal_lvl) * 0.08)
+
 	# Apply temporary progress multipliers from events
-	var event_p_mul: float = 1.0
-	for buff in _temp_buffs.values():
-		if buff.get("type") == "prog_mult":
-			event_p_mul *= float(buff.get("value", 1.0))
-	prog_mul *= event_p_mul
+	prog_mul *= float(prog_mul_from_events())
 
 	# Pressure mechanic (Depth 3)
 	if d == 3 and rules.has("pressure_threshold"):
@@ -2182,14 +2301,21 @@ func _apply_depth_rules(d: int) -> Dictionary:
 			# But for now, let's just subtract it here if not nullified
 			_run_internal[d - 1]["progress"] = maxf(0.0, current_p - (cap * drain_rate * (1.0/60.0))) # Rough frame estimate
 	
-	return {
-		"instability_per_sec": inst_rate,  # This is % per second (e.g., 0.5 means +0.5%/s)
-		"progress_mul": prog_mul,
-		"mem_mul": mem_mul,
-		"cry_mul": cry_mul,
-		"rules": rules,
-		"instability_cap": inst_cap
-	}
+	return {"instability_per_sec": inst_rate, "progress_mul": prog_mul, "mem_mul": mem_mul, "cry_mul": cry_mul, "instability_cap": inst_cap, "rules": rules}
+
+func inst_mul_from_events() -> float:
+	var mul: float = 1.0
+	for buff in _temp_buffs.values():
+		if buff.get("type") == "inst_mult":
+			mul *= float(buff.get("value", 1.0))
+	return mul
+
+func prog_mul_from_events() -> float:
+	var mul: float = 1.0
+	for buff in _temp_buffs.values():
+		if buff.get("type") == "prog_mult":
+			mul *= float(buff.get("value", 1.0))
+	return mul
 # Add helper to get upgrade level (if not already present)
 func _get_meta_upgrade_level(depth: int, upgrade_id: String) -> int:
 	var meta = get_tree().current_scene.find_child("DepthMetaSystem", true, false)
@@ -2199,13 +2325,45 @@ func _get_meta_upgrade_level(depth: int, upgrade_id: String) -> int:
 
 # Calculate event interval with Temporal Sense
 func _get_event_interval() -> float:
-	if active_depth != 5:
-		return 30.0
+	var base := 30.0
+	var def = get_depth_def(active_depth)
+	if def.has("rules"):
+		base = def.rules.get("event_timer", 30.0)
 	
 	var temporal_lvl = _get_local_level(5, "temporal_sense")
-	var base_interval = 30.0
-	# 10% faster per level: 30 -> 27 -> 24 -> 21 -> 18
-	return base_interval * (1.0 - (temporal_lvl * 0.10))
+	if temporal_lvl > 0:
+		base *= (1.0 - float(temporal_lvl) * 0.10)
+	
+	return maxf(5.0, base)
+
+# COMBAT UPGRADE HELPERS (Exposed for CombatEngine)
+func get_combat_damage_mult() -> float:
+	var mult: float = 1.0
+	
+	# Depth 1: Combat Reflexes (+10% per level)
+	var reflex_lvl = _get_local_level(1, "combat_reflexes")
+	# Add frozen levels
+	for d in frozen_upgrades:
+		reflex_lvl += int(frozen_upgrades[d].get("combat_reflexes", 0))
+	if reflex_lvl > 0: mult *= (1.0 + float(reflex_lvl) * 0.10)
+	
+	# Depth 12: Shadow Binding (+15% per level)
+	var shadow_lvl = _get_local_level(12, "shadow_binding")
+	if shadow_lvl > 0: mult *= (1.0 + float(shadow_lvl) * 0.15)
+	
+	return mult
+
+func get_combat_defense_mult() -> float:
+	var mult: float = 1.0
+	
+	# Depth 2: Defensive Stance (-10% damage taken per level)
+	var stance_lvl = _get_local_level(2, "combat_stance")
+	# Add frozen levels
+	for d in frozen_upgrades:
+		stance_lvl += int(frozen_upgrades[d].get("combat_stance", 0))
+	if stance_lvl > 0: mult *= pow(0.90, stance_lvl)
+	
+	return mult
 
 func _tick_depth_events(d: int, delta: float, rules: Dictionary) -> void:
 	_ensure_depth_runtime(d)

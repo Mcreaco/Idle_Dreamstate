@@ -10,102 +10,190 @@ var max_level: int = 1
 var depth_meta: DepthMetaSystem
 var gm: GameManager
 
-var _name_lbl: Label
+var _title_lbl: Label
 var _desc_lbl: Label
-var _lvl_lbl: Label
+var _stat_lbl: Label
+var _bar_lbl: Label
 var _cost_lbl: Label
 var _buy_btn: Button
 var _bar: ProgressBar
+var _t := 0.0
 
 func _ready() -> void:
-	# SETUP THE BORDER (Blue border like other panels)
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0.05, 0.06, 0.08, 0.9)
-	sb.border_color = Color(0.5, 0.6, 0.9, 0.6)
-	sb.border_width_left = 2
-	sb.border_width_top = 2
-	sb.border_width_right = 2
-	sb.border_width_bottom = 2
-	sb.corner_radius_top_left = 8
-	sb.corner_radius_top_right = 8
-	sb.corner_radius_bottom_left = 8
-	sb.corner_radius_bottom_right = 8
-	sb.content_margin_left = 12
-	sb.content_margin_right = 12
-	sb.content_margin_top = 8
-	sb.content_margin_bottom = 8
-	add_theme_stylebox_override("panel", sb)
+	depth_meta = get_tree().current_scene.find_child("DepthMetaSystem", true, false)
+	gm = get_tree().current_scene.find_child("GameManager", true, false)
 	
-	size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	size_flags_horizontal = SIZE_EXPAND_FILL
+	mouse_filter = MOUSE_FILTER_STOP
 	
-	# Create main HBox for layout
-	var main_hbox := HBoxContainer.new()
-	main_hbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	main_hbox.add_theme_constant_override("separation", 12)
-	add_child(main_hbox)
+	pivot_offset = size / 2.0
+	item_rect_changed.connect(func(): pivot_offset = size / 2.0)
 	
-	# LEFT SIDE: Name + Description (takes up left 60%)
-	var left_vbox := VBoxContainer.new()
-	left_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	left_vbox.custom_minimum_size.x = 400
-	main_hbox.add_child(left_vbox)
+	_style_card_base()
 	
-	_name_lbl = Label.new()
-	_name_lbl.text = upgrade_name
-	_name_lbl.add_theme_font_size_override("font_size", 16)
-	left_vbox.add_child(_name_lbl)
+	mouse_entered.connect(_on_mouse_entered)
+	mouse_exited.connect(_on_mouse_exited)
 	
-	_desc_lbl = Label.new()
-	_desc_lbl.text = upgrade_desc
-	_desc_lbl.add_theme_font_size_override("font_size", 12)
-	_desc_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	left_vbox.add_child(_desc_lbl)
+	for child in get_children():
+		child.queue_free()
 	
-	# CENTER: Level + Cost (fixed width, centered)
-	var center_vbox := VBoxContainer.new()
-	center_vbox.custom_minimum_size.x = 200
-	center_vbox.alignment = BoxContainer.ALIGNMENT_CENTER
-	main_hbox.add_child(center_vbox)
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 16)
+	margin.add_theme_constant_override("margin_right", 16)
+	margin.add_theme_constant_override("margin_top", 12)
+	margin.add_theme_constant_override("margin_bottom", 12)
+	add_child(margin)
 	
-	_lvl_lbl = Label.new()
-	_lvl_lbl.text = "Lv 0/%d" % max_level
-	_lvl_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	center_vbox.add_child(_lvl_lbl)
+	var hbox := HBoxContainer.new()
+	hbox.add_theme_constant_override("separation", 24)
+	margin.add_child(hbox)
+	
+	# --- COLUMN 1: Action (Left) ---
+	var action_vbox := VBoxContainer.new()
+	action_vbox.custom_minimum_size = Vector2(240, 0)
+	action_vbox.alignment = VBoxContainer.ALIGNMENT_CENTER
+	hbox.add_child(action_vbox)
+	
+	_buy_btn = Button.new()
+	_buy_btn.name = "BuyButton"
+	_buy_btn.custom_minimum_size = Vector2(240, 54)
+	_buy_btn.size_flags_horizontal = SIZE_SHRINK_CENTER
+	_buy_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	if not _buy_btn.pressed.is_connected(_on_buy):
+		_buy_btn.pressed.connect(_on_buy)
+	action_vbox.add_child(_buy_btn)
 	
 	_cost_lbl = Label.new()
-	_cost_lbl.text = "Cost: ?"
+	_cost_lbl.name = "CostLabel"
 	_cost_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_cost_lbl.add_theme_font_size_override("font_size", 12)
-	center_vbox.add_child(_cost_lbl)
+	_cost_lbl.add_theme_font_size_override("font_size", 13)
+	_cost_lbl.add_theme_color_override("font_color", Color(0.95, 0.85, 0.5))
+	_cost_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	action_vbox.add_child(_cost_lbl)
 	
-	# Affordability bar below cost
+	# --- COLUMN 2: Info (Middle) ---
+	var info_vbox := VBoxContainer.new()
+	info_vbox.size_flags_horizontal = SIZE_EXPAND_FILL
+	info_vbox.alignment = VBoxContainer.ALIGNMENT_CENTER
+	hbox.add_child(info_vbox)
+	
+	_title_lbl = Label.new()
+	_title_lbl.name = "TitleLabel"
+	_title_lbl.add_theme_font_size_override("font_size", 20)
+	_title_lbl.add_theme_color_override("font_color", Color(0.9, 0.95, 1.0))
+	_title_lbl.text = upgrade_name
+	info_vbox.add_child(_title_lbl)
+	
+	_desc_lbl = Label.new()
+	_desc_lbl.name = "DescLabel"
+	_desc_lbl.add_theme_font_size_override("font_size", 14)
+	_desc_lbl.add_theme_color_override("font_color", Color(0.7, 0.75, 0.85))
+	_desc_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_desc_lbl.text = upgrade_desc
+	info_vbox.add_child(_desc_lbl)
+	
+	_stat_lbl = Label.new()
+	_stat_lbl.name = "StatLabel"
+	_stat_lbl.add_theme_font_size_override("font_size", 15)
+	_stat_lbl.add_theme_color_override("font_color", Color(0.4, 0.9, 1.0))
+	info_vbox.add_child(_stat_lbl)
+	
+	# --- COLUMN 3: Mastery (Right) ---
+	var mastery_vbox := VBoxContainer.new()
+	mastery_vbox.custom_minimum_size = Vector2(300, 0)
+	mastery_vbox.alignment = VBoxContainer.ALIGNMENT_CENTER
+	hbox.add_child(mastery_vbox)
+	
+	var bar_container = PanelContainer.new()
+	bar_container.mouse_filter = MOUSE_FILTER_IGNORE
+	mastery_vbox.add_child(bar_container)
+	
 	_bar = ProgressBar.new()
-	_bar.custom_minimum_size = Vector2(150, 8)
-	_bar.min_value = 0.0
-	_bar.max_value = 100.0
-	_bar.value = 0.0
-	_bar.show_percentage = true
-	center_vbox.add_child(_bar)
+	_bar.name = "Bar"
+	_bar.custom_minimum_size = Vector2(300, 24)
+	_bar.show_percentage = false
+	bar_container.add_child(_bar)
 	
-	# RIGHT SIDE: Buy button
-	_buy_btn = Button.new()
-	_buy_btn.text = "Buy"
-	_buy_btn.custom_minimum_size = Vector2(100, 40)
-	_buy_btn.size_flags_horizontal = Control.SIZE_SHRINK_END
-	main_hbox.add_child(_buy_btn)
+	_bar_lbl = Label.new()
+	_bar_lbl.name = "BarLabel"
+	_bar_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_bar_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_bar_lbl.add_theme_font_size_override("font_size", 13)
+	_bar_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
+	_bar_lbl.add_theme_constant_override("outline_size", 4)
+	bar_container.add_child(_bar_lbl)
 	
-	_buy_btn.pressed.connect(_on_buy)
+	var mastery_lbl = Label.new()
+	mastery_lbl.text = "Depth Mastery"
+	mastery_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	mastery_lbl.add_theme_font_size_override("font_size", 11)
+	mastery_lbl.modulate = Color(1, 1, 1, 0.4)
+	mastery_vbox.add_child(mastery_lbl)
 	
-	if gm != null and gm.has_method("_style_button"):
+	_style_bar()
+	
+	if gm and gm.has_method("_style_button"):
 		gm._style_button(_buy_btn)
 	
-	if depth_meta == null:
-		depth_meta = get_tree().current_scene.find_child("DepthMetaSystem", true, false)
-	if gm == null:
-		gm = get_tree().current_scene.find_child("GameManager", true, false)
-	
 	set_process(true)
-	call_deferred("_refresh")  # Refresh after everything is ready
+	call_deferred("_refresh")
+
+func _style_card_base() -> void:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.1, 0.12, 0.16, 0.45)
+	sb.border_width_left = 1
+	sb.border_width_top = 1
+	sb.border_width_right = 1
+	sb.border_width_bottom = 1
+	sb.border_color = Color(0.4, 0.6, 1.0, 0.15)
+	sb.corner_radius_top_left = 14
+	sb.corner_radius_top_right = 14
+	sb.corner_radius_bottom_left = 14
+	sb.corner_radius_bottom_right = 14
+	add_theme_stylebox_override("panel", sb)
+
+func _style_bar() -> void:
+	if not _bar: return
+	
+	var bg = StyleBoxFlat.new()
+	bg.bg_color = Color(0.01, 0.02, 0.04, 0.9)
+	bg.corner_radius_top_left = 12
+	bg.corner_radius_top_right = 12
+	bg.corner_radius_bottom_left = 12
+	bg.corner_radius_bottom_right = 12
+	bg.border_width_left = 1
+	bg.border_width_top = 1
+	bg.border_width_right = 1
+	bg.border_width_bottom = 1
+	bg.border_color = Color(0.4, 0.6, 1.0, 0.2)
+	
+	var fg = StyleBoxFlat.new()
+	fg.bg_color = Color(0.3, 0.7, 1.0, 1.0)
+	fg.corner_radius_top_left = 12
+	fg.corner_radius_top_right = 12
+	fg.corner_radius_bottom_left = 12
+	fg.corner_radius_bottom_right = 12
+	
+	_bar.add_theme_stylebox_override("background", bg)
+	_bar.add_theme_stylebox_override("fill", fg)
+
+func _on_mouse_entered() -> void:
+	var sb := get_theme_stylebox("panel").duplicate() as StyleBoxFlat
+	sb.bg_color = Color(0.15, 0.18, 0.25, 0.65)
+	sb.border_color = Color(0.5, 0.8, 1.0, 0.5)
+	sb.shadow_color = Color(0.3, 0.6, 1.0, 0.2)
+	sb.shadow_size = 12
+	add_theme_stylebox_override("panel", sb)
+	
+	var tween = create_tween()
+	tween.tween_property(self, "scale", Vector2(1.008, 1.008), 0.1).set_trans(Tween.TRANS_SINE)
+	z_index = 10
+
+func _on_mouse_exited() -> void:
+	_style_card_base()
+	var tween = create_tween()
+	tween.tween_property(self, "scale", Vector2(1.0, 1.0), 0.1).set_trans(Tween.TRANS_SINE)
+	z_index = 0
 
 func _format_costs(d: int, def: Dictionary) -> Dictionary:
 	var base := depth_meta.cost_for(d, def)
@@ -154,26 +242,22 @@ func _fmt_num(v: float) -> String:
 	return str(int(v))
 	
 func _refresh() -> void:
-	# DEBUG
-	if depth_meta == null:
-		push_warning("DepthUpgradeRow: depth_meta is NULL for " + upgrade_id)
-		_buy_btn.disabled = true
-		return
-	
-	# Check if currency array is valid
-	if depth_meta.currency.size() <= depth_index:
-		push_warning("DepthUpgradeRow: currency array size " + str(depth_meta.currency.size()) + " <= index " + str(depth_index))
-		_buy_btn.disabled = true
-		return
-	
 	var d := clampi(depth_index, 1, DepthMetaSystem.MAX_DEPTH)
 	var lvl := depth_meta.get_level(d, upgrade_id)
 	
-	_name_lbl.text = upgrade_name
-	_desc_lbl.text = upgrade_desc
-	_lvl_lbl.text = "Lv %d/%d" % [lvl, max_level]
+	if _title_lbl: _title_lbl.text = upgrade_name
+	if _desc_lbl: _desc_lbl.text = upgrade_desc
+	if _bar_lbl:
+		_bar_lbl.text = "LEVEL %d / %d" % [lvl, max_level]
+		if lvl >= max_level:
+			_bar_lbl.text = "MASTERY COMPLETE"
+			_bar_lbl.add_theme_color_override("font_color", Color(0.2, 1.0, 0.5))
+		else:
+			_bar_lbl.remove_theme_color_override("font_color")
 	
-	# Find def
+	if _stat_lbl:
+		_stat_lbl.text = depth_meta.get_upgrade_stat_text(d, upgrade_id, lvl)
+	
 	var defs := depth_meta.get_depth_upgrade_defs(d)
 	var def: Dictionary = {}
 	for item in defs:
@@ -183,7 +267,6 @@ func _refresh() -> void:
 	
 	var can_buy := true
 	var cost_text := "???"
-	var affordability := 0.0
 	
 	if def.is_empty():
 		can_buy = false
@@ -191,68 +274,40 @@ func _refresh() -> void:
 		var info := _format_costs(d, def)
 		cost_text = String(info["text"])
 		can_buy = bool(info["ok"])
-		
-		var base := float(info["base"])
-		var costs: Dictionary = info["costs"]
-		var primary_mult := float(costs.get(d, 1.0))
-		var primary_cost := base * primary_mult
-		if primary_cost > 0.0:
-			affordability = clampf((depth_meta.currency[d] / primary_cost) * 100.0, 0.0, 100.0)
+		# Removed unused cost calculations
 	
-	_cost_lbl.text = cost_text
-	_bar.value = affordability
+	if _cost_lbl:
+		_cost_lbl.text = "[ %s ]" % cost_text if lvl < max_level else "—"
+		if can_buy or lvl >= max_level:
+			_cost_lbl.add_theme_color_override("font_color", Color(0.95, 0.85, 0.5))
+		else:
+			_cost_lbl.add_theme_color_override("font_color", Color(1.0, 0.4, 0.4))
 	
-	if lvl >= max_level:
-		can_buy = false
-		_cost_lbl.text = "MAXED"
-		_bar.visible = false
+	if _bar:
+		_bar.min_value = 0
+		_bar.max_value = max_level
+		_bar.value = lvl
+		_bar.visible = true
+	
+	if _buy_btn:
+		_buy_btn.text = "BUY UPGRADE" if lvl < max_level else "MAXED"
+		_buy_btn.disabled = not can_buy or lvl >= max_level
+		_buy_btn.add_theme_font_size_override("font_size", 18)
 	
 	if upgrade_id == "unlock":
 		visible = depth_meta.can_show_unlock_upgrade(d) and (d < DepthMetaSystem.MAX_DEPTH)
 	else:
 		visible = true
-	
-	_buy_btn.disabled = not can_buy
 
 func _on_buy() -> void:
 	if depth_meta == null:
 		return
 	
-	# Get level BEFORE buying
-	var d := clampi(depth_index, 1, DepthMetaSystem.MAX_DEPTH)
-	
 	# Try to buy
 	var res := depth_meta.try_buy(depth_index, upgrade_id)
 	
 	if bool(res.get("bought", false)):
-		# Get level AFTER buying
-		var new_level := depth_meta.get_level(d, upgrade_id)
-		
-		# IMMEDIATELY update the display
-		_lvl_lbl.text = "Lv %d/%d" % [new_level, max_level]
-		
-		# Handle maxed case
-		if new_level >= max_level:
-			_cost_lbl.text = "MAXED"
-			_bar.visible = false
-			_buy_btn.disabled = true
-			_buy_btn.text = "MAXED"
-		else:
-			# Update cost for next level
-			var defs := depth_meta.get_depth_upgrade_defs(d)
-			var def: Dictionary = {}
-			for item in defs:
-				if String(item.get("id", "")) == upgrade_id:
-					def = item
-					break
-			
-			if not def.is_empty():
-				var info := _format_costs(d, def)
-				_cost_lbl.text = String(info["text"])
-				
-				# Check if can afford next level
-				var can_afford = bool(info["ok"])
-				_buy_btn.disabled = not can_afford
+		_refresh()
 		
 		# Update meta panel currency display
 		var meta_panel := get_tree().current_scene.find_child("MetaPanelController", true, false)
@@ -268,10 +323,8 @@ func _on_buy() -> void:
 				gm.force_unlock_depth_tab(depth_index + 1)
 			gm.save_game()
 
-func _process(_delta: float) -> void:
-	# Only refresh periodically to catch currency changes
-	if Engine.get_process_frames() % 10 == 0:
-		if _buy_btn != null and not _buy_btn.disabled:
-			var d := clampi(depth_index, 1, DepthMetaSystem.MAX_DEPTH)
-			var lvl := depth_meta.get_level(d, upgrade_id)
-			_lvl_lbl.text = "Lv %d/%d" % [lvl, max_level]
+func _process(delta: float) -> void:
+	_t += delta
+	if _t >= 0.25:
+		_t = 0.0
+		_refresh()

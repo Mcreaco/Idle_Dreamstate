@@ -1,4 +1,4 @@
-extends HBoxContainer
+extends PanelContainer
 class_name PermPerkRow
 
 @export var perk_id: String = "memory_engine"
@@ -9,7 +9,10 @@ class_name PermPerkRow
 
 var gm: GameManager
 var perm: PermPerkSystem
+var title_label: Label
 var desc_label: Label
+var stat_label: Label
+var bar_label: Label
 var _t := 0.0
 
 func _ready() -> void:
@@ -17,72 +20,172 @@ func _ready() -> void:
 	perm = get_tree().current_scene.find_child("PermPerkSystem", true, false)
 	
 	size_flags_horizontal = SIZE_EXPAND_FILL
-	add_theme_constant_override("separation", 16)
+	mouse_filter = MOUSE_FILTER_STOP
 	
-	# Clear existing children and rebuild in correct order: Button | Desc | Cost | Bar
-	# This avoids the need for move_child gymnastics
+	pivot_offset = size / 2.0
+	item_rect_changed.connect(func(): pivot_offset = size / 2.0)
+	
+	_style_card_base()
+	
+	mouse_entered.connect(_on_mouse_entered)
+	mouse_exited.connect(_on_mouse_exited)
+	
 	for child in get_children():
-		if child != btn and child != bar and child != cost_label:
-			child.queue_free()
+		child.queue_free()
 	
-	# Button (left, fixed 500px)
-	if btn:
-		btn.custom_minimum_size = Vector2(500, 44)
-		btn.size_flags_horizontal = SIZE_SHRINK_BEGIN
-		if gm and gm.has_method("_style_button"):
-			gm._style_button(btn)
-		if not btn.pressed.is_connected(_on_buy):
-			btn.pressed.connect(_on_buy)
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 16)
+	margin.add_theme_constant_override("margin_right", 16)
+	margin.add_theme_constant_override("margin_top", 12)
+	margin.add_theme_constant_override("margin_bottom", 12)
+	add_child(margin)
 	
-	# Description (middle, expands to fill available space)
+	var hbox := HBoxContainer.new()
+	hbox.add_theme_constant_override("separation", 24)
+	margin.add_child(hbox)
+	
+	# --- COLUMN 1: Action ---
+	var action_vbox := VBoxContainer.new()
+	action_vbox.custom_minimum_size = Vector2(240, 0)
+	action_vbox.alignment = VBoxContainer.ALIGNMENT_CENTER
+	hbox.add_child(action_vbox)
+	
+	btn = Button.new()
+	btn.name = "BuyButton"
+	btn.custom_minimum_size = Vector2(240, 54)
+	btn.size_flags_horizontal = SIZE_SHRINK_CENTER
+	btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	if not btn.pressed.is_connected(_on_buy):
+		btn.pressed.connect(_on_buy)
+	action_vbox.add_child(btn)
+	
+	cost_label = Label.new()
+	cost_label.name = "CostLabel"
+	cost_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	cost_label.add_theme_font_size_override("font_size", 16)
+	cost_label.add_theme_color_override("font_color", Color(0.95, 0.85, 0.5))
+	action_vbox.add_child(cost_label)
+	
+	# --- COLUMN 2: Info ---
+	var info_vbox := VBoxContainer.new()
+	info_vbox.size_flags_horizontal = SIZE_EXPAND_FILL
+	info_vbox.alignment = VBoxContainer.ALIGNMENT_CENTER
+	hbox.add_child(info_vbox)
+	
+	title_label = Label.new()
+	title_label.name = "TitleLabel"
+	title_label.add_theme_font_size_override("font_size", 20)
+	title_label.add_theme_color_override("font_color", Color(0.9, 0.95, 1.0))
+	info_vbox.add_child(title_label)
+	
 	desc_label = Label.new()
 	desc_label.name = "DescLabel"
 	desc_label.add_theme_font_size_override("font_size", 14)
-	desc_label.add_theme_color_override("font_color", Color(0.75, 0.82, 0.9))
-	desc_label.size_flags_horizontal = SIZE_EXPAND_FILL  # This pushes Cost and Bar right
-	desc_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	desc_label.add_theme_color_override("font_color", Color(0.7, 0.75, 0.85))
 	desc_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	add_child(desc_label)
+	info_vbox.add_child(desc_label)
 	
-	# Cost (middle-right, fixed 70px, centered in its slot)
-	if cost_label:
-		if cost_label.get_parent():
-			cost_label.get_parent().remove_child(cost_label)
-		cost_label.custom_minimum_size = Vector2(70, 0)
-		cost_label.size_flags_horizontal = SIZE_SHRINK_CENTER  # CHANGED: Don't fight for 'end'
-		cost_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-		add_child(cost_label)
+	stat_label = Label.new()
+	stat_label.name = "StatLabel"
+	stat_label.add_theme_font_size_override("font_size", 15)
+	stat_label.add_theme_color_override("font_color", Color(0.4, 0.9, 1.0))
+	info_vbox.add_child(stat_label)
 	
-	# Bar (far right, fixed 500px, anchored to right edge)
-	if bar:
-		if bar.get_parent():
-			bar.get_parent().remove_child(bar)
-		bar.custom_minimum_size = Vector2(500, 20)
-		bar.size_flags_horizontal = SIZE_SHRINK_END  # Keeps it anchored right
-		bar.mouse_filter = MOUSE_FILTER_IGNORE
-		
-		var bg = StyleBoxFlat.new()
-		bg.bg_color = Color(0.15, 0.17, 0.20, 0.8)
-		bg.corner_radius_top_left = 6
-		bg.corner_radius_top_right = 6
-		bg.corner_radius_bottom_left = 6
-		bg.corner_radius_bottom_right = 6
-		
-		var fg = StyleBoxFlat.new()
-		fg.bg_color = Color(0.35, 0.8, 0.95, 0.95)
-		fg.corner_radius_top_left = 6
-		fg.corner_radius_top_right = 6
-		fg.corner_radius_bottom_left = 6
-		fg.corner_radius_bottom_right = 6
-		
-		bar.add_theme_stylebox_override("background", bg)
-		bar.add_theme_stylebox_override("fill", fg)
-		add_child(bar)
+	# --- COLUMN 3: Mastery ---
+	var mastery_vbox := VBoxContainer.new()
+	mastery_vbox.custom_minimum_size = Vector2(300, 0)
+	mastery_vbox.alignment = VBoxContainer.ALIGNMENT_CENTER
+	hbox.add_child(mastery_vbox)
 	
-	# Force layout update after reparenting
-	queue_sort()
+	var bar_container = PanelContainer.new()
+	bar_container.mouse_filter = MOUSE_FILTER_IGNORE
+	mastery_vbox.add_child(bar_container)
+	
+	bar = ProgressBar.new()
+	bar.name = "Bar"
+	bar.custom_minimum_size = Vector2(300, 24)
+	bar.show_percentage = false
+	bar_container.add_child(bar)
+	
+	bar_label = Label.new()
+	bar_label.name = "BarLabel"
+	bar_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	bar_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	bar_label.add_theme_font_size_override("font_size", 13)
+	bar_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
+	bar_label.add_theme_constant_override("outline_size", 4)
+	bar_container.add_child(bar_label)
+	
+	var mastery_lbl = Label.new()
+	mastery_lbl.text = "Mastery Progress"
+	mastery_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	mastery_lbl.add_theme_font_size_override("font_size", 11)
+	mastery_lbl.modulate = Color(1, 1, 1, 0.5)
+	mastery_vbox.add_child(mastery_lbl)
+	
+	_style_bar()
+	
+	if gm and gm.has_method("_style_button"):
+		gm._style_button(btn)
 	
 	refresh()
+
+func _style_card_base() -> void:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.12, 0.14, 0.18, 0.45) # Darker, more glass
+	sb.border_width_left = 1
+	sb.border_width_top = 1
+	sb.border_width_right = 1
+	sb.border_width_bottom = 1
+	sb.border_color = Color(0.5, 0.6, 1.0, 0.12)
+	sb.corner_radius_top_left = 14
+	sb.corner_radius_top_right = 14
+	sb.corner_radius_bottom_left = 14
+	sb.corner_radius_bottom_right = 14
+	add_theme_stylebox_override("panel", sb)
+
+func _style_bar() -> void:
+	if not bar: return
+	
+	var bg = StyleBoxFlat.new()
+	bg.bg_color = Color(0.02, 0.03, 0.05, 0.9)
+	bg.corner_radius_top_left = 12
+	bg.corner_radius_top_right = 12
+	bg.corner_radius_bottom_left = 12
+	bg.corner_radius_bottom_right = 12
+	bg.border_width_left = 1
+	bg.border_width_top = 1
+	bg.border_width_right = 1
+	bg.border_width_bottom = 1
+	bg.border_color = Color(0.4, 0.5, 0.8, 0.25)
+	
+	var fg = StyleBoxFlat.new()
+	fg.bg_color = Color(0.4, 0.75, 1.0, 1.0)
+	fg.corner_radius_top_left = 12
+	fg.corner_radius_top_right = 12
+	fg.corner_radius_bottom_left = 12
+	fg.corner_radius_bottom_right = 12
+	
+	bar.add_theme_stylebox_override("background", bg)
+	bar.add_theme_stylebox_override("fill", fg)
+
+func _on_mouse_entered() -> void:
+	var sb := get_theme_stylebox("panel").duplicate() as StyleBoxFlat
+	sb.bg_color = Color(0.18, 0.22, 0.28, 0.65)
+	sb.border_color = Color(0.6, 0.8, 1.0, 0.5)
+	sb.shadow_color = Color(0.4, 0.6, 1.0, 0.2)
+	sb.shadow_size = 12
+	add_theme_stylebox_override("panel", sb)
+	
+	var tween = create_tween()
+	tween.tween_property(self, "scale", Vector2(1.008, 1.008), 0.1).set_trans(Tween.TRANS_SINE)
+	z_index = 10
+
+func _on_mouse_exited() -> void:
+	_style_card_base()
+	var tween = create_tween()
+	tween.tween_property(self, "scale", Vector2(1.0, 1.0), 0.1).set_trans(Tween.TRANS_SINE)
+	z_index = 0
 
 func _process(delta: float) -> void:
 	_t += delta
@@ -158,116 +261,131 @@ func refresh() -> void:
 	var max_lvl = perm.max_level
 	var cost = 0.0
 	var tip = ""
+	var stat = ""
 	
 	match perk_id:
 		"memory_engine":
 			title = "Memory Engine"
 			lvl = perm.memory_engine_level
 			cost = perm.get_cost_by_id(perk_id)
-			tip = "×%.0f Thoughts at Lv%d" % [pow(1.18, perm.memory_engine_level), perm.memory_engine_level]
+			tip = "Increases passive Thoughts generation."
+			stat = "Thoughts Multiplier: x%.2f" % perm.get_thoughts_mult()
 		"calm_mind":
 			title = "Calm Mind"
 			lvl = perm.calm_mind_level
 			cost = perm.get_cost_by_id(perk_id)
-			tip = "-4% Instability gain per level"
+			tip = "Reduces Instability gain from all sources."
+			stat = "Instability Gain: %.0f%%" % (perm.get_instability_mult() * 100.0)
 		"focused_will":
 			title = "Focused Will"
 			lvl = perm.focused_will_level
 			cost = perm.get_cost_by_id(perk_id)
-			tip = "+6% dreamcloud per level"
+			tip = "Improves Dreamcloud generation efficiency."
+			stat = "Dreamcloud Yield: +%.0f%%" % ((perm.get_dreamcloud_mult() - 1.0) * 100.0)
 		"starting_insight":
 			title = "Starting Insight"
 			lvl = perm.starting_insight_level
 			cost = perm.get_cost_by_id(perk_id)
-			tip = "Start each run with +25 Thoughts per level"
+			tip = "Increases Thoughts starting balance."
+			stat = "Starting Thoughts: %s" % _fmt_num(perm.get_starting_thoughts())
 		"stability_buffer":
 			title = "Stability Buffer"
 			lvl = perm.stability_buffer_level
 			cost = perm.get_cost_by_id(perk_id)
-			tip = "Start each run with -2 Instability per level"
+			tip = "Reduces starting Instability level."
+			stat = "Instability Reduction: -%.0f" % perm.get_starting_instability_reduction()
 		"offline_echo":
 			title = "Offline Echo"
 			lvl = perm.offline_echo_level
 			cost = perm.get_cost_by_id(perk_id)
-			tip = "+8% Offline gains per level"
+			tip = "Increases production while the game is closed."
+			stat = "Offline Multiplier: x%.2f" % perm.get_offline_mult()
 		"recursive_memory":
 			title = "Recursive Memory"
 			lvl = perm.recursive_memory_level
 			cost = perm.get_cost_by_id(perk_id)
-			tip = "+5% Memories gain per level"
+			tip = "A portion of Memories earned boosts the next gain."
+			stat = "Memory Bonus: +%.0f%%" % ((perm.get_recursive_memory_mult() - 1.0) * 100.0)
 		"lucid_dreaming":
 			title = "Lucid Dreaming"
 			lvl = perm.lucid_dreaming_level
 			cost = perm.get_cost_by_id(perk_id)
-			tip = "+10% Overclock duration per level"
+			tip = "Lengthens the duration of Overclock state."
+			stat = "Overclock Duration: +%.0f%%" % ((perm.get_lucid_dreaming_duration_bonus() - 1.0) * 100.0)
 		"deep_sleeper":
 			title = "Deep Sleeper"
 			lvl = perm.deep_sleeper_level
 			cost = perm.get_cost_by_id(perk_id)
-			tip = "+2% Thoughts per depth level per level"
+			tip = "Grants bonus Thoughts based on your current depth."
+			stat = "Depth Bonus: +%.1f%% per depth" % (perm.get_deep_sleeper_depth_bonus() * 100.0)
 		"night_owl":
 			title = "Night Owl"
 			lvl = perm.night_owl_level
 			cost = perm.get_cost_by_id(perk_id)
-			tip = "+8% Idle Thoughts per level"
+			tip = "Boosts passive generation based on real-world time."
+			stat = "Night Multiplier: x%.2f" % perm.get_night_owl_mult()
 		"dream_catcher":
 			title = "Dream Catcher"
 			lvl = perm.dream_catcher_level
 			cost = perm.get_cost_by_id(perk_id)
-			tip = "+3% chance to not consume dreamcloud on Overclock"
+			tip = "Chance for Overclock to not consume resources."
+			stat = "Save Chance: %.0f%%" % (perm.get_dream_catcher_chance() * 100.0)
 		"subconscious_miner":
 			title = "Subconscious Miner"
 			lvl = perm.subconscious_miner_level
 			cost = perm.get_cost_by_id(perk_id)
-			tip = "+0.5 passive Thoughts/sec even while offline"
+			tip = "Passively mines Thoughts at a flat rate."
+			stat = "Passive Rate: +%s/sec" % _fmt_num(perm.get_subconscious_miner_rate())
 		"void_walker":
 			title = "Void Walker"
 			lvl = perm.void_walker_level
 			cost = perm.get_cost_by_id(perk_id)
-			tip = "+5 Instability cap per level (can exceed 100%)"
+			tip = "Expands the absolute cap of Instability."
+			stat = "Cap Increase: +%.0f" % perm.get_void_walker_instability_cap()
 		"rapid_eye":
 			title = "Rapid Eye"
 			lvl = perm.rapid_eye_level
 			cost = perm.get_cost_by_id(perk_id)
-			tip = "-3% Dive cooldown per level"
+			tip = "Reduces the cooldown between dives."
+			stat = "CD Reduction: -%.0f%%" % (perm.get_rapid_eye_cooldown_reduction() * 100.0)
 		"sleep_paralysis":
 			title = "Sleep Paralysis"
 			lvl = perm.sleep_paralysis_level
 			cost = perm.get_cost_by_id(perk_id)
-			tip = "+1s frozen Instability after Wake/Fail per level"
+			tip = "Freezes instability for a short time after diving."
+			stat = "Freeze Time: %.1fs" % perm.get_sleep_paralysis_seconds()
 		"oneiromancy":
 			title = "Oneiromancy"
 			lvl = perm.oneiromancy_level
 			cost = perm.get_cost_by_id(perk_id)
-			tip = "+1 depth preview per level"
+			tip = "Grants previews of deeper, unexplored depths."
+			stat = "Preview Depth: +%d" % perm.get_oneiromancy_preview_depths()
+	
+	if title_label: title_label.text = title
+	if desc_label: desc_label.text = tip
+	if stat_label: stat_label.text = stat
 	
 	if btn:
-		btn.text = "%s (Lv %d/%d)" % [title, lvl, max_lvl]
+		btn.text = "BUY UPGRADE" if lvl < max_lvl else "MAXED"
 		btn.disabled = (lvl >= max_lvl) or (gm.memories < cost)
-		# FIX: Format memories in tooltip
-		btn.tooltip_text = "%s\n%s\nCost: %s Memories\nYou have: %s" % [
-			title, tip, _fmt_num(cost), _fmt_num(gm.memories)
-		]
-	
-	if desc_label:
-		desc_label.text = tip
-		if lvl >= max_lvl:
-			desc_label.modulate = Color(0.5, 0.5, 0.5, 0.5)
-		else:
-			desc_label.modulate = Color(1, 1, 1, 1.0)
+		btn.add_theme_font_size_override("font_size", 18)
 	
 	if cost_label:
-		# FIX: Use _fmt_num for cost display
-		cost_label.text = "—" if lvl >= max_lvl else _fmt_num(cost)
+		cost_label.text = "—" if lvl >= max_lvl else "[ %s Memories ]" % _fmt_num(cost)
 		if lvl < max_lvl and gm.memories < cost:
-			cost_label.add_theme_color_override("font_color", Color(0.9, 0.3, 0.3))
+			cost_label.add_theme_color_override("font_color", Color(1.0, 0.4, 0.4))
 		else:
-			cost_label.remove_theme_color_override("font_color")
+			cost_label.add_theme_color_override("font_color", Color(0.95, 0.85, 0.5))
 	
 	if bar:
 		bar.min_value = 0
 		bar.max_value = max_lvl
 		bar.value = lvl
+		if bar_label:
+			bar_label.text = "LEVEL %d / %d" % [lvl, max_lvl]
+			if lvl >= max_lvl:
+				bar_label.text = "MASTERY COMPLETE"
+				bar_label.add_theme_color_override("font_color", Color(0.1, 1.0, 0.4))
 	
 	# Debug/Logic section
 	var is_maxed: bool = lvl >= max_lvl

@@ -29,6 +29,11 @@ var depth_upgrade_rows: Array = []
 var _update_timer: float = 0.0
 const UPDATE_INTERVAL: float = 0.5
 
+var _current_abyss_sub: String = "perks"
+var _abyss_sub_tabs_hbox: HBoxContainer = null
+var _abyss_perks_page: Control = null
+var _abyss_shop_page: Control = null
+
 # NEW: Store reference to our private label that no other script can find
 var _memories_label: Label = null
 var _header_hbox: HBoxContainer = null
@@ -88,8 +93,8 @@ func _late_bind() -> void:
 
 	if close_btn != null:
 		close_btn.mouse_filter = Control.MOUSE_FILTER_STOP
-		if not close_btn.pressed.is_connected(Callable(self, "close")):
-			close_btn.pressed.connect(Callable(self, "close"))
+		if not close_btn.pressed.is_connected(Callable(self, "_on_close_button_pressed")):
+			close_btn.pressed.connect(Callable(self, "_on_close_button_pressed"))
 
 	_fix_stacking()
 	
@@ -98,11 +103,13 @@ func _late_bind() -> void:
 	
 	_find_and_setup_upgrade_rows()
 	_wrap_upgrade_rows_in_scroll()
+	_setup_abyss_consolidation()
 	_apply_unlocks()
 	_show_meta(_current_meta)
 	_show_depth(_current_depth)
 	_style_top_tabs()
 	_style_perm_panel()
+	_style_main_window()
 	_style_close_button()
 	_style_currency_summary()
 	_refresh_all_rows()
@@ -331,7 +338,7 @@ func _refresh_depth_tabs() -> void:
 		var amount := depth_meta_system.currency[i] if depth_meta_system != null else 0.0
 		tab.text = "%s (%.0f)" % [depth_title, amount]
 			
-func _make_tab_style(bg: Color, border: Color, border_w: int = 2, radius: int = 8, shadow_color: Color = Color(0, 0, 0, 0.35), shadow_size: int = 3) -> StyleBoxFlat:
+func _make_tab_style(bg: Color, border: Color, border_w: int = 2, radius: int = 8, shadow_color: Color = Color(0, 0, 0, 0.4), shadow_size: int = 4) -> StyleBoxFlat:
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = bg
 	sb.border_color = border
@@ -345,10 +352,10 @@ func _make_tab_style(bg: Color, border: Color, border_w: int = 2, radius: int = 
 	sb.corner_radius_bottom_right = radius
 	sb.shadow_color = shadow_color
 	sb.shadow_size = shadow_size
-	sb.content_margin_left = 10
-	sb.content_margin_right = 10
-	sb.content_margin_top = 6
-	sb.content_margin_bottom = 6
+	sb.content_margin_left = 12
+	sb.content_margin_right = 12
+	sb.content_margin_top = 8
+	sb.content_margin_bottom = 8
 	return sb
 
 func _style_tab_button(btn: Button) -> void:
@@ -398,7 +405,18 @@ func _style_top_tabs() -> void:
 		container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
 	for b in [tab_perm, tab_depth, tab_abyss]:
+		if b == null: continue
 		_style_tab_button(b)
+		# Active state colors
+		var is_active = (b == tab_perm and _current_meta == "perm") or \
+						(b == tab_depth and _current_meta == "depth") or \
+						(b == tab_abyss and _current_meta == "abyss")
+		if is_active:
+			b.add_theme_color_override("font_color", Color(0.4, 0.8, 1.0))
+			var active_sb = _make_tab_style(Color(0.15, 0.18, 0.25, 0.98), Color(0.4, 0.8, 1.0, 0.9), 2, 9)
+			b.add_theme_stylebox_override("normal", active_sb)
+		else:
+			b.remove_theme_color_override("font_color")
 
 func _style_depth_tabs_bar() -> void:
 	if depth_tabs == null:
@@ -409,7 +427,7 @@ func _style_depth_tabs_bar() -> void:
 		while panel != null and not (panel is Panel or panel is PanelContainer):
 			panel = panel.get_parent()
 		if panel != null:
-			var sb := _make_tab_style(Color(0.05, 0.06, 0.08, 0.85), Color(0.5, 0.6, 0.9, 0.6), 2, 10, Color(0, 0, 0, 0.35), 3)
+			var sb := _make_tab_style(Color(0.08, 0.1, 0.15, 0.6), Color(0.4, 0.6, 1.0, 0.2), 1, 12, Color(0, 0, 0, 0.4), 6)
 			sb.content_margin_left = 12
 			sb.content_margin_right = 12
 			sb.content_margin_top = 8
@@ -417,8 +435,77 @@ func _style_depth_tabs_bar() -> void:
 			panel.add_theme_stylebox_override("panel", sb)
 
 		if depth_tabs is BoxContainer:
-			depth_tabs.add_theme_constant_override("separation", 6)
+			depth_tabs.add_theme_constant_override("separation", 8)
 			depth_tabs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+func _style_depth_header(depth_idx: int) -> void:
+	if page_depth == null: return
+	var scroll = page_depth.find_child("DepthScroll", true, false)
+	if scroll == null: return
+	var parent = scroll.get_parent()
+	
+	var header_id = "DepthHeader"
+	var header = parent.get_node_or_null(header_id)
+	if header == null:
+		header = PanelContainer.new()
+		header.name = header_id
+		parent.add_child(header)
+		parent.move_child(header, scroll.get_index())
+		
+		# Spacing
+		var margin = MarginContainer.new()
+		margin.add_theme_constant_override("margin_bottom", 16)
+		header.add_child(margin)
+		
+		var hbox = HBoxContainer.new()
+		hbox.alignment = BoxContainer.ALIGNMENT_CENTER
+		margin.add_child(hbox)
+		
+		var title = Label.new()
+		title.name = "DepthTitle"
+		title.add_theme_font_size_override("font_size", 28)
+		title.add_theme_color_override("font_color", Color(0.9, 0.95, 1.0))
+		title.add_theme_constant_override("outline_size", 4)
+		title.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.5))
+		hbox.add_child(title)
+		
+		var spacer = Control.new()
+		spacer.custom_minimum_size.x = 40
+		hbox.add_child(spacer)
+		
+		var curr_hbox = HBoxContainer.new()
+		curr_hbox.alignment = BoxContainer.ALIGNMENT_CENTER
+		hbox.add_child(curr_hbox)
+		
+		var curr_val = Label.new()
+		curr_val.name = "CurrencyValue"
+		curr_val.add_theme_font_size_override("font_size", 24)
+		curr_val.add_theme_color_override("font_color", Color(0.4, 0.9, 1.0))
+		curr_hbox.add_child(curr_val)
+		
+		var curr_name = Label.new()
+		curr_name.name = "CurrencyName"
+		curr_name.add_theme_font_size_override("font_size", 18)
+		curr_name.modulate = Color(1, 1, 1, 0.6)
+		curr_hbox.add_child(curr_name)
+	
+	# Update content
+	var depth_name = DepthMetaSystem.get_depth_name(depth_idx)
+	var currency_name = DepthMetaSystem.get_depth_currency_name(depth_idx)
+	var amount = depth_meta_system.currency[depth_idx] if depth_meta_system else 0.0
+	
+	header.find_child("DepthTitle").text = depth_name.to_upper()
+	header.find_child("CurrencyValue").text = _fmt_num(amount)
+	header.find_child("CurrencyName").text = " " + currency_name
+	
+	# Style the header panel
+	var sb = StyleBoxFlat.new()
+	sb.bg_color = Color(0.12, 0.15, 0.2, 0.4)
+	sb.border_width_bottom = 2
+	sb.border_color = Color(0.4, 0.6, 1.0, 0.3)
+	sb.content_margin_top = 10
+	sb.content_margin_bottom = 10
+	header.add_theme_stylebox_override("panel", sb)
 
 func _update_bottom_currencies() -> void:
 	if depth_meta_system == null:
@@ -505,16 +592,16 @@ func _style_perm_panel() -> void:
 		panel = panel.get_parent()
 	if panel == null:
 		return
-	var sb := _make_tab_style(Color(0.05, 0.06, 0.08, 0.85), Color(0.5, 0.6, 0.9, 0.6), 2, 10, Color(0, 0, 0, 0.35), 3)
-	sb.content_margin_left = 14
-	sb.content_margin_right = 14
-	sb.content_margin_top = 10
-	sb.content_margin_bottom = 10
+	var sb := _make_tab_style(Color(0.08, 0.1, 0.13, 0.4), Color(0.4, 0.5, 0.8, 0.2), 1, 12, Color(0, 0, 0, 0.45), 8)
+	sb.content_margin_left = 16
+	sb.content_margin_right = 16
+	sb.content_margin_top = 16
+	sb.content_margin_bottom = 16
 	panel.add_theme_stylebox_override("panel", sb)
 
 	var container := rows[0].get_parent()
 	if container is BoxContainer:
-		container.add_theme_constant_override("separation", 10)
+		container.add_theme_constant_override("separation", 12)
 
 func close() -> void:
 	visible = false
@@ -540,6 +627,11 @@ func _connect_top_tab(btn: Button, which: String) -> void:
 
 func _on_top_tab_pressed(which: String) -> void:
 	_show_meta(which)
+	var tm = get_node_or_null("/root/TutorialManage")
+	if tm and tm.has_method("on_ui_element_clicked"):
+		if which == "perm": tm.on_ui_element_clicked("TabPerm")
+		elif which == "depth": tm.on_ui_element_clicked("TabDepth")
+		elif which == "abyss": tm.on_ui_element_clicked("TabAbyss")
 
 func _show_meta(which: String) -> void:
 	_current_meta = which
@@ -579,8 +671,13 @@ func _apply_unlocks() -> void:
 		push_warning("MetaPanelController: DepthTabs or DepthPages not found. Check node names.")
 		return
 
+	_style_main_window()
 	_style_depth_tabs_bar()
+	_apply_tab_styles()
 
+func _apply_tab_styles() -> void:
+	if depth_tabs == null: return
+	
 	var abyss_ok := abyss_unlocked or (max_depth_reached >= 15)
 	if tab_abyss != null:
 		tab_abyss.visible = abyss_ok
@@ -596,10 +693,18 @@ func _apply_unlocks() -> void:
 		tab.add_theme_constant_override("content_margin_right", 6)
 		tab.add_theme_font_size_override("font_size", 11)
 		_style_tab_button(tab)
+		
+		var is_active = (i == _current_depth)
+		if is_active:
+			tab.add_theme_color_override("font_color", Color(0.4, 0.8, 1.0))
+			tab.add_theme_stylebox_override("normal", _make_tab_style(Color(0.15, 0.2, 0.3, 0.9), Color(0.4, 0.8, 1.0, 0.8), 2, 9))
+			tab.modulate = Color(1.1, 1.1, 1.2, 1.0)
+		else:
+			tab.remove_theme_color_override("font_color")
+			tab.modulate = Color(1, 1, 1, 0.55) if tab.disabled else Color(1, 1, 1, 1)
 
 		tab.visible = true
 		tab.disabled = (max_depth_reached < i)
-		tab.modulate = Color(1, 1, 1, 0.55) if tab.disabled else Color(1, 1, 1, 1)
 		tab.mouse_filter = Control.MOUSE_FILTER_IGNORE if tab.disabled else Control.MOUSE_FILTER_STOP
 
 		tab.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -607,25 +712,13 @@ func _apply_unlocks() -> void:
 		tab.custom_minimum_size = Vector2.ZERO
 
 		var depth_title := DepthMetaSystem.get_depth_name(i)
-		var amount := depth_meta_system.currency[i] if depth_meta_system != null else 0.0
-		tab.text = "%s (%.0f)" % [depth_title, amount]
-
-		tab.add_theme_constant_override("h_separation", 4)
-		tab.add_theme_constant_override("content_margin_left", 6)
-		tab.add_theme_constant_override("content_margin_right", 6)
-
-		_style_tab_button(tab)
-
-		if not tab.pressed.is_connected(Callable(self, "_on_depth_tab_pressed")):
-			tab.pressed.connect(Callable(self, "_on_depth_tab_pressed").bind(i))
-		
-		var completion := 0.0
 		var total_upgs := 0
 		var bought_upgs := 0
 		var defs: Array = depth_meta_system.get_depth_upgrade_defs(i)
 		for def in defs:
 			total_upgs += int(def.get("max", 1))
 			bought_upgs += depth_meta_system.get_level(i, def.get("id", ""))
+		var completion := 0.0
 		if total_upgs > 0:
 			completion = float(bought_upgs) / float(total_upgs)
 		
@@ -634,10 +727,12 @@ func _apply_unlocks() -> void:
 		if completion >= 1.0:
 			tab.add_theme_color_override("font_color", Color(0.3, 0.9, 0.4))  # Green for complete
 
+		if not tab.pressed.is_connected(Callable(self, "_on_depth_tab_pressed")):
+			tab.pressed.connect(Callable(self, "_on_depth_tab_pressed").bind(i))
 
-	if _current_depth > max_depth_reached:
-		_current_depth = max_depth_reached
-	_show_depth(_current_depth)
+
+	# Clamping logic removed to prevent recursion.
+	# Callers of _apply_unlocks should handle depth switching if needed.
 	
 func _ensure_depth_tab_spacer() -> void:
 	if depth_tabs == null:
@@ -650,13 +745,103 @@ func _ensure_depth_tab_spacer() -> void:
 		depth_tabs.add_child(spacer)
 	depth_tabs.move_child(spacer, 0)
 
+func _setup_abyss_consolidation() -> void:
+	if page_abyss == null: return
+	
+	# Prepare the Abyss Page to hold sub-tabs
+	for c in page_abyss.get_children(): c.queue_free()
+	
+	var main_vbox := VBoxContainer.new()
+	main_vbox.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	main_vbox.add_theme_constant_override("separation", 15)
+	page_abyss.add_child(main_vbox)
+	
+	# 1. Sub-Tab Bar
+	_abyss_sub_tabs_hbox = HBoxContainer.new()
+	_abyss_sub_tabs_hbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	_abyss_sub_tabs_hbox.add_theme_constant_override("separation", 20)
+	main_vbox.add_child(_abyss_sub_tabs_hbox)
+	
+	var btn_perks := Button.new()
+	btn_perks.text = "ABYSS PERKS"
+	btn_perks.custom_minimum_size = Vector2(160, 32)
+	btn_perks.pressed.connect(_on_abyss_sub_pressed.bind("perks"))
+	_abyss_sub_tabs_hbox.add_child(btn_perks)
+	
+	var btn_shop := Button.new()
+	btn_shop.text = "VOID SHOP"
+	btn_shop.custom_minimum_size = Vector2(160, 32)
+	btn_shop.pressed.connect(_on_abyss_sub_pressed.bind("shop"))
+	_abyss_sub_tabs_hbox.add_child(btn_shop)
+	
+	# 2. Content Area
+	var content_root := MarginContainer.new()
+	content_root.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	content_root.add_theme_constant_override("margin_left", 10)
+	content_root.add_theme_constant_override("margin_right", 10)
+	main_vbox.add_child(content_root)
+	
+	# Perks Page
+	_abyss_perks_page = ScrollContainer.new()
+	_abyss_perks_page.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_abyss_perks_page.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	content_root.add_child(_abyss_perks_page)
+	
+	var perks_vbox := VBoxContainer.new()
+	perks_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	perks_vbox.add_theme_constant_override("separation", 10)
+	_abyss_perks_page.add_child(perks_vbox)
+	
+	# Reparent rows if found
+	var old_panel = get_tree().current_scene.find_child("AbyssPanel", true, false)
+	if old_panel:
+		var rows_container = old_panel.find_child("Rows", true, false)
+		if rows_container:
+			var rows = rows_container.get_children()
+			for row in rows:
+				row.get_parent().remove_child(row)
+				perks_vbox.add_child(row)
+		old_panel.queue_free()
+	
+	# Shop Page
+	_abyss_shop_page = Control.new() # AbyssShop script will target this
+	_abyss_shop_page.name = "ShopPage"
+	_abyss_shop_page.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	content_root.add_child(_abyss_shop_page)
+	
+	# Re-init AbyssShop script if it's on page_abyss
+	if page_abyss.has_method("_create_ui_in"):
+		page_abyss.call("_create_ui_in", _abyss_shop_page)
+	
+	_show_abyss_sub("perks")
+
+func _on_abyss_sub_pressed(sub: String) -> void:
+	_show_abyss_sub(sub)
+
+func _show_abyss_sub(sub: String) -> void:
+	_current_abyss_sub = sub
+	if _abyss_perks_page: _abyss_perks_page.visible = (sub == "perks")
+	if _abyss_shop_page: _abyss_shop_page.visible = (sub == "shop")
+	
+	if _abyss_sub_tabs_hbox:
+		for btn in _abyss_sub_tabs_hbox.get_children():
+			if btn is Button:
+				var active = (sub == "perks" and btn.text.contains("PERKS")) or (sub == "shop" and btn.text.contains("SHOP"))
+				_style_sub_tab_button(btn, active)
+
+func _style_sub_tab_button(btn: Button, active: bool) -> void:
+	var color_bg = Color(0.12, 0.15, 0.25, 0.9) if active else Color(0.08, 0.08, 0.1, 0.4)
+	var color_border = Color(0.4, 0.7, 1.0, 0.8) if active else Color(0.3, 0.3, 0.35, 0.3)
+	btn.add_theme_stylebox_override("normal", _make_tab_style(color_bg, color_border, 2, 8))
+	btn.modulate = Color(1.1, 1.1, 1.25) if active else Color(0.8, 0.8, 0.85)
+
 func _on_depth_tab_pressed(depth_index: int) -> void:
 	_show_depth(depth_index)
 	
 func _show_depth(depth_index: int) -> void:
 	if depth_pages == null:
 		return
-	_current_depth = clampi(depth_index, 1, 15)
+	_current_depth = clampi(depth_index, 1, maxi(1, max_depth_reached))
 
 	for i in range(1, 16):
 		var page := depth_pages.get_node_or_null("DepthPage%d" % i) as Control
@@ -664,6 +849,9 @@ func _show_depth(depth_index: int) -> void:
 			page.visible = (i == _current_depth)
 			page.mouse_filter = Control.MOUSE_FILTER_STOP if page.visible else Control.MOUSE_FILTER_IGNORE
 	
+	_style_depth_header(_current_depth)
+	# Breaking the cycle: just styling the tabs, not re-calling _show_depth
+	_apply_tab_styles() 
 	_refresh_all_rows()
 
 func _on_dim_gui_input(event: InputEvent) -> void:
@@ -751,3 +939,33 @@ func _format_cost(cost_dict: Dictionary) -> String:
 		parts.append("%.0f %s" % [amount, currency_name])
 	
 	return " + ".join(parts)
+
+func _style_main_window() -> void:
+	var window := get_node_or_null("Window") as Control
+	if window == null:
+		window = find_child("Window", true, false) as Control
+	if window == null: return
+	
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.05, 0.06, 0.08, 0.94)
+	sb.border_width_left = 2
+	sb.border_width_top = 2
+	sb.border_width_right = 2
+	sb.border_width_bottom = 2
+	sb.border_color = Color(0.4, 0.5, 0.8, 0.3)
+	sb.corner_radius_top_left = 16
+	sb.corner_radius_top_right = 16
+	sb.corner_radius_bottom_left = 16
+	sb.corner_radius_bottom_right = 16
+	sb.shadow_color = Color(0, 0, 0, 0.6)
+	sb.shadow_size = 20
+	
+	# If parent is a PanelContainer, style it
+	if window is PanelContainer:
+		window.add_theme_stylebox_override("panel", sb)
+	elif window is Panel:
+		window.add_theme_stylebox_override("panel", sb)
+	else:
+		# Search for a background panel inside window
+		var bg := window.get_node_or_null("BG") as Panel
+		if bg: bg.add_theme_stylebox_override("panel", sb)

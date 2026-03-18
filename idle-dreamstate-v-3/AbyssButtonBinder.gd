@@ -32,5 +32,9 @@ func _on_abyss_unlocked() -> void:
 
 
 func _on_pressed() -> void:
-	if _panel != null:
+	var mpc := get_tree().current_scene.find_child("MetaPanelController", true, false)
+	if mpc != null:
+		mpc.call("open")
+		mpc.call("_show_meta", "abyss")
+	elif _panel != null:
 		_panel.open()

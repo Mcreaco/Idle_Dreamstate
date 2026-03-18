@@ -52,7 +52,7 @@ func _generate_combat(depth: int) -> Dictionary:
 		"enemy": {
 			"name": _generate_enemy_name(type, depth),
 			"hp": 100.0 * pow(1.5, depth - 3) * stat_mult,
-			"attack": 10.0 * pow(1.3, depth - 3) * stat_mult,
+			"attack": 20.0 * pow(1.5, depth - 3) * stat_mult,
 			"defense": 5.0 * pow(1.2, depth - 3),
 			"type": type,
 			"intents": _generate_intent_pattern(depth)

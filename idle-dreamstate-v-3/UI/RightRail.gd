@@ -164,6 +164,10 @@ func _on_shop_pressed() -> void:
 			shop_panel.call("open")
 		else:
 			shop_panel.visible = not shop_panel.visible
+	
+	var tm = get_node_or_null("/root/TutorialManage")
+	if tm and tm.has_method("on_ui_element_clicked"):
+		tm.on_ui_element_clicked("ShopButton")
 
 func _find_any_upgrade_button() -> Button:
 	var row := get_tree().current_scene.find_child("UpgradeRow", true, false)
