@@ -1208,7 +1208,7 @@ layout_mode = 2
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 0.8)
 theme_override_font_sizes/font_size = 14
-text = "v0.0.27 (First Playtest)"
+text = "v0.1.0 (Second Playtest)"
 horizontal_alignment = 1
 
 [node name="OfflinePopup" parent="MainUI" instance=ExtResource("14_kjvhd")]

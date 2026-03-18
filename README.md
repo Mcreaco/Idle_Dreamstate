@@ -1,371 +1,86 @@
 # Idle Dreamstate (Abyssal Descent)
 
-[![Godot Engine](https://img.shields.io/badge/Godot-4.5.1-blue.svg)](https://godotengine.org)
+[![Godot Engine](https://img.shields.io/badge/Godot-4.3-blue.svg)](https://godotengine.org)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/Version-v0.1.0-orange.svg)](CHANGELOG.md)
 
 > *"The deeper you dive, the more you lose yourself. But what you find... might be worth the price."*
 
-A cosmic horror-themed idle/incremental game built in Godot 4. Descend through 15 layers of dreams and consciousness, manage your mind's resources, and battle rising instability to reach The Abyss.
+A cosmic horror-themed idle/incremental game built in Godot 4. Descend through 15 layers of dreams and consciousness, manage your mind's resources, and battle rising instability to reach The Abyss. 
+
+**v0.1.0 "The Second Playtest" is here!** Now featuring turn-based combat, a deep equipment progression system, and a visual skill tree overhaul.
 
 ---
 
-## Table of Contents
+## 🌌 Core Features
 
-- [Features](#features)
-- [Installation](#installation)
-- [How to Play](#how-to-play)
-- [Game Mechanics](#game-mechanics)
-- [The 15 Depths](#the-15-depths)
-- [Meta Progression](#meta-progression)
-- [Tips & Strategy](#tips--strategy)
-- [Technical Details](#technical-details)
-- [Contributing](#contributing)
-- [License](#license)
+- **15 Unique Depths** - Each with distinct mechanics, challenges, and atmospheric shifts.
+- **⚔️ Turn-Based Combat** - Encounter "Dreams" (fighting or puzzles) while diving. Counter enemy intents and master the "Lucid Duel."
+- **🛡️ Deep Equipment System** - 6 gear slots, 8 rarity tiers (Common to God-Tier), and massive stat scaling.
+- **🔮 Visual Skill Tree** - A true hierarchical progression graph with glowing connections and iconic power-ups.
+- **Dual Resource System** - Manage **Thoughts** (production) andfight **Instability** while earning **Dream Clouds** for combat upgrades.
+- **Meta Progression** - 16 permanent upgrades, 15 depth-specific trees, and late-game Abyssal Perks.
+- **Procedural Audio** - Immersive dreamlike soundscapes and dynamic combat SFX.
 
 ---
 
-## Features
-
-- **15 Unique Depths** - Each with distinct mechanics, challenges, and atmosphere
-- **Dual Resource System** - Manage Thoughts (production) and Control (boosts) while fighting Instability
-- **Progress Multiplier System** - Fill progress bars for up to 5x production bonus
-- **Deep Meta Progression** - 16 permanent upgrades, 15 depth-specific upgrade trees, and late-game Abyssal Perks
-- **Offline Progress** - Earn resources while away (up to 1 hour)
-- **Risk/Reward Gameplay** - Push your luck for bigger rewards or play it safe
-- **Cosmic Horror Aesthetic** - Atmospheric visuals and unsettling depth mechanics
-
----
-
-## Installation
+## 🛠️ Installation
 
 ### Requirements
-- **Godot Engine 4.5.1** or later
-- **OS**: Windows, macOS, Linux, Android, or iOS
+- **Godot Engine 4.3** or later
+- **OS**: Windows, macOS, Linux (Android/iOS builds available)
 
 ### Running from Source
-
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/Mcreaco/Idle_Dreamstate.git
-   cd Idle_Dreamstate
-   ```
-
-2. Open the project in Godot:
-   - Launch Godot Engine
-   - Click "Import"
-   - Select the `project.godot` file
-
-3. Press **F5** or click the Play button to run
-
-### Exporting
-
-To export for your platform:
-1. Go to **Project > Export**
-2. Select your target platform
-3. Click "Export Project"
+1. Clone the repository: `git clone https://github.com/Mcreaco/Idle_Dreamstate.git`
+2. Open the project in Godot 4.
+3. Press **F5** to start your descent.
 
 ---
 
-## How to Play
+## 🎮 How to Play
 
 ### Core Gameplay Loop
-
-1. **Generate** - Thoughts and Control generate automatically every second
-2. **Upgrade** - Spend Thoughts on run upgrades (speed, stability, memory gain)
-3. **Fill Progress** - Each depth's progress bar fills over time, giving up to 5x production bonus
-4. **Unlock Dive** - Max out the "Stabilize" upgrade (10/10) in the Meta Panel to unlock the Dive button
-5. **Dive** - Descend to the next depth
-6. **Wake** - Prestige to convert progress into permanent Memories and Crystals
-7. **Repeat** - Descend deeper with permanent bonuses
+1. **Generate** - Thoughts and Dream Clouds accumulate automatically.
+2. **Upgrade** - Spend Thoughts on run speed and stability; spend Memories on permanent bonuses.
+3. **Equip & Forge** - Collect drops from combat. Fuse three maxed items to reach the next rarity tier.
+4. **Skills** - Unlock powerful nodes in the visual skill tree to boost your combat effectiveness.
+5. **Dive** - Max out the "Stabilize" upgrade in the Meta Panel (Depth tab) to descend.
+6. **Wake** - Prestige to convert your progress into permanent **Memories** and **Crystals**.
 
 ### Controls
-
 | Action | Description |
 |--------|-------------|
-| **Overclock** | Spend Control for temporary production boost |
-| **Dive** | Descend to next depth (unlocked via Stabilize upgrade) |
-| **Wake** | End run and collect Memories/Crystals |
-| **Meta** | Open permanent upgrade panel |
+| **Combat** | Select attacks (Bludgeon, Slash, Block, etc.) to counter enemy intents. |
+| **Meta** | Access permanent (Memories) and depth-specific (Crystals) upgrades. |
+| **Forge** | Power up, fuse, and dismantle your equipment. |
+| **Skills** | Purchase combat and economy perks in the visual tree. |
 
 ---
 
-## Game Mechanics
+## ⚔️ Combat System: "The Lucid Duel"
 
-### Resources
-
-#### During a Run
-
-| Resource | Description | Risk |
-|----------|-------------|------|
-| **Thoughts** | Primary currency. Generated passively. Spend on upgrades. | None |
-| **Control** | Secondary resource. Spend on Overclock boosts. | None |
-| **Instability** | Risk meter (0-100%). Rises constantly at Depth 2+. | **FAIL at 100%** |
-
-#### Permanent
-
-| Resource | How to Earn | Use |
-|----------|-------------|-----|
-| **Memories** | Wake bonus based on Thoughts + Time + Depth | Buy permanent upgrades |
-| **Crystals** | Earned per depth reached (15 types) | Buy depth-specific upgrades |
-
-### Progress Bar System
-
-- **Each depth has a progress bar** that fills over time
-- **Multiplier Effect**: 0% progress = 1x production, 100% progress = 5x production
-- **NOT for unlocking Dive** - The bar only affects your production multiplier
-- **Dive is unlocked separately** via the Stabilize upgrade in the Meta Panel
-
-### Unlocking Dive
-
-To unlock the Dive button for the next depth:
-
-1. Open the **Meta Panel** (Meta button)
-2. Go to the **Depth Upgrades** tab
-3. Find the **Stabilize** upgrade for your current depth
-4. Upgrade it to **Level 10/10** using Crystals
-5. The Dive button will unlock
-
-### Instability System
-
-- **Hidden at Depth 1** - Safe tutorial zone
-- **Activates at Depth 2** - Starts at 0%, rises ~0.4/sec
-- **Time Until Fail** - Shows seconds until 100% Instability
-- **FAIL State** - Forced Wake at 100% with 0.60x penalty (vs 1.35x for voluntary Wake)
-
-### Overclock
-
-- **Cost**: Control (base cost × upgrade multipliers)
-- **Duration**: 10 seconds (× duration upgrades)
-- **Effects**: 
-  - +Thoughts generation
-  - ×Duration multiplier
-- **Risk**: Increased Instability gain while active
+Combat occurs during dives or as random encounters. 
+- **Intents**: Enemies reveal their actions (Strike, Crush, Drain) beforehand.
+- **Counters**: Use specific gear-based attacks (Block, Dodge, Interrupt) to mitigate damage.
+- **Dream Clouds**: Earned from victories and used to dismantle or fuse gear.
 
 ---
 
-## The 15 Depths
+## 📂 Architecture
 
-| # | Depth Name | Mechanic | Dive Unlock |
-|---|------------|----------|-------------|
-| 1 | **The Shallows** | Tutorial. No instability. | Max Stabilize (10/10) with Amethyst |
-| 2 | **Descent** | First instability (0.4/sec). | Max Stabilize (10/10) with Ruby |
-| 3 | **Pressure** | High instability slows progress. | Max Stabilize (10/10) with Emerald |
-| 4 | **Murk** | Hidden rewards until Wake. | Max Stabilize (10/10) with Sapphire |
-| 5 | **Rift** | Choice events every 30s. | Max Stabilize (10/10) with Diamond |
-| 6 | **Hollow** | Frozen depth bonuses stack. | Max Stabilize (10/10) with Topaz |
-| 7 | **Dread** | Fake threat events. | Max Stabilize (10/10) with Garnet |
-| 8 | **Chasm** | +10% speed per frozen depth. | Max Stabilize (10/10) with Opal |
-| 9 | **Silence** | Blind mode (numbers hidden). Buy "Inner Eye" to see. | Max Stabilize (10/10) with Aquamarine |
-| 10 | **Veil** | Random outcomes on choices. | Max Stabilize (10/10) with Onyx |
-| 11 | **Ruin** | Can lose frozen bonuses. | Max Stabilize (10/10) with Jade |
-| 12 | **Eclipse** | Shadow clone mirrors actions. | Max Stabilize (10/10) with Moonstone |
-| 13 | **Voidline** | 1% chance/sec to lose progress. | Max Stabilize (10/10) with Obsidian |
-| 14 | **Blackwater** | Crystal carryover mechanic. | Max Stabilize (10/10) with Citrine |
-| 15 | **The Abyss** | Final test. All mechanics combined. | N/A (Final Depth) |
-
-### Progress Bar Multiplier
-
-| Progress | Production Multiplier |
-|----------|----------------------|
-| 0% | 1.0x |
-| 25% | 2.0x |
-| 50% | 3.0x |
-| 75% | 4.0x |
-| 100% | 5.0x |
-
-### Depth Currencies
-
-| Depth | Currency | Color |
-|-------|----------|-------|
-| 1 | Amethyst | Purple |
-| 2 | Ruby | Red |
-| 3 | Emerald | Green |
-| 4 | Sapphire | Blue |
-| 5 | Diamond | White |
-| 6 | Topaz | Yellow |
-| 7 | Garnet | Dark Red |
-| 8 | Opal | Iridescent |
-| 9 | Aquamarine | Cyan |
-| 10 | Onyx | Black |
-| 11 | Jade | Teal |
-| 12 | Moonstone | Silver |
-| 13 | Obsidian | Dark Grey |
-| 14 | Citrine | Orange |
-| 15 | Quartz | Clear |
+- `GameManager.gd`: Main game loop and save/load management.
+- `DreamsPanel.gd`: Orchestrates combat, skill tree, and equipment UI.
+- `EquipmentManager.gd`: Handles inventory, stat calculations, and rarity logic.
+- `DepthRunController.gd`: Manages the 15-depth progression and instability.
+- `SoundSystem.gd`: Procedural and atmospheric audio engine.
 
 ---
 
-## Meta Progression
+## 📜 Links & Contributing
 
-### Meta Panel Tabs
-
-1. **Perm** - Permanent upgrades (purchased with Memories)
-2. **Depth** - Depth-specific upgrades (purchased with Crystals)
-3. **Abyss** - Late-game perks (unlocked at Depth 15)
-
-### Permanent Upgrades (Memories)
-
-Spend Memories on permanent bonuses for ALL future runs:
-
-| Upgrade | Effect | Max Level |
-|---------|--------|-----------|
-| **Memory Engine** | +5% Thoughts per level | 25 |
-| **Calm Mind** | -4% Instability gain per level | 25 |
-| **Focused Will** | +6% Control per level | 25 |
-| **Starting Insight** | Start with +25 Thoughts per level | 25 |
-| **Stability Buffer** | Start with -2 Instability per level | 25 |
-| **Offline Echo** | +8% Offline gains per level | 25 |
-| **Recursive Memory** | +5% Memories gain per level | 25 |
-| **Lucid Dreaming** | +10% Overclock duration per level | 25 |
-| **Deep Sleeper** | +2% Thoughts per depth level per level | 25 |
-| **Night Owl** | +8% Idle Thoughts per level | 25 |
-| **Dream Catcher** | +3% chance to not consume Control on Overclock | 25 |
-| **Subconscious Miner** | +0.5 passive Thoughts/sec even while offline | 25 |
-| **Void Walker** | +5 Instability cap per level (can exceed 100%) | 25 |
-| **Rapid Eye** | -3% Dive cooldown per level | 25 |
-| **Sleep Paralysis** | +1s frozen Instability after Wake/Fail per level | 25 |
-| **Oneiromancy** | +1 depth preview per level | 25 |
-
-### Depth Upgrades (Crystals)
-
-Each depth has unique upgrades purchased with its specific crystal:
-
-#### Universal Upgrades (All Depths)
-- **Progress Speed** - Fill progress bar faster (increases multiplier gain rate)
-- **Memories Gain** - More memories from this depth on Wake
-- **Crystals Gain** - More crystals from this depth on Wake
-
-#### Depth-Specific Upgrades
-- **Stabilize** (All Depths) - **REQUIRED** to unlock Dive. Max 10/10.
-- **Inner Eye** (Depth 9) - See numbers in Silence
-- And more depth-specific upgrades...
-
-### Abyssal Perks (Late Game)
-
-Unlocked after reaching Depth 15:
-
-| Perk | Effect |
-|------|--------|
-| **Echoed Descent** | Start new runs with bonus based on previous run |
-| **Abyssal Focus** | Reduced Instability at high depths |
-| **Dark Insight** | See hidden information |
-| **Abyss Veil** | Protection from random events |
-
----
-
-## Tips & Strategy
-
-### Early Game (Depths 1-3)
-
-1. **Prioritize Thoughts Speed** - Generate currency faster
-2. **Fill Progress Bar** - Get that 5x multiplier before major purchases
-3. **Save Crystals for Stabilize** - You NEED level 10 to unlock Dive
-4. **Keep Instability < 50%** - Don't risk failing early
-5. **Wake Early & Often** - Build up Memories for permanent upgrades
-6. **Buy Calm Mind ASAP** - Reduces Instability permanently
-
-### Mid Game (Depths 4-9)
-
-1. **Balance Speed & Stability** - Don't ignore Instability management
-2. **Save Control for Emergencies** - Use Overclock when safe
-3. **Watch Depth Mechanics**:
-   - **Rift (5)**: Choose wisely - some options boost, some hurt
-   - **Silence (9)**: Buy Inner Eye or fly blind
-4. **Build Offline Echo** - Helps when you can't play actively
-
-### Late Game (Depths 10-15)
-
-1. **Void Walker is Key** - Lets you push past 100% temporarily
-2. **Frozen Bonuses Stack** - Hollow (6) bonuses compound
-3. **Save Crystals for Blackwater (14)** - Carryover mechanic is powerful
-4. **The Abyss (15)** - All mechanics active. Be prepared.
-
-### Formula Reference
-
-- **Memories on Wake**: √(Total Thoughts) × (1 + Max Instability/100) × Time Mult × Depth Mult × 1.35 (voluntary)
-- **Crystals on Wake**: √(Total Thoughts) × (1 + Depth × 0.15) × 0.05 × Depth Mult
-- **Instability Gain**: Base Rate × Depth Mult × Upgrade Reductions
-- **Progress Multiplier**: 1x + (4x × Progress%) = 1x to 5x
-
----
-
-## Technical Details
-
-### Built With
-
-- **Godot Engine 4.5.1** - Game engine
-- **GDScript** - Primary scripting language
-- **Vulkan** - Rendering backend
-
-### Architecture
-
-```
-GameManager.gd           - Main game loop, save/load coordinator
-DepthRunController.gd    - 15-depth run system (progress bars, depth switching)
-DepthMetaSystem.gd       - Permanent progression (currencies, upgrades)
-MetaPanelController.gd   - UI for meta upgrades (3 tabs: Perm/Depth/Abyss)
-PermPerkRow.gd           - Permanent upgrade purchase UI rows
-DepthUpgradeRow.gd       - Depth upgrade purchase UI rows
-RiskSystem.gd            - Instability calculation
-OverclockSystem.gd       - Temporary boost mechanic
-SaveSystem.gd            - JSON save/load
-```
-
-### Save Data Location
-
-- **Windows**: `%APPDATA%/Godot/app_userdata/Idle Dreamstate/savegame.json`
-- **macOS**: `~/Library/Application Support/Godot/app_userdata/Idle Dreamstate/savegame.json`
-- **Linux**: `~/.local/share/godot/app_userdata/Idle Dreamstate/savegame.json`
-
-### Offline Progress
-
-- Calculates up to **1 hour** of progress while away
-- Gains: Thoughts, Control, Instability, Depth Progress
-- Multiplier: Base rate × Offline Echo upgrade level
-- Depth-specific: Only active depth gains progress/memories/crystals
-
----
-
-## Contributing
-
-Contributions are welcome! Please follow these guidelines:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-### Reporting Bugs
-
-Please include:
-- Godot version
-- OS and version
-- Steps to reproduce
-- Expected vs actual behavior
-- Screenshots if applicable
-
----
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-## Acknowledgments
-
-- Inspired by classic idle games like Cookie Clicker and Clicker Heroes
-- Cosmic horror themes influenced by Lovecraftian fiction
-- Built with the amazing [Godot Engine](https://godotengine.org)
-
----
-
-## Links
-
-- **Repository**: https://github.com/Mcreaco/Idle_Dreamstate
-- **Issues**: https://github.com/Mcreaco/Idle_Dreamstate/issues
-- **Godot Engine**: https://godotengine.org
+- **Changelog**: See [CHANGELOG.md](CHANGELOG.md) for full history.
+- **Reporting Bugs**: Please use the [GitHub Issues](https://github.com/Mcreaco/Idle_Dreamstate/issues) page.
+- **License**: MIT License.
 
 ---
 
