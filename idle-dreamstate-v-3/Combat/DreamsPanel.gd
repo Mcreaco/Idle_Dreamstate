@@ -834,7 +834,7 @@ func _apply_depth_atmosphere(wave: int) -> void:
 		]
 		var bg_file = bg_names[depth - 1]
 		var bg_path = "res://UI/DepthBarBG/" + bg_file
-		if FileAccess.file_exists(bg_path):
+		if ResourceLoader.exists(bg_path):
 			_combat_bg.texture = load(bg_path)
 			_combat_bg.visible = true
 			_combat_bg.material = null # Reset material
@@ -1182,7 +1182,7 @@ func _build_enemy_for_wave(wave: int) -> Dictionary:
 	
 	# 2. Dynamic Sprite Lookup
 	var sprite_path = "res://assets/combat/enemy_%d.png" % wave
-	if not FileAccess.file_exists(sprite_path):
+	if not ResourceLoader.exists(sprite_path):
 		# Fallback to depth-based sprites
 		var depth = clampi(int(float(wave - 1) / 10.0) + 1, 1, 15)
 		if depth >= 10: sprite_path = SPRITES["nightmare"]
@@ -2104,7 +2104,7 @@ func _add_reward_item(title: String, subtitle: String, icon_path: String) -> voi
 	var hbx = HBoxContainer.new()
 	hbx.alignment = BoxContainer.ALIGNMENT_BEGIN
 	
-	if icon_path != "" and FileAccess.file_exists(icon_path):
+	if icon_path != "" and ResourceLoader.exists(icon_path):
 		var tex_rect = TextureRect.new()
 		tex_rect.texture = load(icon_path)
 		tex_rect.custom_minimum_size = Vector2(24, 24)
